@@ -1,8 +1,9 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Check, Copy, GitBranch } from "lucide-react";
+import { Check, Copy, GitBranch, Image as ImageIcon } from "lucide-react";
 import { translate, type AppLanguage } from "@/lib/i18n";
 import { createLogger } from "@/lib/logger";
+import { agent } from "@platform/tauri/client";
 import type { ThreadState } from "@features/agent/store/thread-runtime-state";
 import {
   agentMessageValueToText,
@@ -84,6 +85,58 @@ function getMessageDurationText(
     return minutes === 0 ? `${seconds}秒` : `${minutes}分${seconds}秒`;
   }
   return `Duration ${minutes}m${seconds}s`;
+}
+
+function createUserMessageAttachments(
+  message: AgentMessage,
+  language: AppLanguage,
+): HTMLDivElement | null {
+  const attachments = message.attachments?.filter(
+    (attachment) => attachment.path && attachment.name,
+  );
+  if (!attachments?.length) return null;
+
+  const container = document.createElement("div");
+  container.className = "agent-thread-card__message-attachments";
+  container.setAttribute(
+    "aria-label",
+    language === "zh-CN" ? "消息附件" : "Message attachments",
+  );
+
+  attachments.forEach((attachment, index) => {
+    const card = document.createElement("div");
+    card.className = "agent-thread-card__message-attachment";
+    const attachmentLabel = language === "zh-CN"
+      ? `图片附件 ${index + 1}`
+      : `Image attachment ${index + 1}`;
+    card.title = `${attachment.name}\n${attachment.mimeType}\n${attachment.path}`;
+    card.setAttribute("aria-label", `${attachmentLabel}\n${card.title}`);
+
+    const icon = document.createElement("span");
+    icon.className = "agent-thread-card__message-attachment-icon";
+    icon.append(createLucideIcon(ImageIcon));
+    card.append(icon);
+    container.append(card);
+
+    if (
+      attachment.type === "input_image" ||
+      attachment.mimeType.toLowerCase().startsWith("image/")
+    ) {
+      void agent.readCachedImage(attachment.path).then((previewUrl) => {
+        if (!previewUrl) return;
+        const preview = document.createElement("img");
+        preview.className = "agent-thread-card__message-attachment-preview";
+        preview.src = previewUrl;
+        preview.alt = attachment.name;
+        preview.draggable = false;
+        card.replaceChildren(preview);
+      }).catch(() => {
+        // Keep the image icon when the cached file is no longer available.
+      });
+    }
+  });
+
+  return container;
 }
 
 export function attachMessageActions(
@@ -747,6 +800,8 @@ export function createAgentThreadCardMessageElement(options: {
       content.textContent = messageView.visibleContent;
       item.append(content);
     } else if (message.role === "user") {
+      const bubble = document.createElement("div");
+      bubble.className = "agent-thread-card__message-user-bubble";
       const content = document.createElement("div");
       content.className =
         "agent-thread-card__message-content agent-thread-card__message-content--user-preview";
@@ -757,23 +812,26 @@ export function createAgentThreadCardMessageElement(options: {
         const badge = document.createElement("span");
         badge.className = "agent-thread-card__message-dsh-badge";
         badge.textContent = message.messageType === "dsh-command-prompt" ? "DSH /plan" : "DSH";
-        item.append(badge);
+        bubble.append(badge);
       } else if (message.messageType === "codex-command") {
         const badge = document.createElement("span");
         badge.className = "agent-thread-card__message-codex-badge";
         badge.textContent = "Codex";
-        item.append(badge);
+        bubble.append(badge);
       }
-      item.append(content);
+      bubble.append(content);
+      item.append(bubble);
       renderAgentThreadCardBudgetedMarkdown({
         message,
         role: "user",
         visibleContent: messageView.visibleContent,
         content,
-        toggleParent: item,
+        toggleParent: bubble,
         context: displayContext,
         isStreaming: options.isStreaming,
       });
+      const attachments = createUserMessageAttachments(message, language);
+      if (attachments) item.append(attachments);
     } else if (message.role === "reasoning") {
       const header = document.createElement("button");
       header.type = "button";

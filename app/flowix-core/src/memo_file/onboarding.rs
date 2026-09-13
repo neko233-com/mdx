@@ -224,14 +224,23 @@ mod tests {
             .unwrap();
 
         assert_eq!(report.added, 1);
-        assert_eq!(fs::read_to_string(&existing).unwrap(), original);
-        assert!(mf
+        let imported = mf
             .read_index_for_notebook_id(Some("nb_default"))
             .unwrap()
             .unwrap()
             .memos
-            .iter()
-            .any(|memo| memo.filename == "Existing from disk.md"));
+            .into_iter()
+            .find(|memo| memo.filename == "Existing from disk.md")
+            .expect("imported memo should be indexed");
+        let content = fs::read_to_string(&existing).unwrap();
+        assert!(
+            content.contains(original),
+            "original Markdown body must survive"
+        );
+        assert_eq!(
+            crate::memo_file::extract_frontmatter_key(&content),
+            Some(imported.id)
+        );
     }
 
     #[test]

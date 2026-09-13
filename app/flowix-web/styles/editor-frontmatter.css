@@ -5,7 +5,7 @@
 .markdown-editor .frontmatter-property {
   --frontmatter-row-gap: 0.35rem;
   --frontmatter-padding-block: 0.125rem;
-  --frontmatter-icon-size: 1.1rem;
+  --frontmatter-icon-size: 20px;
   --frontmatter-row-padding:
     var(--frontmatter-padding-block) 0.4rem
     var(--frontmatter-padding-block) 0;
@@ -784,10 +784,12 @@
 }
 
 .markdown-editor .frontmatter-property__type-icon {
-  align-self: center;
+  align-self: start;
 }
 
 .markdown-editor .frontmatter-property__display-key {
+  align-self: start;
+  align-items: flex-start;
   justify-content: flex-start;
 }
 

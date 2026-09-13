@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 
-import backgroundImage from '@/assets/bg.document.png';
 import { DEFAULT_AGENT_TYPE_KEY } from '@/lib/agent-types';
 import type { AgentTypeKey } from '@/types/agent';
 import { useI18n } from '@/lib/i18n';
@@ -66,6 +65,7 @@ import {
 } from '@features/agent/services/codex-slash-command-service';
 import { isCodexGoalCommand } from '@features/agent/thread-card/agent-thread-card-selectors';
 import { getAgentConversationRuntimeCwd } from '@features/agent/conversation-presentation';
+import { WorkspaceEmptyState } from '@shared/ui/workspace-empty-state';
 
 const BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const TOP_HISTORY_LOAD_THRESHOLD_PX = 48;
@@ -801,16 +801,10 @@ export function AgentConversationDetail({
 
   if (!instance) {
     return (
-      <div className="relative flex h-full w-full items-center justify-center bg-[var(--editor-block-bg,var(--document-bg))]">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-no-repeat bg-bottom bg-[length:auto_800px] opacity-[0.32]"
-          style={{ backgroundImage: `url(${backgroundImage})` }}
-        />
-        <span className="relative text-center text-sm text-[var(--muted-foreground)]">
-          {t('status.agent.conversationNotFound')}
-        </span>
-      </div>
+      <WorkspaceEmptyState
+        tone="agent"
+        message={t('status.agent.conversationNotFound')}
+      />
     );
   }
 

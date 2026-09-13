@@ -57,7 +57,6 @@ function waitForTabHeaderPaint(): Promise<void> {
 
 export function BrowserColumn({
   width,
-  layoutKey,
   onResize,
   toolbarCollapsed,
   onToolbarCollapsedChange,
@@ -120,7 +119,6 @@ export function BrowserColumn({
       setContextMenuTabId(null);
     }
   }, [contextMenuTabId, tabs]);
-  const nativeOverlayOpen = isTabMenuOpen || contextMenuTabId !== null;
   const activeSurface = activeTab
     ? resolveBrowserColumnSurface(
         activeTab,
@@ -130,8 +128,6 @@ export function BrowserColumn({
         activeWebRuntime,
         toolbarCollapsed,
         onToolbarCollapsedChange,
-        layoutKey,
-        nativeOverlayOpen,
       )
     : null;
   const activeSurfaceChrome = activeSurface

@@ -12,12 +12,20 @@ import { useWorkspaceRestoreStore } from '@features/workspace/store/workspace-re
 import { selectAndOpenAgentConversation } from '@features/workspace/use-cases/agent-conversation-navigation';
 import { useMemoStore } from '@features/memo';
 import { agentClient } from '@features/agent/store/agent-client';
+import { isAgentConversationRunning } from '@features/agent/store/conversation-run-index';
+import { useAgentRuntimeStore } from '@features/agent/store/agent-runtime-store';
 import {
-  isAgentConversationRunning,
-} from '@features/agent/store/conversation-run-index';
-import { AGENT_TYPES, getAgentType, isAgentTypeSelectable } from '@/lib/agent-types';
+  AGENT_TYPES,
+  getAgentType,
+  isAgentTypeSelectable,
+  isAlwaysVisibleNewConversationAgent,
+} from '@/lib/agent-types';
 import type { AgentTypeKey } from '@/types/agent';
 import type { AgentConversationCursor } from '@platform/tauri/client/agent';
+import {
+  isAgentRuntimeInstalledState,
+  normalizeAgentRuntimeStatus,
+} from '@features/agent/runtime/agent-runtime-status';
 import { formatTimeAgo } from '@/lib/format-time-ago';
 import { createLogger } from '@/lib/logger';
 import { toast } from '@/lib/toast';
@@ -104,6 +112,9 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
   // Rows can therefore read their running state in O(1) without rebuilding an
   // index by scanning every loaded conversation.
   const conversationRunIndex = useAgentSessionStore((state) => state.threadRunSignatures);
+  const agentRuntimeStatusByType = useAgentRuntimeStore((state) => state.statusByType);
+  const agentRuntimeIsChecking = useAgentRuntimeStore((state) => state.isChecking);
+  const refreshAgentRuntimeIfStale = useAgentRuntimeStore((state) => state.refreshIfStale);
   const currentNotebookId = useMemoStore((state) => state.selectedNotebook?.id ?? null);
   const middleColumnView = useMemoStore((state) => state.middleColumnView);
   const setActiveFilter = useMemoStore((state) => state.setActiveFilter);
@@ -162,6 +173,11 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
     window.addEventListener('flowix:open-agent-create-menu', handleOpenCreateMenu);
     return () => window.removeEventListener('flowix:open-agent-create-menu', handleOpenCreateMenu);
   }, []);
+
+  useEffect(() => {
+    if (!newConversationMenuOpen) return;
+    void refreshAgentRuntimeIfStale();
+  }, [newConversationMenuOpen, refreshAgentRuntimeIfStale]);
 
   const toggleFavorite = useCallback((instanceId: string) => {
     setFavoriteIds((current) => {
@@ -509,6 +525,18 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
   const displayName = (type: (typeof AGENT_TYPES)[number]): string =>
     type.nameKey ? t(type.nameKey as Parameters<typeof t>[0]) : type.name;
 
+  const newConversationAgentTypes = useMemo(
+    () => AGENT_TYPES.filter((type) => {
+      if (!isAgentTypeSelectable(type.key)) return false;
+      if (isAlwaysVisibleNewConversationAgent(type.key)) return true;
+      return isAgentRuntimeInstalledState(normalizeAgentRuntimeStatus(
+        agentRuntimeStatusByType[type.key],
+        agentRuntimeIsChecking,
+      ));
+    }),
+    [agentRuntimeIsChecking, agentRuntimeStatusByType],
+  );
+
   const revealConversation = useCallback(async (instance: AgentConversationInstance) => {
     // 第一次访问: 立即清掉该对话的"刚结束"灰色 dot, 做到"看见一次就消失"。
     if (justEndedIds.has(instance.instanceId)) {
@@ -636,17 +664,30 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
                 <DropdownMenuLabel className="flex items-center gap-1.5 px-[0.375rem] pb-[0.35rem] pt-[0.35rem] text-xs font-normal leading-[1.2] text-[var(--muted-foreground)]">
                   {t('agent.chat.newThread')}
                 </DropdownMenuLabel>
-                {AGENT_TYPES.filter((type) => isAgentTypeSelectable(type.key)).map((type) => (
-                  <DropdownMenuItem
-                    key={type.key}
-                    disabled={!currentNotebookId}
-                    onClick={() => createConversation(type.key)}
-                    className="agent-conversation-new-agent-item group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
-                  >
-                    <AgentIcon typeKey={type.key} alt="" className="h-4 w-4 shrink-0 object-contain" />
-                    <span className="min-w-0 flex-1 truncate">{displayName(type)}</span>
-                  </DropdownMenuItem>
-                ))}
+                {newConversationAgentTypes.map((type) => {
+                  const runtimeStatus = normalizeAgentRuntimeStatus(
+                    agentRuntimeStatusByType[type.key],
+                    agentRuntimeIsChecking,
+                  );
+                  const showNotInstalled = isAlwaysVisibleNewConversationAgent(type.key)
+                    && runtimeStatus.state === 'not-installed';
+                  return (
+                    <DropdownMenuItem
+                      key={type.key}
+                      disabled={!currentNotebookId}
+                      onClick={() => createConversation(type.key)}
+                      className="agent-conversation-new-agent-item group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
+                    >
+                      <AgentIcon typeKey={type.key} alt="" className="h-4 w-4 shrink-0 object-contain" />
+                      <span className="min-w-0 flex-1 truncate">{displayName(type)}</span>
+                      {showNotInstalled && (
+                        <span className="shrink-0 text-xs text-[var(--muted-foreground)] group-hover:text-[var(--primary-foreground)]">
+                          {t('agent.status.notInstalled')}
+                        </span>
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

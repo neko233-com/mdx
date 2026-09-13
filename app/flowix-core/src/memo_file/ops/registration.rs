@@ -7,7 +7,8 @@ impl MemoFile {
     /// Rename/reconcile 入口: 如果文件 frontmatter 里已有 `key: <id>` 字段, 以磁盘
     /// key 为真相修复 memo index。
     ///
-    /// - key 命中已有 entry 且 filename 不同: 视为物理 rename, 保留 id 并更新 filename。
+    /// - key 命中已有 entry 且 filename 不同: 旧路径仍存在时视为复制并生成新 id;
+    ///   旧路径不存在时视为物理 rename, 保留 id 并更新 filename。
     /// - key 不在 memo index: 用磁盘 key 重建 entry, 用于启动/切换 notebook 对账。
     /// - 无 key: 生成新 id 并写入 frontmatter。
     ///
@@ -42,12 +43,17 @@ impl MemoFile {
         if let Some(existing_id) = super::super::frontmatter::extract_frontmatter_key(&content) {
             if let Some(existing_memo) = self.read_current_memo(&existing_id) {
                 if existing_memo.relative_path != relative_path {
-                    // (a) 走 rename_memo_file 改 entry.filename, id 保留
+                    let old_path =
+                        notebook_path_from_relative(&base, &existing_memo.relative_path)?;
+                    if old_path.exists() {
+                        // The old file is still present, so this is a copy.
+                        // The copied file must receive a fresh globally unique id.
+                        return self.register_existing_file_as_new_locked(abs_path);
+                    }
+                    // The old path disappeared, so this is a rename observed
+                    // after the original Remove event. Preserve the id.
                     drop(_index_io_guard);
-                    return self.rename_memo_file(
-                        &notebook_path_from_relative(&base, &existing_memo.relative_path)?,
-                        abs_path,
-                    );
+                    return self.rename_memo_file(&old_path, abs_path);
                 }
                 // (b) filename 一致: 幂等 no-op, 不重新生成
                 return Ok(existing_memo);
@@ -88,7 +94,7 @@ impl MemoFile {
             return Ok(memo);
         }
 
-        let id = self.generate_memo_id();
+        let id = self.generate_global_memo_id();
         let now = chrono::Utc::now().timestamp_millis();
 
         // 把生成的 key 就地注入到 frontmatter 块: 有 key 行就替换,
@@ -149,7 +155,7 @@ impl MemoFile {
         }
 
         let content = fs::read_to_string(abs_path).map_err(|e| e.to_string())?;
-        let id = self.generate_memo_id();
+        let id = self.generate_global_memo_id();
         let now = chrono::Utc::now().timestamp_millis();
         let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();
         let stamped = merge_frontmatter(&content, &overrides);
@@ -183,19 +189,18 @@ impl MemoFile {
         abs_path: &Path,
     ) -> Result<Memo, String> {
         let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
-        self.register_existing_file_for_notebook_id_locked(notebook_id, abs_path, true)
+        self.register_existing_file_for_notebook_id_locked(notebook_id, abs_path)
     }
 
-    /// Register a Markdown file for an initial notebook import without
-    /// changing its contents. In particular, do not inject Flowix's
-    /// frontmatter `key` into a user's existing document.
+    /// Compatibility alias for the former no-frontmatter import API.
+    /// All imported Markdown files now receive a Flowix frontmatter `key`.
     pub fn register_existing_file_for_notebook_id_without_frontmatter(
         &self,
         notebook_id: &str,
         abs_path: &Path,
     ) -> Result<Memo, String> {
         let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
-        self.register_existing_file_for_notebook_id_locked(notebook_id, abs_path, false)
+        self.register_existing_file_for_notebook_id_locked(notebook_id, abs_path)
     }
 
     pub fn register_existing_file_as_new_for_notebook_id(
@@ -261,7 +266,6 @@ impl MemoFile {
         &self,
         notebook_id: &str,
         abs_path: &Path,
-        stamp_missing_key: bool,
     ) -> Result<Memo, String> {
         if !abs_path.is_md() {
             return Err(format!("not a markdown file: {}", abs_path.display()));
@@ -283,20 +287,27 @@ impl MemoFile {
         if let Some(existing_id) = super::super::frontmatter::extract_frontmatter_key(&content) {
             if let Some(existing_memo) = self.read_memo_for_notebook_id(notebook_id, &existing_id) {
                 if existing_memo.relative_path != relative_path {
+                    let old_path =
+                        notebook_path_from_relative(&base, &existing_memo.relative_path)?;
+                    if old_path.exists() {
+                        return self.register_existing_file_as_new_for_notebook_id_locked(
+                            notebook_id,
+                            abs_path,
+                        );
+                    }
                     return self.rename_memo_file_for_notebook_id_locked(
                         notebook_id,
-                        &notebook_path_from_relative(&base, &existing_memo.relative_path)?,
+                        &old_path,
                         abs_path,
                     );
                 }
                 return Ok(existing_memo);
             }
-            if stamp_missing_key
-                && self
-                    .resolve_memo_location(&existing_id)
-                    .ok()
-                    .flatten()
-                    .is_some()
+            if self
+                .resolve_memo_location(&existing_id)
+                .ok()
+                .flatten()
+                .is_some()
             {
                 return self
                     .register_existing_file_as_new_for_notebook_id_locked(notebook_id, abs_path);
@@ -328,14 +339,9 @@ impl MemoFile {
 
         let id = self.generate_global_memo_id();
         let now = chrono::Utc::now().timestamp_millis();
-        let content_for_index = if stamp_missing_key {
-            let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();
-            let stamped = merge_frontmatter(&content, &overrides);
-            atomic_write_bytes(abs_path, stamped.as_bytes()).map_err(|e| e.to_string())?;
-            stamped
-        } else {
-            content
-        };
+        let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();
+        let content_for_index = merge_frontmatter(&content, &overrides);
+        atomic_write_bytes(abs_path, content_for_index.as_bytes()).map_err(|e| e.to_string())?;
 
         let mut memo = Memo {
             id: id.clone(),
@@ -388,13 +394,13 @@ impl MemoFile {
         let content = fs::read_to_string(abs_path).map_err(|e| e.to_string())?;
         if let Some(existing_id) = super::super::frontmatter::extract_frontmatter_key(&content) {
             if let Some(existing_memo) = self.read_current_memo(&existing_id) {
-                // 调用方已保证 filename 不在 memo index; 如果这里命中 read_memo,
-                // 说明 entry 的 filename 跟当前不一致 (inode-tracker 漏命中场景),
-                // 走 rename_memo_file_locked 保留 id, 改 entry.filename 为当前 filename。
-                return self.rename_memo_file_locked(
-                    &notebook_path_from_relative(&base, &existing_memo.relative_path)?,
-                    abs_path,
-                );
+                let old_path = notebook_path_from_relative(&base, &existing_memo.relative_path)?;
+                if old_path.exists() {
+                    // The original path still exists: this is a copied file.
+                    return self.register_existing_file_as_new_locked(abs_path);
+                }
+                // The original path disappeared: this is a rename.
+                return self.rename_memo_file_locked(&old_path, abs_path);
             }
             if self
                 .resolve_memo_location(&existing_id)
@@ -429,7 +435,7 @@ impl MemoFile {
             return Ok(memo);
         }
 
-        let id = self.generate_memo_id();
+        let id = self.generate_global_memo_id();
         let now = chrono::Utc::now().timestamp_millis();
 
         let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();

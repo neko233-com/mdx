@@ -17,6 +17,7 @@ import {
   subscribeWithSelector,
 } from "zustand/middleware";
 import type {
+  AgentMessageAttachment,
   AgentChunk,
   AgentEvent,
   AgentTypeKey,
@@ -50,7 +51,11 @@ import {
   getLanguage,
   normalizeThreadTitle,
 } from "@features/agent/store/thread-titles";
-import { createSendErrorMessage, prepareUserMessage } from "@features/agent/store/user-message";
+import {
+  createAgentMessageAttachments,
+  createSendErrorMessage,
+  prepareUserMessage,
+} from "@features/agent/store/user-message";
 import { dispatchChatStream } from "@features/agent/store/chat-stream";
 import { translate } from "@/lib/i18n";
 import { createLogger } from "@/lib/logger";
@@ -118,6 +123,7 @@ export interface AgentSessionStore
       isFirstMessage?: boolean;
       runtimeConfig?: RuntimeConfig | null;
       imagePaths?: string[];
+      attachments?: AgentMessageAttachment[];
       agentRoleBody?: string | null;
       runId?: string;
     },
@@ -313,6 +319,8 @@ export const useAgentSessionStore = create<AgentSessionStore>()(
             agentRoleBody: options?.agentRoleBody ?? null,
             systemReminderDirectory:
               options?.runtimeConfig?.workspaceSnapshot?.notebookPath,
+            attachments:
+              options?.attachments ?? createAgentMessageAttachments(options?.imagePaths),
           });
           if (
             (type.key === "codex" || type.key === "deepseek-harness") &&
@@ -369,6 +377,7 @@ export const useAgentSessionStore = create<AgentSessionStore>()(
             timestamp: startedAt,
             text: userMessage.content,
             id: userMessage.id,
+            attachments: userMessage.attachments,
           });
           if (options?.instanceId) {
             state.updateThread(options.instanceId, { threadId, agentType: type.key });

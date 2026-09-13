@@ -34,8 +34,8 @@ import { MemoDocumentHeader } from '@features/document/components/memo-document-
 import type { MemoTitleEditorHandle } from '@features/document/components/memo-title-editor';
 import type { MarkdownEditorHandle } from '@features/editor/markdown-editor';
 import { isEditableTextFilePath, isImageFilePath } from '@features/editor/code-file';
-import backgroundImage from '@/assets/bg.document.png';
 import { useI18n } from '@/lib/i18n';
+import { WorkspaceEmptyState } from '@shared/ui/workspace-empty-state';
 import { clearWorkspaceDocument } from '@features/workspace/use-cases/workspace-navigation';
 import { removeBrowserColumnTabsByMemoId } from '@features/workspace/use-cases/browser-column-navigation';
 import { useWorkspaceFocusStore } from '@features/workspace/store/workspace-focus-store';
@@ -348,18 +348,7 @@ export function DocumentContainer({
   }, [filePath, metaInfo, onMetainfoData]);
 
   if (!filePath) {
-    return (
-      <div className="relative w-full h-full flex items-center justify-center">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-no-repeat bg-bottom bg-[length:auto_800px] opacity-[0.32]"
-          style={{ backgroundImage: `url(${backgroundImage})` }}
-        />
-        <span className="relative text-center text-[var(--muted-foreground)] text-sm">
-          {t("document.empty")}
-        </span>
-      </div>
-    );
+    return <WorkspaceEmptyState tone="document" message={t('shell.emptyDocument')} />;
   }
 
   if (state.error) {

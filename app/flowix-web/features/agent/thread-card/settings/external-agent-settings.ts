@@ -167,6 +167,7 @@ export function createCodexSettingsItem(
     : "agent-thread-card__codex-settings-item";
   if (readOnly) {
     item.classList.add("agent-thread-card__codex-settings-item--readonly");
+    item.setAttribute("aria-disabled", "true");
     item.disabled = true;
   }
   item.setAttribute("role", "menuitemradio");

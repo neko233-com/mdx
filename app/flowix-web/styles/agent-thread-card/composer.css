@@ -739,6 +739,15 @@
   cursor: pointer;
 }
 
+/* The slash command is an inline atom, not editable button content. Keep the
+ * wrapper as one inline unit and leave its zero-width text nodes available as
+ * the caret landing points at the end of a composer paragraph. */
+.markdown-editor .agent-thread-card__slash-token-wrapper {
+  display: inline;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
 .markdown-editor .agent-thread-card__slash-token:hover,
 .markdown-editor .agent-thread-card__slash-token:focus-visible {
   background: transparent;

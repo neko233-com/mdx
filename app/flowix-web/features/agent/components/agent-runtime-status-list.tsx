@@ -6,6 +6,10 @@ import { cn } from '@/lib/utils';
 import { useI18n, type I18nKey } from '@/lib/i18n';
 import type { AgentTypeKey } from '@/types/agent';
 import type { AgentRuntimeAvailability } from '@platform/tauri/client';
+import {
+  normalizeAgentRuntimeStatus,
+  type AgentRuntimeStatusView,
+} from '@features/agent/runtime/agent-runtime-status';
 import { Button } from '@shared/ui/button';
 import { useAgentVisibilityPreferences } from '@features/preferences/public/runtime-api';
 import { AgentIcon } from '@features/agent/components/agent-icon';
@@ -65,10 +69,17 @@ export function getAgentRuntimeStatusText({
   };
   const translate = t ?? ((key: I18nKey) => fallback[key] ?? key);
   if (typeKey && isAgentTypeComingSoon(typeKey)) return translate('agent.status.comingSoon');
-  if (status?.available === false) return translate('agent.status.setup');
-  if (status === undefined && isChecking) return translate('agent.status.checking');
-  if (status === undefined) return translate('agent.status.notChecked');
+  const runtimeState = normalizeAgentRuntimeStatus(status, isChecking).state;
+  if (runtimeState === 'not-installed' || runtimeState === 'not-ready') {
+    return translate('agent.status.setup');
+  }
+  if (runtimeState === 'checking') return translate('agent.status.checking');
+  if (runtimeState === 'unknown') return translate('agent.status.notChecked');
   return '';
+}
+
+function isRuntimeUnavailable(status: AgentRuntimeStatusView): boolean {
+  return status.state === 'not-installed' || status.state === 'not-ready';
 }
 
 export function AgentRuntimeStatusList({
@@ -107,10 +118,11 @@ export function AgentRuntimeStatusList({
         {visibleAgentTypes.map((type) => {
           const status = statusByType[type.key];
           const comingSoon = isAgentTypeComingSoon(type.key);
-          const unavailable = comingSoon || status?.available === false;
+          const runtimeStatus = normalizeAgentRuntimeStatus(status, isChecking);
+          const unavailable = comingSoon || isRuntimeUnavailable(runtimeStatus);
           const statusText = getAgentRuntimeStatusText({ typeKey: type.key, status, isChecking, t });
-          const canSetup = !comingSoon && status?.available === false && Boolean(onSetupClick);
-          const available = !comingSoon && status?.available === true;
+          const canSetup = !comingSoon && isRuntimeUnavailable(runtimeStatus) && Boolean(onSetupClick);
+          const available = !comingSoon && runtimeStatus.state === 'ready';
           const slashEnabled = agentVisibility[type.key] ?? true;
 
           return (
@@ -124,7 +136,7 @@ export function AgentRuntimeStatusList({
               <div
                 role={onCardClick ? 'button' : undefined}
                 tabIndex={onCardClick ? 0 : undefined}
-                title={comingSoon ? statusText : unavailable ? status?.reason ?? `${displayName(type)} is unavailable` : displayDesc(type)}
+                title={comingSoon ? statusText : unavailable ? runtimeStatus.reason ?? `${displayName(type)} is unavailable` : displayDesc(type)}
                 onClick={onCardClick ? () => {
                   // 行内已有的 stopPropagation 子节点 (switch / Setup 按钮 /
                   // headerAction) 不会冒泡到这里; 其它位置 (icon / name /
@@ -243,9 +255,10 @@ export function AgentRuntimeStatusList({
       {visibleAgentTypes.map((type) => {
         const status = statusByType[type.key];
         const comingSoon = isAgentTypeComingSoon(type.key);
-        const unavailable = comingSoon || status?.available === false;
+        const runtimeStatus = normalizeAgentRuntimeStatus(status, isChecking);
+        const unavailable = comingSoon || isRuntimeUnavailable(runtimeStatus);
         const statusText = getAgentRuntimeStatusText({ typeKey: type.key, status, isChecking, t });
-        const interactive = !comingSoon && status?.available === false && Boolean(onSetupClick);
+        const interactive = !comingSoon && isRuntimeUnavailable(runtimeStatus) && Boolean(onSetupClick);
 
         return (
           <button
@@ -253,7 +266,7 @@ export function AgentRuntimeStatusList({
             type="button"
             disabled={!interactive}
             onClick={() => onSetupClick?.(type.key)}
-            title={comingSoon ? statusText : unavailable ? status?.reason ?? `${displayName(type)} is unavailable` : displayDesc(type)}
+            title={comingSoon ? statusText : unavailable ? runtimeStatus.reason ?? `${displayName(type)} is unavailable` : displayDesc(type)}
             className={cn(
               'group flex h-7 w-full items-center gap-2 rounded-md px-2 text-left outline-none transition-colors',
               interactive ? 'cursor-pointer hover:bg-[var(--accent)]' : 'cursor-default',

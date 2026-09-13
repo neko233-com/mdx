@@ -253,6 +253,7 @@ fn value_to_message(value: &Value, index: usize) -> Option<ChatMessage> {
         codex_turn_id: None,
         turn_duration_ms: None,
         source_sequence: None,
+        attachments: None,
     })
 }
 
@@ -570,6 +571,7 @@ mod tests {
                 codex_turn_id: None,
                 turn_duration_ms: None,
                 source_sequence: None,
+                attachments: None,
             })
             .collect::<Vec<_>>();
         let first = page_from_messages(messages.clone(), None, 2);

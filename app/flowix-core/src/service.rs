@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::memo_file::{
-    base_filename, notebook_path_from_relative, normalize_search_tag_filter,
+    base_filename, normalize_search_tag_filter, notebook_path_from_relative,
     resolve_filename_conflict, Memo, MemoColor, MemoFile, MemoIndexEntry, MemoTodoEntry,
     MemoVersionMeta, MemoVersionSource, NotebookConfig,
 };
@@ -466,11 +466,7 @@ impl<'a> MemoService<'a> {
         }
         let (memo, _old_path, path) = self
             .memo_file
-            .move_memo_to_directory_for_notebook_id(
-                &notebook.id,
-                memo_id,
-                parent_relative_path,
-            )
+            .move_memo_to_directory_for_notebook_id(&notebook.id, memo_id, parent_relative_path)
             .map_err(FlowixError::InvalidInput)?;
         Ok(EditedMemo {
             id: memo_id.to_string(),
@@ -899,7 +895,9 @@ impl<'a> MemoService<'a> {
                 &PathBuf::from(&location.notebook.path),
                 &location.memo.relative_path,
             )
-            .unwrap_or_else(|_| PathBuf::from(&location.notebook.path).join(&location.memo.filename));
+            .unwrap_or_else(|_| {
+                PathBuf::from(&location.notebook.path).join(&location.memo.filename)
+            });
             return Ok(ResolvedMemo {
                 id: location.memo.id.clone(),
                 entry: location.memo,
@@ -1294,10 +1292,7 @@ mod tests {
         assert_eq!(moved.path, temp.path().join("notes/projects/Untitled.md"));
         assert!(!old_path.exists());
         assert!(moved.path.exists());
-        assert_eq!(
-            moved.memo.unwrap().relative_path,
-            "projects/Untitled.md"
-        );
+        assert_eq!(moved.memo.unwrap().relative_path, "projects/Untitled.md");
     }
 
     #[test]
@@ -1402,7 +1397,15 @@ mod tests {
         );
 
         let desc = service
-            .list_memos_filtered_page(Some("work"), "all", "filenameDesc", None, None, None, Some(2))
+            .list_memos_filtered_page(
+                Some("work"),
+                "all",
+                "filenameDesc",
+                None,
+                None,
+                None,
+                Some(2),
+            )
             .unwrap();
         assert_eq!(
             desc.memos

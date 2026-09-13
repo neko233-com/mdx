@@ -1,9 +1,20 @@
 export {
+  WorkColumnContentHost,
   WorkColumnSurfaceHost,
   getWorkColumnSurfaceDefinition,
   surfaceSupports,
 } from '@features/surface/registry';
-export { resolveWorkColumnSurface } from '@features/surface/resolver';
+export { resolveWorkColumnContent } from '@features/surface/resolver';
+export { resolveWorkColumnPresentation } from '@features/surface/presentation';
+export type {
+  WorkColumnDocumentHeaderPresentation,
+  WorkColumnHeaderPresentation,
+  WorkColumnPresentation,
+} from '@features/surface/presentation';
+export type {
+  WorkColumnContentPresentation,
+  WorkColumnEmptyStateTone,
+} from '@features/surface/types';
 export {
   BrowserColumnSurfaceHost,
   getBrowserColumnSurfaceDefinition,

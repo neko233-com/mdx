@@ -203,17 +203,25 @@ fn write_cloud_attachments(
     std::fs::create_dir_all(&directory).map_err(sync_error)?;
     for attachment in attachments {
         let filename = &attachment.metadata.filename;
-        if Path::new(filename)
-            .file_name()
-            .and_then(|value| value.to_str())
-            != Some(filename)
+        let relative = Path::new(filename);
+        if relative.is_absolute()
+            || relative
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+            || relative.components().next() == Some(std::path::Component::CurDir)
             || attachment.metadata.size_bytes
                 != i64::try_from(attachment.content.len()).map_err(|_| "ATTACHMENT_TOO_LARGE")?
             || v2_content_hash(&attachment.content) != attachment.metadata.content_hash
         {
             return Err(format!("CLOUD_ATTACHMENT_INVALID: {filename}"));
         }
-        let path = directory.join(filename);
+        let path = match relative.strip_prefix("attachments") {
+            Ok(path) => base.join("attachments").join(path),
+            Err(_) => directory.join(relative),
+        };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(sync_error)?;
+        }
         atomic_write_bytes(&path, &attachment.content).map_err(sync_error)?;
     }
     Ok(())

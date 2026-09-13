@@ -521,6 +521,7 @@ fn history_message(id: String, role: &str, content: String, timestamp: i64) -> C
         codex_turn_id: None,
         turn_duration_ms: None,
         source_sequence: None,
+        attachments: None,
     }
 }
 

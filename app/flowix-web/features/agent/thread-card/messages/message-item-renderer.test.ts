@@ -556,4 +556,49 @@ describe("unified tool message rendering", () => {
       ".agent-thread-card__message-tool-toggle",
     )).toBeNull();
   });
+
+  it("renders one attachment chip per user-message image below the bubble", () => {
+    const result = createAgentThreadCardMessageElement({
+      message: {
+        id: "user-images",
+        role: "user",
+        content: "Inspect these images",
+        timestamp: new Date().toISOString(),
+        attachments: [
+          {
+            type: "input_image",
+            path: "/tmp/first.png",
+            name: "first.png",
+            mimeType: "image/png",
+            detail: "high",
+          },
+          {
+            type: "input_image",
+            path: "/tmp/second.jpg",
+            name: "second.jpg",
+            mimeType: "image/jpeg",
+            detail: "high",
+          },
+        ],
+      },
+      language: "zh-CN",
+      getReasoningCollapsed: () => true,
+      setReasoningCollapsed: () => undefined,
+      getDisplayExpanded: () => false,
+      setDisplayExpanded: () => undefined,
+    });
+
+    const element = result?.element;
+    const bubble = element?.querySelector(".agent-thread-card__message-user-bubble");
+    const attachments = element?.querySelector(".agent-thread-card__message-attachments");
+    expect(bubble?.textContent).toContain("Inspect these images");
+    expect(bubble?.contains(attachments ?? null)).toBe(false);
+    expect(attachments?.children).toHaveLength(2);
+    expect(attachments?.textContent).not.toContain("图片 1");
+    expect(attachments?.textContent).toBe("");
+    expect(attachments?.children[0].querySelector("img")).toBeNull();
+    expect(attachments?.children[0].getAttribute("aria-label")).toContain(
+      "/tmp/first.png",
+    );
+  });
 });

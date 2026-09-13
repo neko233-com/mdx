@@ -16,13 +16,14 @@ use crate::config::user as user_config;
 use crate::config::AgentAccessStore;
 use crate::config::SecurityBookmarkStore;
 use crate::events as dispatcher;
+use crate::memo_events::{self, MemoChangeSource, MemoDerivedChanged, MemoEvent};
 use crate::open_target;
 use crate::plugin;
 use crate::runtime_log;
 use crate::system_data::SystemData;
 use crate::watcher::MemoWatcher;
 use flowix_core::search::{BigramTokenizer, MemoIndex};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tauri::{Emitter, Listener, Manager};
@@ -210,7 +211,6 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(crate::browser_column::init())
         .manage(crate::app_update::AppUpdateState::default())
         .manage(memo_watcher.clone())
         .setup(move |app| {
@@ -410,6 +410,33 @@ pub fn run() {
                             report.added,
                             report.removed
                         );
+                        for removed in &report.removed_memos {
+                            let path = flowix_core::memo_file::notebook_path_from_relative(
+                                Path::new(&notebook.path),
+                                &removed.relative_path,
+                            )
+                            .unwrap_or_else(|_| {
+                                PathBuf::from(&notebook.path).join(&removed.filename)
+                            });
+                            memo_events::emit(
+                                app.handle(),
+                                MemoEvent::Deleted {
+                                    id: removed.id.clone(),
+                                    path: path.to_string_lossy().into_owned(),
+                                    notebook_id: notebook.id.clone(),
+                                    derived_changed: MemoDerivedChanged::from_deleted(removed),
+                                    source: MemoChangeSource::ExternalTool,
+                                },
+                            );
+                        }
+                        if report.removed_memos.len() != report.removed {
+                            tracing::warn!(
+                                notebook = %notebook.id,
+                                removed = report.removed,
+                                snapshots = report.removed_memos.len(),
+                                "startup reconcile removed count did not match tombstone snapshots"
+                            );
+                        }
                     }
                     Ok(_) => tracing::debug!(notebook = %notebook.id, "[startup] reconcile: no-op"),
                     Err(e) => {
@@ -420,6 +447,32 @@ pub fn run() {
                         );
                         tracing::warn!(notebook = %notebook.id, "[startup] reconcile failed: {e}");
                     }
+                }
+                match memo_file_arc
+                    .read()
+                    .unwrap_or_else(|poisoned| {
+                        tracing::error!("memo_file read lock poisoned, recovering");
+                        poisoned.into_inner()
+                    })
+                    .cleanup_orphan_memo_versions(
+                        &notebook.id,
+                        std::time::SystemTime::now(),
+                    ) {
+                    Ok(report) if report.moved > 0 || report.removed > 0 || report.failed > 0 => {
+                        tracing::info!(
+                            notebook = %notebook.id,
+                            moved = report.moved,
+                            removed = report.removed,
+                            retained_recent = report.retained_recent,
+                            failed = report.failed,
+                            "[startup] version maintenance"
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(error) => tracing::warn!(
+                        notebook = %notebook.id,
+                        "[startup] version maintenance failed: {error}"
+                    ),
                 }
             }
 

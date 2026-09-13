@@ -340,6 +340,7 @@ impl ThreadManager {
             role: row.get(1)?,
             message_type: None,
             content: row.get(2)?,
+            attachments: None,
             llm_content: row.get(3)?,
             system_reminder_directory: row.get(4)?,
             timestamp: row.get(5)?,

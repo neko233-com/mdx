@@ -15,28 +15,16 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react';
-import { ArrowLeft, ArrowRight, Globe, RotateCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Globe, RotateCw, X } from 'lucide-react';
 import { LazyAgentConversationDetail } from '@features/agent/components/lazy-agent-conversation-detail';
 import { DocumentContainer } from '@features/document/components/document-container';
 import {
   useBrowserColumnStore,
   type BrowserColumnTab,
-  type BrowserColumnWebNavigationPhase,
   type BrowserColumnWebRuntime,
 } from '@features/workspace/store/browser-column-store';
 import { canonicalUrl } from '@features/workspace/store/workspace-content-identity';
-import { getCurrentWindow } from '@platform/tauri/window';
-import {
-  BrowserColumnWebviewManager,
-  type BrowserColumnWebviewBounds,
-} from './browser-column-webview-manager';
-
-const BROWSER_COLUMN_NAVIGATION_EVENT = 'flowix-browser-column-navigation';
-interface BrowserColumnNavigationEvent {
-  webviewLabel: string;
-  url: string;
-  phase: BrowserColumnWebNavigationPhase;
-}
+import { openUrl } from '@platform/tauri/opener';
 
 export type BrowserColumnSurfaceCapability =
   | 'edit'
@@ -50,10 +38,6 @@ export type BrowserColumnSurfaceCapability =
 interface SurfaceBase {
   instanceKey: string;
   tabId: string;
-  /** Changes whenever the host layout may have moved the native child. */
-  layoutKey: string;
-  /** DOM portals cannot cover a native child WebView. */
-  nativeOverlayOpen: boolean;
 }
 
 export interface BrowserDocumentSurface extends SurfaceBase {
@@ -106,8 +90,6 @@ export type BrowserColumnFlushRegistration = (
   discard?: (() => void) | null,
 ) => void;
 
-let externalWebviewSequence = 0;
-
 function browserTitleForUrl(url: string): string {
   try {
     return new URL(url).hostname || url;
@@ -126,17 +108,14 @@ function browserFaviconForUrl(url: string): string | null {
 }
 
 function BrowserWebSurfaceView({ surface }: { surface: BrowserWebSurface }) {
-  const viewportRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const webviewManagerRef = useRef<BrowserColumnWebviewManager | null>(null);
-  const nativeOverlayOpenRef = useRef(surface.nativeOverlayOpen);
-  nativeOverlayOpenRef.current = surface.nativeOverlayOpen;
-  const isNativeTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  const embedTimeoutRef = useRef<number | null>(null);
   const runtime = surface.runtime;
   const currentUrl = runtime?.currentUrl ?? surface.url;
   const reloadToken = runtime?.reloadToken ?? 0;
   const [address, setAddress] = useState(currentUrl);
   const [addressError, setAddressError] = useState<string | null>(null);
+  const [showEmbedTimeout, setShowEmbedTimeout] = useState(false);
   const setWebRuntime = useBrowserColumnStore((state) => state.setWebRuntime);
   const navigateWebTab = useBrowserColumnStore((state) => state.navigateWebTab);
   const goBackWebTab = useBrowserColumnStore((state) => state.goBackWebTab);
@@ -172,6 +151,15 @@ function BrowserWebSurfaceView({ surface }: { surface: BrowserWebSurface }) {
     setWebRuntime(surface.tabId, { ...current, ...patch });
   }, [currentUrl, reloadToken, setWebRuntime, surface.tabId]);
 
+  useEffect(() => {
+    setShowEmbedTimeout(false);
+    embedTimeoutRef.current = window.setTimeout(() => setShowEmbedTimeout(true), 6_000);
+    return () => {
+      if (embedTimeoutRef.current !== null) window.clearTimeout(embedTimeoutRef.current);
+      embedTimeoutRef.current = null;
+    };
+  }, [currentUrl, reloadToken]);
+
   const handleNavigate = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalized = canonicalUrl(address);
@@ -196,6 +184,9 @@ function BrowserWebSurfaceView({ surface }: { surface: BrowserWebSurface }) {
       const href = iframe?.contentWindow?.location.href;
       loadedUrl = canonicalUrl(href ?? '') ?? currentUrl;
       pageTitle = iframe?.contentDocument?.title?.trim() ?? '';
+      if (embedTimeoutRef.current !== null) window.clearTimeout(embedTimeoutRef.current);
+      embedTimeoutRef.current = null;
+      setShowEmbedTimeout(false);
     } catch {
       // Cross-origin pages intentionally do not expose their URL/title to the
       // host document. Keep the address bar and tab title at their last known
@@ -222,131 +213,11 @@ function BrowserWebSurfaceView({ surface }: { surface: BrowserWebSurface }) {
     });
   }, [currentUrl, reportRuntime, surface.tabId, updateTabMetadata]);
 
-  const readBounds = useCallback((): BrowserColumnWebviewBounds | null => {
-    const viewport = viewportRef.current;
-    if (!viewport) return null;
-    const rect = viewport.getBoundingClientRect();
-    return {
-      x: rect.left,
-      y: rect.top,
-      width: rect.width,
-      height: rect.height,
-    };
-  }, []);
-
-  const syncBounds = useCallback(() => {
-    const bounds = readBounds();
-    if (bounds) webviewManagerRef.current?.setBounds(bounds);
-  }, [readBounds]);
-
-  useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport || !isNativeTauri) return;
-
-    const label = `browser-column-webpage-${++externalWebviewSequence}`;
-    const currentWindow = getCurrentWindow();
-    let disposed = false;
-    let unlistenNavigation: (() => void) | null = null;
-    let unlistenWindowResize: (() => void) | null = null;
-    let unlistenScaleChanged: (() => void) | null = null;
-    try {
-      reportRuntime({ isLoading: true, error: null });
-      void currentWindow.listen<BrowserColumnNavigationEvent>(
-        BROWSER_COLUMN_NAVIGATION_EVENT,
-        (event) => {
-          const payload = event.payload;
-          if (disposed || payload?.webviewLabel !== label) return;
-          const normalized = canonicalUrl(payload.url);
-          if (!normalized) return;
-          const phase = payload.phase;
-          if (phase !== 'navigating' && phase !== 'started' && phase !== 'finished') return;
-          const synced = useBrowserColumnStore.getState().syncWebTabNavigation(
-            surface.tabId,
-            normalized,
-            phase,
-          );
-          if (!synced) return;
-          updateTabMetadata(surface.tabId, {
-            title: browserTitleForUrl(normalized),
-            icon: browserFaviconForUrl(normalized),
-          });
-        },
-      ).then((unlisten) => {
-        if (disposed) unlisten();
-        else unlistenNavigation = unlisten;
-      }).catch(() => undefined);
-
-      const initialBounds = readBounds();
-      if (!initialBounds) return;
-      const manager = new BrowserColumnWebviewManager(currentWindow, {
-        label,
-        url: currentUrl,
-        bounds: initialBounds,
-        onCreated: () => {
-          if (disposed) return;
-          reportRuntime({ isLoading: false, error: null });
-          manager.setVisible(!nativeOverlayOpenRef.current);
-          syncBounds();
-        },
-        onError: (event) => {
-          console.error('Failed to create browser-column webpage WebView', event);
-          if (!disposed) reportRuntime({ isLoading: false, error: '网页视图创建失败' });
-        },
-      });
-      webviewManagerRef.current = manager;
-      manager.setVisible(!nativeOverlayOpenRef.current);
-
-      const observer = new ResizeObserver(syncBounds);
-      observer.observe(viewport);
-      window.addEventListener('resize', syncBounds);
-      const visualViewport = window.visualViewport;
-      visualViewport?.addEventListener('resize', syncBounds);
-      visualViewport?.addEventListener('scroll', syncBounds);
-      void currentWindow.onResized(() => syncBounds()).then((unlisten) => {
-        if (disposed) unlisten();
-        else unlistenWindowResize = unlisten;
-      }).catch(() => undefined);
-      void currentWindow.onScaleChanged(() => syncBounds()).then((unlisten) => {
-        if (disposed) unlisten();
-        else unlistenScaleChanged = unlisten;
-      }).catch(() => undefined);
-      return () => {
-        disposed = true;
-        unlistenNavigation?.();
-        unlistenWindowResize?.();
-        unlistenScaleChanged?.();
-        observer.disconnect();
-        window.removeEventListener('resize', syncBounds);
-        visualViewport?.removeEventListener('resize', syncBounds);
-        visualViewport?.removeEventListener('scroll', syncBounds);
-        if (webviewManagerRef.current === manager) webviewManagerRef.current = null;
-        manager.dispose();
-      };
-    } catch (error) {
-      console.error('Failed to initialize browser-column webpage WebView', error);
-      reportRuntime({ isLoading: false, error: '网页视图初始化失败' });
-    }
-  }, [currentUrl, isNativeTauri, readBounds, reloadToken, reportRuntime, syncBounds]);
-
-  useEffect(() => {
-    if (!isNativeTauri) return;
-    webviewManagerRef.current?.setVisible(!surface.nativeOverlayOpen);
-  }, [isNativeTauri, surface.nativeOverlayOpen]);
-
-  // Width changes are observed by ResizeObserver, but a column can also move
-  // horizontally while keeping the same size. Track the host transition after
-  // every layout-key change so native and DOM geometry converge together.
-  useEffect(() => {
-    if (!isNativeTauri) return;
-    let frame = 0;
-    const deadline = performance.now() + 300;
-    const trackLayout = () => {
-      syncBounds();
-      if (performance.now() < deadline) frame = requestAnimationFrame(trackLayout);
-    };
-    trackLayout();
-    return () => cancelAnimationFrame(frame);
-  }, [isNativeTauri, surface.layoutKey, syncBounds]);
+  const handleOpenInSystemBrowser = useCallback(() => {
+    void openUrl(currentUrl).catch(() => {
+      reportRuntime({ error: '无法在系统浏览器中打开' });
+    });
+  }, [currentUrl, reportRuntime]);
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-[var(--background)]">
@@ -362,7 +233,7 @@ function BrowserWebSurfaceView({ surface }: { surface: BrowserWebSurface }) {
           onClick={() => goBackWebTab(surface.tabId)}
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-[var(--muted)] disabled:opacity-35"
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
+          <ChevronLeft className="h-3.5 w-3.5" />
         </button>
         <button
           type="button"
@@ -372,7 +243,7 @@ function BrowserWebSurfaceView({ surface }: { surface: BrowserWebSurface }) {
           onClick={() => goForwardWebTab(surface.tabId)}
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-[var(--muted)] disabled:opacity-35"
         >
-          <ArrowRight className="h-3.5 w-3.5" />
+          <ChevronRight className="h-3.5 w-3.5" />
         </button>
         <button
           type="button"
@@ -396,22 +267,52 @@ function BrowserWebSurfaceView({ surface }: { surface: BrowserWebSurface }) {
             spellCheck={false}
           />
         </div>
-        {runtime?.isLoading && <span className="shrink-0 text-[10px] text-[var(--muted-foreground)]">加载中</span>}
+        {runtime?.isLoading && (
+          <span
+            role="status"
+            aria-label="加载中"
+            className="mx-1 h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[color-mix(in_oklch,var(--muted-foreground)_26%,transparent)] border-t-[var(--brand)]"
+          />
+        )}
         {runtime?.error && <span className="shrink-0 text-[10px] text-red-500">{runtime.error}</span>}
       </form>
       {addressError && <div className="shrink-0 px-3 py-1 text-[10px] text-red-500">{addressError}</div>}
-      <div ref={viewportRef} className="relative min-h-0 min-w-0 flex-1 bg-white">
-        {!isNativeTauri && (
-          <iframe
-            key={`${surface.tabId}:${currentUrl}:${reloadToken}`}
-            ref={iframeRef}
-            title={surface.title}
-            src={currentUrl}
-            onLoad={handleIframeLoad}
-            onError={() => reportRuntime({ isLoading: false, error: '网页加载失败' })}
-            className="h-full w-full border-0"
-            referrerPolicy="no-referrer"
-          />
+      <div className="relative min-h-0 min-w-0 flex-1 bg-white">
+        <iframe
+          key={`${surface.tabId}:${currentUrl}:${reloadToken}`}
+          ref={iframeRef}
+          title={surface.title}
+          src={currentUrl}
+          onLoad={handleIframeLoad}
+          onError={() => {
+            reportRuntime({ isLoading: false, error: '网页加载失败' });
+            setShowEmbedTimeout(true);
+          }}
+          className="h-full w-full border-0"
+          referrerPolicy="no-referrer"
+        />
+        {showEmbedTimeout && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/90 px-6 backdrop-blur-sm">
+            <div className="relative flex max-w-sm flex-col items-center gap-4 rounded-xl border border-[var(--border)] bg-[var(--background)] px-8 py-7 text-center shadow-lg">
+              <button
+                type="button"
+                aria-label="关闭提示"
+                title="关闭提示"
+                onClick={() => setShowEmbedTimeout(false)}
+                className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <p className="text-sm text-[var(--muted-foreground)]">网页可能禁止嵌入或加载超时</p>
+              <button
+                type="button"
+                onClick={handleOpenInSystemBrowser}
+                className="inline-flex h-8 items-center rounded-lg border border-[var(--border)] px-3 text-xs text-[var(--foreground)] transition-colors hover:bg-[var(--muted)]"
+              >
+                在系统浏览器中打开
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -506,14 +407,10 @@ export function resolveBrowserColumnSurface(
   webRuntime?: BrowserColumnWebRuntime | null,
   toolbarCollapsed = false,
   onToolbarCollapsedChange?: (collapsed: boolean) => void,
-  layoutKey = '',
-  nativeOverlayOpen = false,
 ): BrowserColumnSurface {
   const base = {
     instanceKey: `tab:${tab.id}`,
     tabId: tab.id,
-    layoutKey,
-    nativeOverlayOpen,
   };
   switch (tab.target.kind) {
     case 'memo':

@@ -86,6 +86,18 @@ impl MemoFile {
                 notebook_id TEXT NOT NULL,
                 created_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS memo_lifecycles (
+                memo_id TEXT PRIMARY KEY,
+                notebook_id TEXT NOT NULL,
+                relative_path TEXT NOT NULL DEFAULT '',
+                generation INTEGER NOT NULL DEFAULT 1,
+                is_deleted INTEGER NOT NULL DEFAULT 0 CHECK(is_deleted IN (0, 1)),
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                deleted_at INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_memo_lifecycles_notebook
+                ON memo_lifecycles(notebook_id, is_deleted);
             CREATE TABLE IF NOT EXISTS memo_content_revisions (
                 memo_id TEXT PRIMARY KEY,
                 notebook_id TEXT NOT NULL,
@@ -93,7 +105,7 @@ impl MemoFile {
                 local_revision INTEGER NOT NULL,
                 change_id TEXT NOT NULL,
                 updated_at INTEGER NOT NULL,
-                FOREIGN KEY(notebook_id) REFERENCES notebooks(id) ON DELETE CASCADE
+                FOREIGN KEY(memo_id) REFERENCES memo_lifecycles(memo_id) ON DELETE RESTRICT
             );
             CREATE INDEX IF NOT EXISTS idx_memo_content_revisions_notebook
                 ON memo_content_revisions(notebook_id);
@@ -135,6 +147,7 @@ impl MemoFile {
             );
             CREATE TABLE IF NOT EXISTS memo_todos (
                 memo_id TEXT NOT NULL,
+                todo_id TEXT NOT NULL DEFAULT '',
                 content TEXT NOT NULL,
                 status TEXT NOT NULL,
                 priority TEXT NOT NULL DEFAULT '',
@@ -144,7 +157,7 @@ impl MemoFile {
                 created_at INTEGER NOT NULL DEFAULT 0,
                 updated_at INTEGER NOT NULL DEFAULT 0,
                 position INTEGER NOT NULL,
-                PRIMARY KEY(memo_id, content),
+                PRIMARY KEY(memo_id, todo_id),
                 FOREIGN KEY(memo_id) REFERENCES memos(id) ON DELETE CASCADE
             );
             CREATE TABLE IF NOT EXISTS memo_agents (
@@ -162,6 +175,8 @@ impl MemoFile {
         )
         .map_err(sqlite_to_io)?;
         self.migrate_memo_relative_paths(conn)?;
+        self.migrate_memo_todo_ids(conn)?;
+        self.migrate_memo_lifecycles(conn)?;
         conn.execute_batch(
             r#"
             INSERT OR IGNORE INTO notebook_tags
@@ -355,6 +370,201 @@ impl MemoFile {
             "#,
         )
         .map_err(sqlite_to_io)
+    }
+
+    /// Upgrade the original `(memo_id, content)` todo key. Content is mutable
+    /// and is not unique (two checklist rows may intentionally have the same
+    /// text), so the durable child key must be `(memo_id, todo_id)`.
+    fn migrate_memo_todo_ids(&self, conn: &Connection) -> std::io::Result<()> {
+        let columns = conn
+            .prepare("PRAGMA table_info(memo_todos)")
+            .and_then(|mut statement| {
+                let rows = statement.query_map([], |row| {
+                    Ok((row.get::<_, String>(1)?, row.get::<_, i64>(5)?))
+                })?;
+                rows.collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(sqlite_to_io)?;
+        if columns.is_empty() {
+            return Ok(());
+        }
+        let has_todo_id = columns.iter().any(|(name, _)| name == "todo_id");
+        if !has_todo_id {
+            conn.execute(
+                "ALTER TABLE memo_todos ADD COLUMN todo_id TEXT NOT NULL DEFAULT ''",
+                [],
+            )
+            .map_err(sqlite_to_io)?;
+        }
+        let todo_id_is_primary_key = columns
+            .iter()
+            .any(|(name, primary_key)| name == "todo_id" && *primary_key > 0);
+        if todo_id_is_primary_key {
+            return Ok(());
+        }
+
+        conn.execute_batch("PRAGMA foreign_keys = OFF; BEGIN IMMEDIATE;")
+            .map_err(sqlite_to_io)?;
+        let result = (|| -> std::io::Result<()> {
+            conn.execute_batch(
+                r#"
+                DROP TABLE IF EXISTS memo_todos_v2;
+                CREATE TABLE memo_todos_v2 (
+                    memo_id TEXT NOT NULL,
+                    todo_id TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    priority TEXT NOT NULL DEFAULT '',
+                    time_range TEXT NOT NULL DEFAULT '',
+                    owner TEXT NOT NULL DEFAULT '',
+                    assignee TEXT NOT NULL DEFAULT '',
+                    created_at INTEGER NOT NULL DEFAULT 0,
+                    updated_at INTEGER NOT NULL DEFAULT 0,
+                    position INTEGER NOT NULL,
+                    PRIMARY KEY(memo_id, todo_id),
+                    FOREIGN KEY(memo_id) REFERENCES memos(id) ON DELETE CASCADE
+                );
+                "#,
+            )
+            .map_err(sqlite_to_io)?;
+            let mut statement = conn
+                .prepare(
+                    "SELECT rowid, memo_id, todo_id, content, status, priority, time_range, owner, assignee, created_at, updated_at, position FROM memo_todos ORDER BY memo_id, position, rowid",
+                )
+                .map_err(sqlite_to_io)?;
+            let rows = statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, String>(6)?,
+                        row.get::<_, String>(7)?,
+                        row.get::<_, String>(8)?,
+                        row.get::<_, i64>(9)?,
+                        row.get::<_, i64>(10)?,
+                        row.get::<_, i64>(11)?,
+                    ))
+                })
+                .map_err(sqlite_to_io)?;
+            let rows = rows.collect::<Result<Vec<_>, _>>().map_err(sqlite_to_io)?;
+            drop(statement);
+            for (
+                rowid,
+                memo_id,
+                _legacy_todo_id,
+                content,
+                status,
+                priority,
+                time_range,
+                owner,
+                assignee,
+                created_at,
+                updated_at,
+                position,
+            ) in rows
+            {
+                // rowid is only used for migrating legacy rows. New and
+                // imported rows receive their marker-derived id before they
+                // reach this table.
+                let todo_id = format!("todo-legacy-{rowid}");
+                conn.execute(
+                    r#"INSERT INTO memo_todos_v2
+                       (memo_id, todo_id, content, status, priority, time_range, owner, assignee, created_at, updated_at, position)
+                       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"#,
+                    params![memo_id, todo_id, content, status, priority, time_range, owner, assignee, created_at, updated_at, position],
+                )
+                .map_err(sqlite_to_io)?;
+            }
+            conn.execute_batch(
+                "DROP TABLE memo_todos; ALTER TABLE memo_todos_v2 RENAME TO memo_todos; CREATE INDEX IF NOT EXISTS idx_memo_todos_memo_id ON memo_todos(memo_id);",
+            )
+            .map_err(sqlite_to_io)?;
+            Ok(())
+        })();
+        let transaction = match result {
+            Ok(()) => conn.execute_batch("COMMIT;").map_err(sqlite_to_io),
+            Err(error) => {
+                let _ = conn.execute_batch("ROLLBACK;");
+                Err(error)
+            }
+        };
+        let restore = conn
+            .execute_batch("PRAGMA foreign_keys = ON;")
+            .map_err(sqlite_to_io);
+        transaction.and(restore)
+    }
+
+    /// Keep revisions after a memo row is deleted, but make their owner an
+    /// explicit lifecycle record. This gives revision history a real foreign
+    /// key without cascading away the state needed to publish a tombstone.
+    fn migrate_memo_lifecycles(&self, conn: &Connection) -> std::io::Result<()> {
+        let has_fk = conn
+            .prepare("PRAGMA foreign_key_list(memo_content_revisions)")
+            .and_then(|mut statement| {
+                let rows = statement.query_map([], |row| row.get::<_, String>(2))?;
+                rows.collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(sqlite_to_io)?
+            .into_iter()
+            .any(|table| table == "memo_lifecycles");
+
+        conn.execute_batch(
+            r#"
+            INSERT OR IGNORE INTO memo_lifecycles
+                (memo_id, notebook_id, relative_path, generation, is_deleted, created_at, updated_at)
+            SELECT id, notebook_id, relative_path, 1, 0, created_at, updated_at FROM memos;
+            INSERT OR IGNORE INTO memo_lifecycles
+                (memo_id, notebook_id, relative_path, generation, is_deleted, created_at, updated_at)
+            SELECT memo_id, notebook_id, '', 1, 1, updated_at, updated_at
+            FROM memo_content_revisions;
+            "#,
+        )
+        .map_err(sqlite_to_io)?;
+        if has_fk {
+            return Ok(());
+        }
+
+        conn.execute_batch("PRAGMA foreign_keys = OFF; BEGIN IMMEDIATE;")
+            .map_err(sqlite_to_io)?;
+        let result = (|| -> std::io::Result<()> {
+            conn.execute_batch(
+                r#"
+                CREATE TABLE memo_content_revisions_v2 (
+                    memo_id TEXT PRIMARY KEY,
+                    notebook_id TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    local_revision INTEGER NOT NULL,
+                    change_id TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    FOREIGN KEY(memo_id) REFERENCES memo_lifecycles(memo_id) ON DELETE RESTRICT
+                );
+                INSERT INTO memo_content_revisions_v2
+                    (memo_id, notebook_id, content_hash, local_revision, change_id, updated_at)
+                SELECT memo_id, notebook_id, content_hash, local_revision, change_id, updated_at
+                FROM memo_content_revisions;
+                DROP TABLE memo_content_revisions;
+                ALTER TABLE memo_content_revisions_v2 RENAME TO memo_content_revisions;
+                CREATE INDEX IF NOT EXISTS idx_memo_content_revisions_notebook
+                    ON memo_content_revisions(notebook_id);
+                "#,
+            )
+            .map_err(sqlite_to_io)
+        })();
+        let transaction = match result {
+            Ok(()) => conn.execute_batch("COMMIT;").map_err(sqlite_to_io),
+            Err(error) => {
+                let _ = conn.execute_batch("ROLLBACK;");
+                Err(error)
+            }
+        };
+        let restore = conn
+            .execute_batch("PRAGMA foreign_keys = ON;")
+            .map_err(sqlite_to_io);
+        transaction.and(restore)
     }
 
     pub(crate) fn open_memo_index_db(&self) -> std::io::Result<Connection> {

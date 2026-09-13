@@ -1,5 +1,8 @@
 import { Node, type Editor, type JSONContent, type MarkdownToken } from "@tiptap/core";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { NodeSelection, Plugin, type EditorState } from "@tiptap/pm/state";
 import type { AgentTypeKey } from "@/types/agent";
+import { createTerminalInlineAtomCaretDecorations } from "@features/editor/extensions/shared/terminal-inline-atom-caret";
 
 export interface ComposerSlashTokenOptions {
   onRemove?: () => void;
@@ -50,8 +53,11 @@ export const ComposerSlashToken = Node.create<ComposerSlashTokenOptions>({
     return ["span", {
       "data-composer-slash": command,
       ...(agentType ? { "data-composer-slash-agent": agentType } : {}),
+      class: "agent-thread-card__slash-token-wrapper",
+    }, "\u200B", ["button", {
       class: "agent-thread-card__slash-token",
-    }, `/${command}`];
+      type: "button",
+    }, `/${command}`], "\u200B"];
   },
 
   markdownTokenizer: {
@@ -92,6 +98,19 @@ export const ComposerSlashToken = Node.create<ComposerSlashTokenOptions>({
 
   addNodeView() {
     return ({ node, view, getPos }) => {
+      // Keep the atom's visual card separate from its caret landing points.
+      // contentEditable=false prevents the browser from treating the button
+      // as a new editable line when the atom is the last child of the
+      // paragraph. The two text-node spacers mirror noteReference and are
+      // deliberately real TextNodes: a span boundary is not a reliable caret
+      // anchor in Chromium/WebKit.
+      const wrapper = document.createElement("span");
+      wrapper.className = "agent-thread-card__slash-token-wrapper";
+      wrapper.contentEditable = "false";
+      wrapper.setAttribute("data-composer-slash", String(node.attrs.command ?? ""));
+      const agentType = String(node.attrs.agentType ?? "");
+      if (agentType) wrapper.setAttribute("data-composer-slash-agent", agentType);
+
       const button = document.createElement("button");
       const command = String(node.attrs.command ?? "");
       button.type = "button";
@@ -100,16 +119,113 @@ export const ComposerSlashToken = Node.create<ComposerSlashTokenOptions>({
       button.title = "点击移除命令";
       button.setAttribute("aria-label", `移除 /${command} 命令`);
       button.addEventListener("mousedown", (event) => event.preventDefault());
-      button.addEventListener("click", () => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         const pos = typeof getPos === "function" ? getPos() : undefined;
         if (pos === undefined) return;
         view.dispatch(view.state.tr.delete(pos, pos + node.nodeSize));
         view.focus();
       });
-      return { dom: button };
+
+      wrapper.append(
+        document.createTextNode("\u200B"),
+        button,
+        document.createTextNode("\u200B"),
+      );
+
+      return {
+        dom: wrapper,
+        contentDOM: null,
+        selectNode: () => wrapper.classList.add("is-selected"),
+        deselectNode: () => wrapper.classList.remove("is-selected"),
+        stopEvent: (event: Event) => !event.type.startsWith("composition"),
+        ignoreMutation: () => true,
+      };
+    };
+  },
+
+  onCreate() {
+    const tr = removeHardBreaksAroundComposerSlashTokens(this.editor.state);
+    if (tr?.docChanged) this.editor.view.dispatch(tr);
+  },
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          decorations: (state) => createTerminalInlineAtomCaretDecorations(
+            state.doc,
+            "composerSlashToken",
+          ),
+        },
+        appendTransaction: (transactions, _oldState, newState) => {
+          if (!transactions.some((transaction) => transaction.docChanged)) return null;
+          return removeHardBreaksAroundComposerSlashTokens(newState);
+        },
+      }),
+    ];
+  },
+
+  addKeyboardShortcuts() {
+    return {
+      Backspace: () => deleteAdjacentComposerSlashToken(this.editor, "before"),
+      Delete: () => deleteAdjacentComposerSlashToken(this.editor, "after"),
     };
   },
 });
+
+function removeHardBreaksAroundComposerSlashTokens(state: EditorState) {
+  const deletions: Array<{ from: number; to: number }> = [];
+  const seen = new Set<string>();
+
+  const pushDeletion = (from: number, to: number) => {
+    const key = `${from}:${to}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    deletions.push({ from, to });
+  };
+
+  state.doc.descendants((node: ProseMirrorNode, pos: number) => {
+    if (node.type.name !== "composerSlashToken") return;
+
+    const $pos = state.doc.resolve(pos);
+    if ($pos.nodeBefore?.type.name === "hardBreak") {
+      pushDeletion(pos - $pos.nodeBefore.nodeSize, pos);
+    }
+
+    const afterPos = pos + node.nodeSize;
+    const $after = state.doc.resolve(afterPos);
+    if ($after.nodeAfter?.type.name === "hardBreak") {
+      pushDeletion(afterPos, afterPos + $after.nodeAfter.nodeSize);
+    }
+  });
+
+  if (deletions.length === 0) return null;
+
+  const tr = state.tr;
+  deletions.reverse().forEach(({ from, to }) => tr.delete(from, to));
+  return tr;
+}
+
+function deleteAdjacentComposerSlashToken(
+  editor: Editor,
+  direction: "before" | "after",
+): boolean {
+  const { selection } = editor.state;
+  if (selection instanceof NodeSelection && selection.node.type.name === "composerSlashToken") {
+    editor.commands.deleteSelection();
+    return true;
+  }
+
+  const { $from } = selection;
+  const node = direction === "before" ? $from.nodeBefore : $from.nodeAfter;
+  if (!node || node.type.name !== "composerSlashToken") return false;
+
+  const from = direction === "before" ? $from.pos - node.nodeSize : $from.pos;
+  editor.commands.deleteRange({ from, to: from + node.nodeSize });
+  return true;
+}
 
 export function getComposerSlashToken(editor: Editor): ComposerSlashTokenValue | null {
   let value: ComposerSlashTokenValue | null = null;

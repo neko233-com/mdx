@@ -166,6 +166,7 @@ function stripCliFailureWrapper(content: string): string {
 }
 
 export function shouldRenderAgentMessage(message: ChatMessage): boolean {
+  if (message.messageType === "agent-commentary") return false;
   return !isEmptyAssistantMessage(message);
 }
 

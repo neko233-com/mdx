@@ -533,6 +533,79 @@ fn register_existing_file_for_other_notebook_does_not_switch_current_notebook() 
 }
 
 #[test]
+fn importing_a_copy_with_a_cross_notebook_key_rekeys_the_file() {
+    let (mf, tmp) = fresh_memo_file();
+    let original = mf
+        .create_memo("Original", "# Original\nbody\n", None)
+        .unwrap();
+
+    let other_dir = tmp.join("other-import");
+    fs::create_dir_all(&other_dir).unwrap();
+    let mut configs = mf.read_notebook_configs().unwrap();
+    configs.push(super::types::NotebookConfig {
+        id: "nb_other".to_string(),
+        name: "Other".to_string(),
+        icon: None,
+        path: format!("{}/", other_dir.display()),
+        is_default: false,
+        sort: 1,
+        created_at: 1,
+        updated_at: 1,
+    });
+    mf.write_notebook_configs(&configs).unwrap();
+
+    let original_path = tmp.join(&original.filename);
+    let imported_path = other_dir.join("Imported.md");
+    fs::copy(&original_path, &imported_path).unwrap();
+    let imported = mf
+        .register_existing_file_for_notebook_id("nb_other", &imported_path)
+        .unwrap();
+
+    assert_ne!(imported.id, original.id);
+    assert_eq!(
+        crate::memo_file::extract_frontmatter_key(&fs::read_to_string(&imported_path).unwrap()),
+        Some(imported.id.clone())
+    );
+    assert!(mf
+        .read_memo_for_notebook_id("nb_test", &original.id)
+        .is_some());
+    assert!(mf
+        .read_memo_for_notebook_id("nb_other", &imported.id)
+        .is_some());
+}
+
+#[test]
+fn startup_reconcile_treats_a_copy_as_new_memo_when_original_still_exists() {
+    let (mf, base) = fresh_memo_file();
+    let original = mf
+        .create_memo("Original", "# Original\nbody\n", None)
+        .unwrap();
+    fs::copy(
+        base.join(&original.filename),
+        base.join("Copied from original.md"),
+    )
+    .unwrap();
+
+    let report = mf
+        .reconcile_notebook_with_disk_bidirectional("nb_test")
+        .unwrap();
+    assert_eq!(report.added, 1);
+    assert_eq!(report.removed, 0);
+
+    let copied = mf
+        .find_memo_by_relative_path("Copied from original.md")
+        .unwrap();
+    assert_ne!(copied.id, original.id);
+    assert_eq!(
+        crate::memo_file::extract_frontmatter_key(
+            &fs::read_to_string(base.join("Copied from original.md")).unwrap()
+        ),
+        Some(copied.id.clone())
+    );
+    assert!(base.join(&original.filename).exists());
+}
+
+#[test]
 fn read_memo_by_id_resolves_global_notebook_location() {
     let (mut mf, tmp) = fresh_memo_file();
     let current_memo = mf.create_memo("Current", "# Current", None).unwrap();
@@ -748,6 +821,39 @@ fn create_memo_writes_memo_row_to_index_db() {
 }
 
 #[test]
+fn reloading_a_memo_preserves_todo_metadata() {
+    let (mf, base) = fresh_memo_file();
+    let memo = mf
+        .create_memo("Todo metadata", "- [ ] keep this task\n", None)
+        .unwrap();
+    let conn = rusqlite::Connection::open(mf.get_index_db_path()).unwrap();
+    conn.execute(
+        "UPDATE memo_todos SET priority = 'high', time_range = 'tomorrow', owner = 'me', assignee = 'you', created_at = 11, updated_at = 12 WHERE memo_id = ?1 AND content = ?2",
+        rusqlite::params![memo.id, "keep this task"],
+    )
+    .unwrap();
+
+    let path = base.join(&memo.filename);
+    let content = fs::read_to_string(&path).unwrap();
+    fs::write(&path, format!("{content}\nextra\n")).unwrap();
+    mf.reload_memo_from_disk(&memo.id).unwrap();
+
+    let todos = mf
+        .read_todo_metadata_entries_for_notebook_id(Some("nb_test"), "createdAt")
+        .unwrap();
+    let todo = todos
+        .into_iter()
+        .find(|todo| todo.memo_id == memo.id)
+        .unwrap();
+    assert_eq!(todo.priority, "high");
+    assert_eq!(todo.time_range, "tomorrow");
+    assert_eq!(todo.owner, "me");
+    assert_eq!(todo.assignee, "you");
+    assert_eq!(todo.created_at, 11);
+    assert_eq!(todo.updated_at, 12);
+}
+
+#[test]
 fn write_index_persists_to_memos_table() {
     let (mf, _tmp) = fresh_memo_file();
     let list = MemoIndexFile {
@@ -761,6 +867,7 @@ fn write_index_persists_to_memos_table() {
             thumbnail: Some("https://example.com/legacy.png".to_string()),
             tags: vec!["legacy".to_string()],
             todos: vec![super::types::TodoItem {
+                id: "todo-legacy".to_string(),
                 content: "todo".to_string(),
                 status: "pending".to_string(),
             }],
@@ -1342,6 +1449,26 @@ fn delete_memo_removes_file_and_index_entry() {
 }
 
 #[test]
+fn delete_memo_removes_version_history() {
+    let (mf, base) = fresh_memo_file();
+    let memo = mf.create_memo("Versioned delete", "x", None).unwrap();
+    let version = mf
+        .create_memo_version(&memo.id, "old body", super::MemoVersionSource::Manual)
+        .unwrap()
+        .unwrap();
+    let version_dir = base.join(".flowix/versions").join(&memo.id);
+    assert!(version_dir.join(format!("{}.md", version.id)).exists());
+    let legacy_dir = base.join(".metadata/versions").join(&memo.id);
+    fs::create_dir_all(&legacy_dir).unwrap();
+    fs::write(legacy_dir.join("legacy.md"), "legacy snapshot").unwrap();
+
+    assert!(mf.delete_memo_result(&memo.id).unwrap());
+    assert!(!version_dir.exists());
+    assert!(!legacy_dir.exists());
+    assert!(mf.read_memo(&memo.id).is_none());
+}
+
+#[test]
 fn delete_memo_handles_orphan_index_entry() {
     let (mf, base) = fresh_memo_file();
     let memo = mf.create_memo("Orphan", "x", None).unwrap();
@@ -1356,6 +1483,37 @@ fn delete_memo_handles_orphan_index_entry() {
 fn delete_memo_returns_false_when_unknown() {
     let (mf, _base) = fresh_memo_file();
     assert!(!mf.delete_memo("zzzzzz"));
+}
+
+#[test]
+fn version_cleanup_retains_recent_unknown_history() {
+    let (mf, base) = fresh_memo_file();
+    let orphan = base.join(".flowix/versions/abcdefgh");
+    fs::create_dir_all(&orphan).unwrap();
+    fs::write(
+        orphan.join("manifest.json"),
+        r#"{"version":1,"memoId":"abcdefgh","versions":[]}"#,
+    )
+    .unwrap();
+
+    let report = mf
+        .cleanup_orphan_memo_versions("nb_test", std::time::SystemTime::now())
+        .unwrap();
+    assert_eq!(report.retained_recent, 1);
+    assert!(orphan.exists());
+}
+
+#[test]
+fn deleting_last_version_removes_empty_history_directory_and_rejects_traversal() {
+    let (mf, base) = fresh_memo_file();
+    let memo = mf.create_memo("Version delete", "x", None).unwrap();
+    let version = mf
+        .create_memo_version(&memo.id, "old body", super::MemoVersionSource::Manual)
+        .unwrap()
+        .unwrap();
+    assert!(!mf.delete_memo_version(&memo.id, "../../outside"));
+    assert!(mf.delete_memo_version(&memo.id, &version.id));
+    assert!(!base.join(".flowix/versions").join(&memo.id).exists());
 }
 
 #[test]

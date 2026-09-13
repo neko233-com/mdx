@@ -4,6 +4,7 @@ import type { AgentTypeKey } from "@/types/agent";
 import { getAgentType } from "@/lib/agent-types";
 import { type ThreadState } from "@features/agent/store/thread-runtime-state";
 import { useAgentRuntimeStore } from "@features/agent/store/agent-runtime-store";
+import { normalizeAgentRuntimeStatus } from "@features/agent/runtime/agent-runtime-status";
 import { useAgentSessionStore } from "@features/agent/store/agent-session-store";
 import { BadgeHoverCard } from "@features/agent/thread-card/badge-hover-card";
 import { computeAgentThreadCardBadgeData } from "@features/agent/thread-card/runtime/run-status-presenter";
@@ -80,15 +81,19 @@ export class AgentThreadCardBadgeChromeController {
 
   syncRuntimeState(): void {
     const type = getAgentType(this.getTypeKey());
-    const status = useAgentRuntimeStore.getState().statusByType[type.key];
-    const unavailable = status?.available === false;
+    const runtime = useAgentRuntimeStore.getState();
+    const status = normalizeAgentRuntimeStatus(
+      runtime.statusByType[type.key],
+      runtime.isChecking,
+    );
+    const unavailable = status.state === "not-installed" || status.state === "not-ready";
     this.badgeEl.classList.toggle("agent-type-badge--unavailable", unavailable);
     this.badgeIcon.classList.toggle(
       "agent-type-badge__icon--unavailable",
       unavailable,
     );
     this.badgeEl.title = unavailable
-      ? (status?.reason ?? `${type.name} is unavailable`)
+      ? (status.reason ?? `${type.name} is unavailable`)
       : type.desc;
   }
 

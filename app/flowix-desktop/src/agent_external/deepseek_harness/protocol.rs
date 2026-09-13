@@ -525,6 +525,7 @@ pub fn adapt_event(message: &Value, delivery_thread_id: &str) -> AdaptedEvent {
                             id: id.to_string(),
                             text,
                             timestamp: chrono::Utc::now().timestamp_millis(),
+                            attachments: Vec::new(),
                         },
                         AgentChunkMetadata {
                             codex_turn_id: turn_id,

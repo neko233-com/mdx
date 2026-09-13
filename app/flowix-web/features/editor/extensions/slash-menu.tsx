@@ -17,6 +17,7 @@ import {
   subscribeEditorRuntimePreferences,
 } from '@features/preferences/public/runtime-api';
 import { useAgentRuntimeStore } from '@features/agent/store/agent-runtime-store';
+import { normalizeAgentRuntimeStatus } from '@features/agent/public/runtime-status-api';
 import { windows } from '@platform/tauri/client';
 import { translate } from '@/lib/i18n';
 import type { AgentTypeKey } from '@/types/agent';
@@ -69,7 +70,8 @@ function isAgentThreadSlashMenuItemId(id: SlashMenuItem['id']): id is AgentThrea
 
 function isAgentRuntimeAvailable(typeKey: AgentTypeKey): boolean {
   if (isAgentTypeComingSoon(typeKey)) return false;
-  return useAgentRuntimeStore.getState().statusByType[typeKey]?.available === true;
+  const runtime = useAgentRuntimeStore.getState();
+  return normalizeAgentRuntimeStatus(runtime.statusByType[typeKey], runtime.isChecking).state === 'ready';
 }
 
 function isAgentSlashEnabled(typeKey: AgentTypeKey): boolean {
@@ -534,16 +536,20 @@ function handleSelect(item: SlashMenuItem): void {
 
   if (isAgentThreadSlashMenuItemId(item.id)) {
     const agentThreadType = AGENT_THREAD_TYPE_BY_SLASH_ID[item.id];
-    const runtimeStatus = useAgentRuntimeStore.getState().statusByType[agentThreadType];
+    const runtime = useAgentRuntimeStore.getState();
+    const runtimeState = normalizeAgentRuntimeStatus(
+      runtime.statusByType[agentThreadType],
+      runtime.isChecking,
+    ).state;
     // DSH is always discoverable in the slash menu. Until availability is
     // positively confirmed (including while status is still loading), guide
     // the user to installation/model setup instead of inserting a dead card.
-    if (agentThreadType === 'deepseek-harness' && runtimeStatus?.available !== true) {
+    if (agentThreadType === 'deepseek-harness' && runtimeState !== 'ready') {
       closeMenu();
       void windows.openPreferences('dsh');
       return;
     }
-    if (runtimeStatus?.available === false) {
+    if (runtimeState === 'not-installed' || runtimeState === 'not-ready') {
       closeMenu();
       return;
     }

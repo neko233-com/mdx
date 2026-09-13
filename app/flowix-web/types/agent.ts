@@ -47,6 +47,17 @@ export interface AgentRuntimeCapabilities {
   supportsThreadArchive?: boolean;
 }
 
+/** Metadata kept with a human message for each uploaded image/file. */
+export interface AgentMessageAttachment {
+  /** Provider input block kind, e.g. `input_image`. */
+  type: "input_image" | "input_file";
+  path: string;
+  name: string;
+  mimeType: string;
+  /** Codex image rendering detail; kept for parity with its input block. */
+  detail?: "high";
+}
+
 /** Structured diagnostics from an external CLI/provider. Raw wire fields are
  * snake_case; the event/message layers expose this normalized camelCase form.
  */
@@ -225,6 +236,8 @@ export interface ChatMessage {
   /** Provider-owned timeline/control message, distinct from human content. */
   messageType?: AgentMessageType;
   content: string;
+  /** Attachments submitted with this user message. Absent on legacy messages. */
+  attachments?: AgentMessageAttachment[];
   /** Display-only notice kind for provider-specific runtime failures. */
   notice?: "deepseek-harness-reconnect-failed";
   errorDetails?: AgentErrorDetails;
@@ -258,6 +271,8 @@ export interface ChatMessage {
 
 /** Display categories for messages that are not ordinary human/agent text. */
 export type AgentMessageType =
+  /** Provider commentary/progress item, kept for reconciliation but hidden from the transcript. */
+  | "agent-commentary"
   | "context-compaction"
   | "goal-round"
   | "goal-complete"
@@ -312,6 +327,7 @@ export interface AgentChunkUserMessage {
   run_id?: string;
   message_id?: string;
   source_message_id?: string;
+  attachments?: AgentMessageAttachment[];
 }
 
 export interface AgentChunkText {
@@ -590,6 +606,7 @@ interface AgentEventBase {
   runId: string;
   timestamp: number;
   messageId?: string;
+  messageType?: AgentMessageType;
   messagePhase?: "started" | "updated" | "completed";
   contentMode?: "delta" | "snapshot";
   sourceTimestamp?: number;
@@ -613,6 +630,7 @@ export type AgentEvent =
       id: string;
       text: string;
       messageType?: AgentMessageType;
+      attachments?: AgentMessageAttachment[];
     })
   | (AgentEventBase & { kind: "final_message"; text: string })
   | (AgentEventBase & { kind: "reasoning_delta"; text: string })

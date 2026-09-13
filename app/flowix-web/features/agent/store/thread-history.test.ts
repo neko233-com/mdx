@@ -46,6 +46,25 @@ describe("mergeMessagesForThreadRender", () => {
     ).toBe(true);
   });
 
+  it("does not require hidden commentary in the terminal history snapshot", () => {
+    expect(
+      historyCoversLiveTurn(
+        [
+          message("user-provider", "user", "ask", "2026-01-01T00:00:00Z"),
+          message("assistant-provider", "assistant", "done", "2026-01-01T00:00:01Z"),
+        ],
+        [
+          message("user-live", "user", "ask", "2026-01-01T00:00:00Z"),
+          {
+            ...message("commentary-live", "assistant", "checking", "2026-01-01T00:00:00Z"),
+            messageType: "agent-commentary",
+          },
+          message("assistant-live", "assistant", "done", "2026-01-01T00:00:01Z"),
+        ],
+      ),
+    ).toBe(true);
+  });
+
   it("removes the system context from historical user messages", () => {
     expect(filterRenderableHistoryMessages([
       message(
@@ -69,6 +88,18 @@ describe("mergeMessagesForThreadRender", () => {
       ),
     ])).toEqual([
       message("u2", "user", "你好", "2026-01-01T00:00:00.000Z"),
+    ]);
+  });
+
+  it("removes provider commentary from renderable messages", () => {
+    expect(filterRenderableHistoryMessages([
+      {
+        ...message("commentary", "assistant", "checking", "2026-01-01T00:00:00.000Z"),
+        messageType: "agent-commentary",
+      },
+      message("final", "assistant", "done", "2026-01-01T00:00:01.000Z"),
+    ])).toEqual([
+      message("final", "assistant", "done", "2026-01-01T00:00:01.000Z"),
     ]);
   });
 

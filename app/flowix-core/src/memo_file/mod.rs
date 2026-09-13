@@ -59,9 +59,9 @@ mod versions;
 
 // 公开 API re-export — 跟旧 `memo_file.rs` 的 pub use 边界一致。
 pub use derivation::{
-    apply_derived_memo_fields, extract_agent_threads_from_body, extract_title_and_preview,
-    extract_todos_from_body, normalize_search_tag_filter, normalize_tag_path,
-    tag_path_matches_filter,
+    apply_derived_memo_fields, ensure_todo_ids_in_content, extract_agent_threads_from_body,
+    extract_title_and_preview, extract_todos_from_body, normalize_search_tag_filter,
+    normalize_tag_path, tag_path_matches_filter,
 };
 pub use file_io::{
     atomic_create_bytes, atomic_write_bytes, rename_file_noclobber, FileWriteOutcome,
@@ -81,12 +81,12 @@ pub use ops::{
 };
 pub use types::{
     AgentThreadItem, DeleteTagReport, Memo, MemoColor, MemoIndexEntry, MemoIndexFile, MemoLocation,
-    MemoMetadataFile, MemoTag, MemoTodoEntry, MoveTagReport, Notebook, NotebookConfig,
-    NotebookManifest, ReconcileReport, TodoItem,
+    MemoMetadataFile, MemoTag, MemoTodoEntry, MemoVersionCleanupReport, MoveTagReport, Notebook,
+    NotebookConfig, NotebookManifest, ReconcileReport, TodoItem,
 };
 pub use versions::{
     MemoVersionManifest, MemoVersionMeta, MemoVersionSource, MEMO_AUTO_VERSION_INTERVAL_MS,
-    MEMO_VERSION_LIMIT,
+    MEMO_ORPHAN_VERSION_RETENTION, MEMO_VERSION_LIMIT,
 };
 
 /// 笔记本目录 / 笔记文件的存储管理。

@@ -536,6 +536,7 @@ fn base_message(id: String, role: &str, content: String, timestamp: String) -> C
         codex_turn_id: None,
         turn_duration_ms: None,
         source_sequence: None,
+        attachments: None,
     }
 }
 

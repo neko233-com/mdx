@@ -148,6 +148,7 @@ fn user_message_chunk(thread_id: &str, message: &AgentUserMessage, run_id: &str)
             .clone()
             .unwrap_or_else(|| message.content.clone()),
         timestamp: chrono::Utc::now().timestamp_millis(),
+        attachments: message.message_attachments(),
     }
 }
 

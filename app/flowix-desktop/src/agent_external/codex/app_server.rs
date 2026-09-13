@@ -25,13 +25,16 @@ use crate::agent_external::{
 };
 use crate::agent_session::{ChatMessage, ThreadInfo, ThreadManager, ThreadMessagesPage};
 use crate::agent_types::AgentId;
-use crate::agent_wire::{AgentChunk, AgentRuntimeConfig, AgentUserMessage, RunInfo};
+use crate::agent_wire::{
+    AgentChunk, AgentMessageAttachment, AgentRuntimeConfig, AgentUserMessage, RunInfo,
+};
 
 const INITIALIZE_METHOD: &str = "initialize";
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const MAX_PENDING_TURN_NOTIFICATIONS: usize = 4096;
 const CONTEXT_COMPACTION_MESSAGE_TYPE: &str = "context-compaction";
 const CODEX_COMMAND_MESSAGE_TYPE: &str = "codex-command";
+const CODEX_COMMENTARY_MESSAGE_TYPE: &str = "agent-commentary";
 const MIN_PAGINATED_CODEX_VERSION: &str = "0.150.0";
 
 fn is_image_attachment(path: &str) -> bool {
@@ -2601,7 +2604,7 @@ fn completed_message_chunk(
         ));
     }
 
-    let text = match kind {
+    let raw_text = match kind {
         // Relay every completed userMessage item, not just steers. The
         // provider item id turns the optimistic `user-<run>` row into a
         // history-stable identity mid-turn (the frontend adopts it in
@@ -2628,10 +2631,15 @@ fn completed_message_chunk(
     // versions echo the slash text as a completed user item; suppress that
     // echo so the product-owned command row is not duplicated.
     if kind == "userMessage"
-        && (is_codex_native_command_text(&text) || is_codex_goal_internal_context(&text))
+        && (is_codex_native_command_text(&raw_text) || is_codex_goal_internal_context(&raw_text))
     {
         return None;
     }
+    let text = if kind == "userMessage" {
+        visible_user_text(&raw_text)
+    } else {
+        raw_text
+    };
     if !has_visible_text(&text) {
         return None;
     }
@@ -2645,6 +2653,7 @@ fn completed_message_chunk(
                 .to_string(),
             text,
             timestamp: chrono::Utc::now().timestamp_millis(),
+            attachments: app_server_image_attachments(item.get("content")),
         }
     } else if kind == "agentMessage" {
         AgentChunk::Text {
@@ -2659,6 +2668,7 @@ fn completed_message_chunk(
     };
     let mut metadata = item_metadata(item);
     metadata.codex_turn_id = turn_id.map(str::to_string);
+    metadata.message_type = codex_message_type(item);
     // Completed item notifications do not repeat turnId in the item. The
     // caller fills it from the notification context before emitting.
     metadata.message_phase = Some("completed");
@@ -2781,7 +2791,8 @@ fn canonical_codex_tool_name(kind: &str) -> Option<&'static str> {
         // `collabToolCall` is current; retain the older spelling as an alias.
         "collabToolCall" | "collabAgentToolCall" => Some("collab_agent_tool_call"),
         "webSearch" => Some("web_search"),
-        "imageView" | "imageGeneration" => Some("image_generation"),
+        "imageView" => Some("view_image"),
+        "imageGeneration" => Some("image_generation"),
         _ => None,
     }
 }
@@ -3048,10 +3059,13 @@ fn app_server_item_message(
         .unwrap_or_else(|| format!("codex-{turn_index}-{item_index}"));
     let mut message = app_server_base_message(id, timestamp);
     message.codex_turn_id = turn_id.map(str::to_string);
+    message.message_type = codex_message_type(item).map(str::to_string);
     match kind {
         "userMessage" => {
             message.role = "user".to_string();
-            message.content = app_server_content_text(item.get("content"));
+            message.attachments = Some(app_server_image_attachments(item.get("content")))
+                .filter(|attachments| !attachments.is_empty());
+            message.content = visible_user_text(&app_server_content_text(item.get("content")));
             if is_codex_native_command_text(&message.content)
                 || is_codex_goal_internal_context(&message.content)
             {
@@ -3141,7 +3155,89 @@ fn app_server_base_message(id: String, timestamp: &str) -> ChatMessage {
         codex_turn_id: None,
         turn_duration_ms: None,
         source_sequence: None,
+        attachments: None,
     }
+}
+
+fn app_server_image_attachments(value: Option<&Value>) -> Vec<AgentMessageAttachment> {
+    let Some(parts) = value.and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    parts
+        .iter()
+        .enumerate()
+        .filter_map(|(index, part)| {
+            let kind = part.get("type").and_then(Value::as_str)?;
+            if kind != "localImage" && kind != "image" && kind != "input_image" {
+                return None;
+            }
+            let path = part
+                .get("path")
+                .or_else(|| part.get("uri"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let name = part
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .or_else(|| {
+                    std::path::Path::new(&path)
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(str::to_string)
+                })
+                .unwrap_or_else(|| format!("image-{}", index + 1));
+            let mime_type = part
+                .get("mimeType")
+                .or_else(|| part.get("mediaType"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    match std::path::Path::new(&path)
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .map(str::to_ascii_lowercase)
+                        .as_deref()
+                    {
+                        Some("jpg" | "jpeg") => "image/jpeg",
+                        Some("webp") => "image/webp",
+                        Some("gif") => "image/gif",
+                        _ => "image/png",
+                    }
+                    .to_string()
+                });
+            Some(AgentMessageAttachment {
+                r#type: "input_image".to_string(),
+                path,
+                name,
+                mime_type,
+                detail: Some(
+                    part.get("detail")
+                        .and_then(Value::as_str)
+                        .unwrap_or("high")
+                        .to_string(),
+                ),
+            })
+        })
+        .collect()
+}
+
+fn codex_message_type(item: &Value) -> Option<&'static str> {
+    (item.get("phase").and_then(Value::as_str) == Some("commentary"))
+        .then_some(CODEX_COMMENTARY_MESSAGE_TYPE)
+}
+
+fn visible_user_text(content: &str) -> String {
+    const MARKERS: [&str; 2] = ["<## context prompt ##>", "[flowix workspace context]"];
+    let normalized = content.to_ascii_lowercase();
+    let end = MARKERS
+        .iter()
+        .filter_map(|marker| normalized.find(marker))
+        .min()
+        .unwrap_or(content.len());
+    content[..end].trim_end().to_string()
 }
 
 fn app_server_content_text(value: Option<&Value>) -> String {
@@ -3275,15 +3371,24 @@ mod tests {
     #[test]
     fn accepts_current_app_server_tool_item_names() {
         let collab = json!({ "id": "item-c", "type": "collabToolCall", "tool": "spawn_agent" });
-        let image = json!({ "id": "item-i", "type": "imageView", "path": "/tmp/image.png" });
+        let image_view =
+            json!({ "id": "item-view", "type": "imageView", "path": "/tmp/image.png" });
+        let image_generation = json!({ "id": "item-generation", "type": "imageGeneration" });
 
         assert_eq!(
             tool_identity(&collab),
             Some(("item-c".to_string(), "collab_agent_tool_call".to_string()))
         );
         assert_eq!(
-            tool_identity(&image),
-            Some(("item-i".to_string(), "image_generation".to_string()))
+            tool_identity(&image_view),
+            Some(("item-view".to_string(), "view_image".to_string()))
+        );
+        assert_eq!(
+            tool_identity(&image_generation),
+            Some((
+                "item-generation".to_string(),
+                "image_generation".to_string()
+            ))
         );
     }
 
@@ -3367,6 +3472,47 @@ mod tests {
             tool_identity(&json!({ "id": "message-1", "type": "agentMessage" })),
             None
         );
+    }
+
+    #[test]
+    fn projects_codex_commentary_as_hidden_agent_message_type() {
+        let message = app_server_item_message(
+            &json!({
+                "id": "commentary-1",
+                "type": "agentMessage",
+                "text": "Checking the workspace.",
+                "phase": "commentary"
+            }),
+            "2026-01-01T00:00:00Z",
+            0,
+            0,
+            Some("turn-1"),
+        )
+        .expect("commentary message");
+
+        assert_eq!(message.role, "assistant");
+        assert_eq!(
+            message.message_type.as_deref(),
+            Some(CODEX_COMMENTARY_MESSAGE_TYPE)
+        );
+    }
+
+    #[test]
+    fn strips_workspace_context_from_codex_history_user_message() {
+        let message = app_server_item_message(
+            &json!({
+                "id": "user-1",
+                "type": "userMessage",
+                "content": "question\n<## CONTEXT PROMPT ##>\nprivate workspace data"
+            }),
+            "2026-01-01T00:00:00Z",
+            0,
+            0,
+            Some("turn-1"),
+        )
+        .expect("user message");
+
+        assert_eq!(message.content, "question");
     }
 
     #[test]

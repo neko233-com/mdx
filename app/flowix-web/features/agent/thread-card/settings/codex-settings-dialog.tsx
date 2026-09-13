@@ -17,7 +17,7 @@ function CodexSettingsDialog({ notebookPath, onClose }: { notebookPath: string; 
         <button type="button" aria-label="关闭" className="absolute right-5 top-5 z-20 flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--divider)] bg-[var(--card)] text-[var(--muted-foreground)] shadow-sm transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)]" onClick={close}>
           <X className="h-4 w-4" strokeWidth={1.8} />
         </button>
-        <div className="min-h-0 flex-1 overflow-y-auto p-6 [scrollbar-gutter:stable]">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 [scrollbar-gutter:stable]">
           <div className="mb-10 w-full">
             <CodexSettingsSection notebookPath={notebookPath} />
           </div>

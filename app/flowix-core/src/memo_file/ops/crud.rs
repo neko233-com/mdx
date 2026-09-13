@@ -578,10 +578,10 @@ impl MemoFile {
     pub fn delete_memo_result(&self, id: &str) -> std::io::Result<bool> {
         let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
 
-        let path = self.read_current_memo(id).and_then(|m| {
+        let memo = self.read_current_memo(id);
+        let path = memo.as_ref().and_then(|m| {
             notebook_path_from_relative(&self.get_memo_base(), &m.relative_path).ok()
         });
-
         let removed = match path {
             Some(p) if p.exists() => {
                 fs::remove_file(&p)?;
@@ -593,6 +593,10 @@ impl MemoFile {
             }
         };
         if removed {
+            // Delete the note first. If history cleanup fails, the stale index
+            // row remains available for a retry/reconcile and the snapshots
+            // are still recoverable.
+            self.remove_memo_versions_for_notebook(&self.get_memo_base(), id)?;
             MemoFile::sync_index_on_delete_locked(self, id)?;
         }
         Ok(removed)
@@ -616,6 +620,7 @@ impl MemoFile {
             true
         };
         if removed {
+            self.remove_memo_versions_for_notebook(Path::new(&location.notebook.path), id)?;
             MemoFile::sync_index_on_delete_for_notebook_id_locked(self, &location.notebook.id, id)?;
         }
         Ok(removed)
@@ -643,6 +648,7 @@ impl MemoFile {
         if path.exists() {
             fs::remove_file(&path)?;
         }
+        self.remove_memo_versions_for_notebook(&base, id)?;
         MemoFile::sync_index_on_delete_for_notebook_id_locked(self, notebook_id, id)?;
         Ok(true)
     }

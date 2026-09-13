@@ -23,6 +23,7 @@ import { resolvePreset, type PropertyKind } from '@features/document/properties/
 import { DateValueInput } from '@features/document/components/note-properties/date-value-input';
 import { getCurrentAppLanguage, subscribeAppLanguage } from '@features/preferences/public/runtime-api';
 import { canonicalizePropertyKey } from '@features/document/properties/property-key';
+import { isImeKeyboardEvent } from '@/lib/input-method';
 
 function createElement<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -550,8 +551,10 @@ export class FrontmatterPropertyNodeView implements NodeView {
       availableWidth,
     )}px`;
 
+    let locallyComposing = false;
     const handleKeyDown = (event: KeyboardEvent) => {
       const keyboardEvent = event;
+      if (isImeKeyboardEvent(keyboardEvent, locallyComposing)) return;
       if (keyboardEvent.key === 'Escape') {
         keyboardEvent.preventDefault();
         this.closePropertyEditor();
@@ -951,6 +954,12 @@ export class FrontmatterPropertyNodeView implements NodeView {
       input.spellcheck = false;
       input.setAttribute('aria-label', 'key');
       input.setAttribute('data-property-key', property.key);
+      input.addEventListener('compositionstart', () => {
+        locallyComposing = true;
+      });
+      input.addEventListener('compositionend', () => {
+        locallyComposing = false;
+      });
       keyTrigger.type = 'button';
       keyTrigger.setAttribute('aria-haspopup', 'listbox');
       keyTrigger.setAttribute('aria-expanded', 'false');
@@ -1398,23 +1407,25 @@ export class FrontmatterPropertyNodeView implements NodeView {
       error.title = parsed.parseError;
       container.append(error);
     } else {
-      const list = createElement('div', 'frontmatter-property__list');
-      parsed.properties.forEach((property) => {
-        list.append(this.renderPropertyRow(
-          property,
-          isFrontmatterPropertyFlowSequence(String(this.node.attrs.yamlContent ?? ''), property.key),
-        ));
-      });
-      if (this.validationError) {
-        const validation = createElement(
-          'span',
-          'frontmatter-property__validation',
-          this.validationError,
-        );
-        validation.title = this.validationError;
-        list.append(validation);
+      if (parsed.properties.length > 0) {
+        const list = createElement('div', 'frontmatter-property__list');
+        parsed.properties.forEach((property) => {
+          list.append(this.renderPropertyRow(
+            property,
+            isFrontmatterPropertyFlowSequence(String(this.node.attrs.yamlContent ?? ''), property.key),
+          ));
+        });
+        if (this.validationError) {
+          const validation = createElement(
+            'span',
+            'frontmatter-property__validation',
+            this.validationError,
+          );
+          validation.title = this.validationError;
+          list.append(validation);
+        }
+        container.append(list);
       }
-      container.append(list);
       this.renderAddProperty(container);
     }
 

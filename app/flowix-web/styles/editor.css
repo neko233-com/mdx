@@ -171,6 +171,18 @@
   display: none;
 }
 
+/* Composer slash atoms use the same terminal caret decoration as note and
+ * file-reference atoms. The composer is excluded from the document-editor
+ * rule above, so keep the anchor visible here as an inline landing point. */
+.markdown-editor .agent-thread-card__composer-editor .terminal-inline-atom-caret-anchor {
+  display: inline;
+}
+
+.markdown-editor .agent-thread-card__composer-editor .terminal-inline-atom-caret-anchor + br.ProseMirror-trailingBreak,
+.markdown-editor .agent-thread-card__composer-editor .terminal-inline-atom-caret-anchor + img.ProseMirror-separator + br.ProseMirror-trailingBreak {
+  display: none;
+}
+
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) strong:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   font-weight: 700;
 }

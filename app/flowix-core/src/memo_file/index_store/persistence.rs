@@ -68,6 +68,11 @@ impl MemoFile {
         notebook_id: &str,
         entry: &MemoIndexEntry,
     ) -> std::io::Result<()> {
+        // Todo metadata is user-visible state kept in the local index. Read it
+        // before deleting the derived rows so a content refresh can preserve
+        // priority/owner/assignee and timestamps.
+        let existing_todos = Self::read_existing_todo_metadata_in_tx(tx, &entry.id)?;
+
         tx.execute(
             "DELETE FROM memo_tags WHERE memo_id = ?1",
             params![entry.id],
@@ -113,7 +118,6 @@ impl MemoFile {
             )
             .map_err(sqlite_to_io)?;
         }
-        let existing_todos = Self::read_existing_todo_metadata_in_tx(tx, &entry.id)?;
         let now = chrono::Utc::now().timestamp_millis();
 
         for (position, todo) in entry.todos.iter().enumerate() {
@@ -132,11 +136,12 @@ impl MemoFile {
             tx.execute(
                 r#"
                 INSERT OR REPLACE INTO memo_todos
-                    (memo_id, content, status, priority, time_range, owner, assignee, created_at, updated_at, position)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                    (memo_id, todo_id, content, status, priority, time_range, owner, assignee, created_at, updated_at, position)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                 "#,
                 params![
                     entry.id,
+                    if todo.id.is_empty() { format!("todo-{}", position) } else { todo.id.clone() },
                     todo.content,
                     todo.status,
                     existing.map(|entry| entry.priority.as_str()).unwrap_or(""),
@@ -177,7 +182,7 @@ impl MemoFile {
         let mut stmt = tx
             .prepare(
                 r#"
-                SELECT content, status, memo_id, priority, time_range, owner, assignee, created_at, updated_at
+                SELECT todo_id, content, status, memo_id, priority, time_range, owner, assignee, created_at, updated_at
                 FROM memo_todos
                 WHERE memo_id = ?1
                 "#,
@@ -186,15 +191,16 @@ impl MemoFile {
         let rows = stmt
             .query_map(params![memo_id], |row| {
                 Ok(MemoTodoEntry {
-                    content: row.get(0)?,
-                    status: row.get(1)?,
-                    memo_id: row.get(2)?,
-                    priority: row.get(3)?,
-                    time_range: row.get(4)?,
-                    owner: row.get(5)?,
-                    assignee: row.get(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
+                    todo_id: row.get(0)?,
+                    content: row.get(1)?,
+                    status: row.get(2)?,
+                    memo_id: row.get(3)?,
+                    priority: row.get(4)?,
+                    time_range: row.get(5)?,
+                    owner: row.get(6)?,
+                    assignee: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
                 })
             })
             .map_err(sqlite_to_io)?;
@@ -488,14 +494,15 @@ impl MemoFile {
     ) -> std::io::Result<Vec<TodoItem>> {
         let mut stmt = conn
             .prepare(
-                "SELECT content, status FROM memo_todos WHERE memo_id = ?1 ORDER BY position ASC",
+                "SELECT todo_id, content, status FROM memo_todos WHERE memo_id = ?1 ORDER BY position ASC",
             )
             .map_err(sqlite_to_io)?;
         let rows = stmt
             .query_map(params![memo_id], |row| {
                 Ok(TodoItem {
-                    content: row.get(0)?,
-                    status: row.get(1)?,
+                    id: row.get(0)?,
+                    content: row.get(1)?,
+                    status: row.get(2)?,
                 })
             })
             .map_err(sqlite_to_io)?;

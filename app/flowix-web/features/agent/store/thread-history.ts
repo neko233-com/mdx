@@ -57,13 +57,17 @@ export function filterRenderableHistoryMessages(
   messages: ChatMessage[],
 ): ChatMessage[] {
   return messages
-    .filter((m) => !isEmptyAssistantMessage(m))
+    .filter((m) => !isEmptyAssistantMessage(m) && !isHiddenAgentCommentary(m))
     .map((message) => {
       if (message.role !== "user") return message;
       const content = stripSystemBlock(message.content || "");
       return content === message.content ? message : { ...message, content };
     })
     .filter((message) => message.role !== "user" || message.content.trim() !== "");
+}
+
+function isHiddenAgentCommentary(message: ChatMessage): boolean {
+  return message.messageType === "agent-commentary";
 }
 
 // Cheap content fingerprint used as a Map key for dedup. Two independent
@@ -133,11 +137,13 @@ export function historyCoversLiveTurn(
   );
   const historyVisibleRows = new Map<string, number>();
   for (const message of history) {
+    if (isHiddenAgentCommentary(message)) continue;
     if (message.role !== "assistant" && message.role !== "reasoning") continue;
     const key = messageContentStableKey(message);
     if (key) historyVisibleRows.set(key, (historyVisibleRows.get(key) ?? 0) + 1);
   }
   for (const message of live) {
+    if (isHiddenAgentCommentary(message)) continue;
     if (message.role === "tool" && message.toolCallId) {
       if (!historyToolIds.has(toolCallIdentityKey(message.toolCallId))) return false;
       continue;

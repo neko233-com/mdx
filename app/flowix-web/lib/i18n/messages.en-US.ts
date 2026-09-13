@@ -425,6 +425,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "agent.status.available": "Available",
     "agent.status.checking": "Checking...",
     "agent.status.notChecked": "Not checked",
+    "agent.status.notInstalled": "Not installed",
     "agent.status.setup": "Setup",
     "agent.status.comingSoon": "Coming soon",
 
@@ -688,7 +689,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "agent.model.menu": "Model",
     "agent.model.title": "Model",
     "agent.workspace.title": "Workspace",
-    "agent.workspace.access": "Access",
+    "agent.workspace.access": "Available",
     "agent.workspace.unset": "Not set",
     "agent.workspace.settings": "Settings",
     "agent.reasoningDepth.title": "Depth",
@@ -1054,7 +1055,6 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "notebook.edit.remove": "Remove",
 
     // document
-    "document.empty": "Select a note",
     "document.file.unavailable": "This file cannot be viewed",
     "document.file.loading": "Loading file…",
     "document.file.reveal": "Show in Finder",

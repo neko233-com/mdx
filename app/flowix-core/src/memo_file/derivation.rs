@@ -673,19 +673,108 @@ pub fn extract_todos_from_body(content: &str) -> Vec<TodoItem> {
 
     TODO_RE
         .captures_iter(extract_body_content(content))
-        .filter_map(|captures| {
-            let content = decode_html_entities(captures.get(2)?.as_str().trim());
+        .enumerate()
+        .filter_map(|(position, captures)| {
+            let raw_content = captures.get(2)?.as_str().trim();
+            let (raw_content, marker_id) = strip_todo_id_marker(raw_content);
+            let content = decode_html_entities(raw_content);
             if content.trim().is_empty() {
                 return None;
             }
 
             let checked = captures.get(1)?.as_str().eq_ignore_ascii_case("x");
+            // The marker is the durable identity. The fallback is only for
+            // legacy/unmarked files and is replaced with a marker by the
+            // index write path. Include the occurrence so duplicate task text
+            // can still be represented during that one-time migration.
+            let id = marker_id
+                .unwrap_or_else(|| format!("todo-{:016x}", todo_fallback_id(&content, position)));
             Some(TodoItem {
+                id,
                 content,
                 status: if checked { "completed" } else { "pending" }.to_string(),
             })
         })
         .collect()
+}
+
+fn strip_todo_id_marker(content: &str) -> (&str, Option<String>) {
+    static TODO_MARKER_RE: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"(?s)\s*<!--\s*flowix-todo-id:\s*([A-Za-z0-9_-]{1,80})\s*-->\s*$").unwrap()
+    });
+    let Some(captures) = TODO_MARKER_RE.captures(content) else {
+        return (content, None);
+    };
+    let marker = captures.get(1).map(|value| value.as_str().to_string());
+    let content_end = captures
+        .get(0)
+        .map(|value| value.start())
+        .unwrap_or(content.len());
+    (&content[..content_end], marker)
+}
+
+fn todo_fallback_id(content: &str, position: usize) -> u64 {
+    let mut hash = 14695981039346656037u64;
+    for byte in content.bytes().chain(position.to_le_bytes()) {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(1099511628211);
+    }
+    hash
+}
+
+/// Add an invisible marker to every unmarked Markdown checkbox line.
+///
+/// The marker is stored in the Markdown file, so copying or renaming a note
+/// keeps task identity without making the rebuildable SQLite index a source of
+/// truth. Existing markers are left byte-for-byte intact.
+pub fn ensure_todo_ids_in_content(content: &str) -> String {
+    static TODO_LINE_RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"^\s*-\s*\[([ xX])\]\s*(.+)$").unwrap());
+    let body_start = super::frontmatter::FRONTMATTER_RE
+        .captures(content)
+        .and_then(|captures| captures.get(2).map(|body| body.start()))
+        .unwrap_or(0);
+    let (prefix, body) = content.split_at(body_start);
+    let mut output = String::with_capacity(content.len());
+    output.push_str(prefix);
+
+    for (position, line) in body.split_inclusive('\n').enumerate() {
+        let (line_content, line_ending) = if let Some(value) = line.strip_suffix("\r\n") {
+            (value, "\r\n")
+        } else if let Some(value) = line.strip_suffix('\n') {
+            (value, "\n")
+        } else {
+            (line, "")
+        };
+        let Some(captures) = TODO_LINE_RE.captures(line_content) else {
+            output.push_str(line);
+            continue;
+        };
+        let raw_content = captures
+            .get(2)
+            .map(|value| value.as_str().trim())
+            .unwrap_or_default();
+        let (task_content, marker_id) = strip_todo_id_marker(raw_content);
+        if task_content.trim().is_empty() || marker_id.is_some() {
+            output.push_str(line);
+            continue;
+        }
+        let normalized = decode_html_entities(task_content).trim().to_string();
+        if normalized.is_empty() {
+            output.push_str(line);
+            continue;
+        }
+        let id = format!("todo-{:016x}", todo_fallback_id(&normalized, position));
+        let marker_start = captures
+            .get(2)
+            .map(|value| value.start())
+            .unwrap_or(line_content.len());
+        output.push_str(&line_content[..marker_start]);
+        output.push_str(task_content.trim_end());
+        output.push_str(&format!(" <!-- flowix-todo-id:{id} -->"));
+        output.push_str(line_ending);
+    }
+    output
 }
 
 pub fn extract_agent_threads_from_body(content: &str) -> Vec<AgentThreadItem> {

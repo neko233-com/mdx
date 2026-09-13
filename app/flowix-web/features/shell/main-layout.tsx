@@ -40,10 +40,8 @@ import { useI18n } from '@/lib/i18n';
 import type { DshRuntimeInstallerState } from '@features/preferences/public/system-api';
 import type { AppUpdaterState } from '@features/shell/hooks/use-app-updater';
 import {
-  WorkColumnSurfaceHost,
-  getWorkColumnSurfaceDefinition,
-  resolveWorkColumnSurface,
-  surfaceSupports,
+  WorkColumnContentHost,
+  resolveWorkColumnPresentation,
 } from '@features/surface/public/shell-api';
 import type { PluginDescriptor } from '@platform/tauri/client';
 import {
@@ -388,7 +386,7 @@ export function MainLayout({
         },
       }
     : null;
-  const workColumnSurface = resolveWorkColumnSurface({
+  const workColumnPresentation = resolveWorkColumnPresentation({
     navigation: navigationState,
     document: workColumnDocument,
     pluginWorkbench: activePlugin
@@ -401,17 +399,19 @@ export function MainLayout({
       : null,
     emptyMessage: t('shell.emptyDocument'),
   });
-  const workColumnSurfaceDefinition = getWorkColumnSurfaceDefinition(workColumnSurface);
-  const isAgentConversationDetail = workColumnSurface.kind === 'agent-conversation';
-  const isEditableDocumentSurface = workColumnSurface.kind === 'markdown';
+  const isAgentConversationDetail = workColumnPresentation.header.kind === 'agent';
   const documentTitlebarProps = {
     reserveWindowsControls: !browserColumnVisible,
     document: {
       // An artifact is allowed to sit above an existing editable session.
       // Do not expose that underlying memo's actions in the artifact chrome;
       // the workColumn target, not the DocumentStore session, owns the view.
-      currentMemo: isEditableDocumentSurface ? currentMemo : null,
-      externalFilePath: isEditableDocumentSurface && isExternalDocument ? currentDocumentPath : null,
+      currentMemo: workColumnPresentation.header.kind === 'document'
+        ? workColumnPresentation.header.document.currentMemo
+        : null,
+      externalFilePath: workColumnPresentation.header.kind === 'document'
+        ? workColumnPresentation.header.document.externalFilePath
+        : null,
     },
     sidebar: {
       hidden: isMemoListHidden,
@@ -427,10 +427,10 @@ export function MainLayout({
       onNavigateForward: handleNavigateForward,
     },
     contentCapabilities: {
-      copyFullText: surfaceSupports(workColumnSurface, 'copy-content'),
-      exportContent: surfaceSupports(workColumnSurface, 'export-content'),
-      saveAsTemplate: surfaceSupports(workColumnSurface, 'save-template'),
-      versionHistory: surfaceSupports(workColumnSurface, 'version-history'),
+      copyFullText: workColumnPresentation.capabilities.includes('copy-content'),
+      exportContent: workColumnPresentation.capabilities.includes('export-content'),
+      saveAsTemplate: workColumnPresentation.capabilities.includes('save-template'),
+      versionHistory: workColumnPresentation.capabilities.includes('version-history'),
     },
     actions: {
       onCopyLink: handleCopyLink,
@@ -621,9 +621,9 @@ export function MainLayout({
               </button>
             )}
             {/* Fixed top navigation bar */}
-            {workColumnSurfaceDefinition.chrome === 'agent' && workColumnSurface.kind === 'agent-conversation' ? (
+            {workColumnPresentation.header.kind === 'agent' ? (
               <AgentConversationTitlebar
-                instanceId={workColumnSurface.instanceId}
+                instanceId={workColumnPresentation.header.instanceId}
                 reserveWindowsControls={!browserColumnVisible}
                 isMiddleColumnCollapsed={isMemoListHidden}
                 isSidebarVisible={noteNavigationVisible}
@@ -643,7 +643,7 @@ export function MainLayout({
 
             {/* Content area */}
             <div className="relative isolate flex-1 min-w-0 overflow-hidden">
-              <WorkColumnSurfaceHost surface={workColumnSurface} />
+              <WorkColumnContentHost content={workColumnPresentation.content} />
               {(isDocumentTransitioning || navigationState.phase === 'loading') && (
                 <div
                   className="absolute inset-0 z-40 flex items-center justify-center bg-[color-mix(in_oklch,var(--card)_78%,transparent)] backdrop-blur-[1px]"

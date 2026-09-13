@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::agent_types::AgentId;
-use crate::agent_wire::AgentErrorDetails;
+use crate::agent_wire::{AgentErrorDetails, AgentMessageAttachment};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +22,8 @@ pub struct ChatMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_type: Option<String>,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<Vec<AgentMessageAttachment>>,
     pub llm_content: Option<String>,
     pub system_reminder_directory: Option<String>,
     pub timestamp: String,

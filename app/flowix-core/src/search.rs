@@ -32,7 +32,7 @@ use serde::Serialize;
 
 use crate::memo_file::frontmatter::extract_body_content;
 use crate::memo_file::{
-    notebook_path_from_relative, normalize_search_tag_filter, tag_path_matches_filter, MemoFile,
+    normalize_search_tag_filter, notebook_path_from_relative, tag_path_matches_filter, MemoFile,
     MemoIndexEntry, NotebookConfig,
 };
 

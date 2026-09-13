@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { MemoItem } from '@/types/memo-item';
 import type { PluginDescriptor } from '@platform/tauri/client';
-import type { MarkdownSurface } from './types';
+import type {
+  MarkdownSurface,
+  ResolveWorkColumnContentInput,
+  WorkColumnSurface,
+} from './types';
 import type { WorkColumnNavigationState, WorkColumnTarget } from '@features/workspace/store/work-column-target';
-import { resolveWorkColumnSurface } from './resolver';
+import { resolveWorkColumnContent } from './resolver';
 
 function memo(properties: Record<string, unknown>, id = 'memo-1'): MemoItem {
   return {
@@ -96,6 +100,12 @@ function navigation(target: WorkColumnTarget | WorkColumnNavigationState) {
       };
 }
 
+function surfaceFrom(input: ResolveWorkColumnContentInput): WorkColumnSurface {
+  const content = resolveWorkColumnContent(input);
+  if (content.status !== 'surface') throw new Error(`Expected surface, received ${content.status}`);
+  return content.surface;
+}
+
 function documentIdentity(
   options: { external?: boolean; path?: string; transitionId?: number | null } = {},
 ) {
@@ -119,13 +129,13 @@ function documentIdentity(
 describe('surface resolvers', () => {
   it('resolves memo, external, plugin, agent, web, and empty workspace targets', () => {
     const markdown = markdownSurface({ transitionId: 1 });
-    expect(resolveWorkColumnSurface({
+    expect(surfaceFrom({
       navigation: navigation(memoTarget),
       document: { identity: documentIdentity({ transitionId: 1 }), memo: memo({}), markdown },
       emptyMessage: 'empty',
     })).toBe(markdown);
 
-    expect(resolveWorkColumnSurface({
+    expect(surfaceFrom({
       navigation: navigation({
         kind: 'external',
         path: '/files/readme.md',
@@ -146,7 +156,7 @@ describe('surface resolvers', () => {
       emptyMessage: 'empty',
     }).kind).toBe('markdown');
 
-    expect(resolveWorkColumnSurface({
+    expect(surfaceFrom({
       navigation: navigation({ kind: 'plugin-workbench', plugin: plugin('plugin-a') }),
       pluginWorkbench: {
         plugin: plugin('plugin-a'),
@@ -157,23 +167,24 @@ describe('surface resolvers', () => {
       emptyMessage: 'empty',
     }).kind).toBe('plugin-workbench');
 
-    expect(resolveWorkColumnSurface({
+    expect(surfaceFrom({
       navigation: navigation({ kind: 'agent-conversation', instanceId: 'conversation-1' }),
       emptyMessage: 'empty',
     }).kind).toBe('agent-conversation');
-    expect(resolveWorkColumnSurface({
+    expect(surfaceFrom({
       navigation: navigation({ kind: 'web', url: 'https://example.com' }),
       emptyMessage: 'empty',
     }).kind).toBe('web');
-    expect(resolveWorkColumnSurface({ navigation: navigation({ kind: 'empty' }), emptyMessage: 'empty' })).toEqual({
-      kind: 'empty',
-      instanceKey: 'empty',
+    expect(resolveWorkColumnContent({ navigation: navigation({ kind: 'empty' }), emptyMessage: 'empty' })).toEqual({
+      status: 'empty',
       message: 'empty',
+      reason: 'no-target',
+      tone: 'document',
     });
   });
 
   it('resolves an artifact target without depending on the active document session', () => {
-    const surface = resolveWorkColumnSurface({
+    const surface = surfaceFrom({
       navigation: navigation({
         kind: 'artifact',
         pointerMemoId: 'pointer-1',
@@ -199,14 +210,14 @@ describe('surface resolvers', () => {
   });
 
   it('rejects stale or cross-identity workspace contexts', () => {
-    const stale = resolveWorkColumnSurface({
+    const stale = resolveWorkColumnContent({
       navigation: navigation(memoTarget),
       document: { identity: documentIdentity({ transitionId: 1 }), memo: memo({}, 'other-memo'), markdown: markdownSurface({ transitionId: 1 }) },
       emptyMessage: 'empty',
     });
-    expect(stale.kind).toBe('empty');
+    expect(stale).toMatchObject({ status: 'empty', reason: 'stale-context' });
 
-    const wrongPath = resolveWorkColumnSurface({
+    const wrongPath = resolveWorkColumnContent({
       navigation: navigation(memoTarget),
       document: {
         identity: documentIdentity({ path: '/notebook/old.md', transitionId: 1 }),
@@ -215,9 +226,9 @@ describe('surface resolvers', () => {
       },
       emptyMessage: 'empty',
     });
-    expect(wrongPath.kind).toBe('empty');
+    expect(wrongPath).toMatchObject({ status: 'empty', reason: 'stale-context' });
 
-    const wrongPlugin = resolveWorkColumnSurface({
+    const wrongPlugin = resolveWorkColumnContent({
       navigation: navigation({ kind: 'plugin-workbench', plugin: plugin('plugin-a') }),
       pluginWorkbench: {
         plugin: plugin('plugin-b'),
@@ -227,7 +238,26 @@ describe('surface resolvers', () => {
       },
       emptyMessage: 'empty',
     });
-    expect(wrongPlugin.kind).toBe('empty');
+    expect(wrongPlugin).toMatchObject({ status: 'empty', reason: 'stale-context' });
+  });
+
+  it('classifies malformed target data instead of returning an untyped empty state', () => {
+    expect(resolveWorkColumnContent({
+      navigation: navigation({ kind: 'agent-conversation', instanceId: '  ' }),
+      emptyMessage: 'empty',
+    })).toMatchObject({ status: 'empty', reason: 'invalid-target', tone: 'agent' });
+
+    expect(resolveWorkColumnContent({
+      navigation: navigation({
+        kind: 'artifact',
+        pointerMemoId: '  ',
+        notebookId: null,
+        notebookPath: null,
+        pluginId: null,
+        renderer: null,
+      }),
+      emptyMessage: 'empty',
+    })).toMatchObject({ status: 'empty', reason: 'invalid-artifact', tone: 'document' });
   });
 
 });

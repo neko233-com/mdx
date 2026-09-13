@@ -105,6 +105,7 @@ function applyUserMessageToProjection(
     sourceSequence: event.sourceSequence,
     sourceSubsequence: event.sourceSubsequence,
     codexTurnId: event.codexTurnId,
+    attachments: event.attachments,
     // Only provider-backed user items (Codex) carry the turn id; those are
     // exactly the events allowed to adopt the optimistic row in place.
     optimisticId: event.codexTurnId
@@ -152,6 +153,7 @@ function applyTextDeltaToProjection(
     sourceSequence: event.sourceSequence,
     sourceSubsequence: event.sourceSubsequence,
     codexTurnId: event.codexTurnId,
+    messageType: event.messageType,
   });
   // text 落地后 reasoning 行 closed (applyTextChunk 已把 reasoning isCompleted=true).
   // run-level state: 当前 tool 名清空 (新文本流开始).
@@ -180,6 +182,7 @@ function applyReasoningDeltaToProjection(
     sourceSequence: event.sourceSequence,
     sourceSubsequence: event.sourceSubsequence,
     codexTurnId: event.codexTurnId,
+    messageType: event.messageType,
   });
   return {
     ...p,
@@ -227,6 +230,7 @@ function applyFinalMessageToProjection(
     sourceSequence: event.sourceSequence,
     sourceSubsequence: event.sourceSubsequence,
     codexTurnId: event.codexTurnId,
+    messageType: event.messageType,
   });
   const runsNext = applyRunToolState(projectionToRuns(p), event, null);
   return {

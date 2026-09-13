@@ -3,6 +3,7 @@ import type { ChatMessage } from "@/types";
 import {
   getAgentMessageEndTimeText,
   getAgentMessageVisibleContent,
+  shouldRenderAgentMessage,
 } from "@features/agent/message/agent-message";
 
 function errorMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
@@ -16,6 +17,15 @@ function errorMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
 }
 
 describe("DeepSeek Harness reconnect error display", () => {
+  it("hides provider commentary from the normal transcript", () => {
+    expect(
+      shouldRenderAgentMessage(
+        errorMessage({ messageType: "agent-commentary" }),
+      ),
+    ).toBe(false);
+    expect(shouldRenderAgentMessage(errorMessage())).toBe(true);
+  });
+
   it("does not throw when a persisted message has an invalid timestamp", () => {
     expect(
       getAgentMessageEndTimeText(errorMessage({ timestamp: "invalid" }), "zh-CN"),

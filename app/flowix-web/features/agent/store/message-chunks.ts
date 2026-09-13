@@ -3,7 +3,11 @@ import type {
   LiveMessageState,
 } from "@features/agent/store/chunk-result";
 import type { ChatMessage } from "@/types";
-import type { AgentErrorDetails, AgentMessageType } from "@/types/agent";
+import type {
+  AgentErrorDetails,
+  AgentMessageAttachment,
+  AgentMessageType,
+} from "@/types/agent";
 import { insertAgentMessageBySourceOrder } from "@features/agent/store/message-order";
 
 export interface MessageChunkMetadata {
@@ -17,6 +21,7 @@ export interface MessageChunkMetadata {
   sourceSubsequence?: number;
   errorDetails?: AgentErrorDetails;
   codexTurnId?: string;
+  attachments?: AgentMessageAttachment[];
   /**
    * Run-scoped id of the optimistic user row. When a provider user item
    * arrives with its own id (Codex item/completed), the optimistic row is
@@ -64,6 +69,7 @@ export function applyUserMessageChunk(
       sourceSequence: metadata.sourceSequence,
       sourceSubsequence: metadata.sourceSubsequence,
       codexTurnId: metadata.codexTurnId,
+      attachments: metadata.attachments,
       isCompleted: true,
     };
     const messages = [...st.messages];
@@ -102,6 +108,7 @@ export function applyUserMessageChunk(
         // context. The optimistic row is the product-owned source of the
         // user-visible text; keep it when adopting the provider identity.
         codexTurnId: metadata.codexTurnId,
+        attachments: optimistic.attachments,
       };
       return {
         messages,
@@ -134,6 +141,7 @@ export function applyUserMessageChunk(
         // See the provider-id adoption path above: runtime context belongs to
         // the model prompt, never to the rendered user message.
         codexTurnId: metadata.codexTurnId,
+        attachments: optimistic.attachments ?? metadata.attachments,
       };
       return {
         messages,
@@ -162,6 +170,7 @@ export function applyUserMessageChunk(
       sourceSubsequence:
         existing.sourceSubsequence ?? metadata.sourceSubsequence,
       codexTurnId: existing.codexTurnId ?? metadata.codexTurnId,
+      attachments: existing.attachments ?? metadata.attachments,
     };
     return {
       messages,
@@ -187,6 +196,7 @@ export function applyUserMessageChunk(
       sourceSequence: metadata.sourceSequence,
       sourceSubsequence: metadata.sourceSubsequence,
       codexTurnId: metadata.codexTurnId,
+      attachments: metadata.attachments,
     }],
     pendingAssistantId: null,
     pendingReasoningId: null,
@@ -230,8 +240,20 @@ export function applyTextChunk(
     // content, keep every reference intact so duplicate delivery is a store
     // no-op instead of a fresh object graph.
     if (metadata.contentMode === "snapshot" && existing.content === text) {
+      if (existing.messageType === metadata.messageType) {
+        return {
+          messages: closedMessages,
+          pendingAssistantId: metadata.phase === "completed" ? null : targetId,
+          pendingReasoningId: null,
+        };
+      }
+      const messages = [...closedMessages];
+      messages[existingIndex] = {
+        ...existing,
+        messageType: metadata.messageType ?? existing.messageType,
+      };
       return {
-        messages: closedMessages,
+        messages,
         pendingAssistantId: metadata.phase === "completed" ? null : targetId,
         pendingReasoningId: null,
       };
@@ -251,6 +273,7 @@ export function applyTextChunk(
       sourceSubsequence:
         existing.sourceSubsequence ?? metadata.sourceSubsequence,
       codexTurnId: existing.codexTurnId ?? metadata.codexTurnId,
+      messageType: metadata.messageType ?? existing.messageType,
     };
     return {
       messages,
@@ -269,6 +292,7 @@ export function applyTextChunk(
       sourceSequence: metadata.sourceSequence,
       sourceSubsequence: metadata.sourceSubsequence,
       codexTurnId: metadata.codexTurnId,
+      messageType: metadata.messageType,
     };
     return {
       messages: insertAgentMessageBySourceOrder(closedMessages, message),
@@ -286,6 +310,7 @@ export function applyTextChunk(
     sourceSequence: metadata.sourceSequence,
     sourceSubsequence: metadata.sourceSubsequence,
     codexTurnId: metadata.codexTurnId,
+    messageType: metadata.messageType,
   };
   return {
     messages: insertAgentMessageBySourceOrder(closedMessages, message),

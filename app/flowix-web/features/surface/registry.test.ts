@@ -51,8 +51,6 @@ function surface(kind: WorkColumnSurfaceKind): WorkColumnSurface {
       throw new Error('Plugin workbench is not needed by these capability tests');
     case 'web':
       return { kind, instanceKey: 'web:1', url: 'https://example.com' };
-    case 'empty':
-      return { kind, instanceKey: 'empty', message: 'Empty' };
   }
 }
 
@@ -60,7 +58,6 @@ describe('workColumnSurfaceRegistry', () => {
   it('registers every supported product-level surface kind', () => {
     expect(Object.keys(workColumnSurfaceRegistry).sort()).toEqual([
       'agent-conversation',
-      'empty',
       'html',
       'json',
       'markdown',

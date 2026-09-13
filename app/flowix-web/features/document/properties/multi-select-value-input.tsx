@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { useI18n, translate } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { useComposingValue } from '@shared/hooks/use-composing-value';
 
 interface MultiSelectValueInputProps {
   value: string;
@@ -31,6 +32,7 @@ export function MultiSelectValueInput({
   const { t, language } = useI18n();
   const tags = tagsFromValue(value);
   const [draft, setDraft] = useState('');
+  const draftInput = useComposingValue(draft, setDraft);
 
   const commitDraft = () => {
     const nextTag = draft.trim();
@@ -71,12 +73,15 @@ export function MultiSelectValueInput({
         </span>
       ))}
       <input
-        value={draft}
+        value={draftInput.value}
         disabled={disabled}
         placeholder={tags.length === 0 ? t('document.properties.tagInputPlaceholder') : ''}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={draftInput.onChange}
+        onCompositionStart={draftInput.onCompositionStart}
+        onCompositionEnd={draftInput.onCompositionEnd}
         onBlur={commitDraft}
         onKeyDown={(event) => {
+          if (draftInput.isComposingKeyboardEvent(event.nativeEvent)) return;
           if (event.key === 'Enter' || event.key === ',') {
             event.preventDefault();
             commitDraft();

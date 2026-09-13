@@ -80,6 +80,11 @@ pub struct Memo {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TodoItem {
+    /// Stable identity within a memo.  It is deliberately part of the memo
+    /// projection so metadata does not have to use the mutable task text as
+    /// its key.
+    #[serde(default)]
+    pub id: String,
     pub content: String,
     pub status: String,
 }
@@ -209,6 +214,8 @@ impl Default for MemoIndexFile {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoTodoEntry {
+    #[serde(rename = "todoId", default)]
+    pub todo_id: String,
     pub content: String,
     pub status: String,
     #[serde(rename = "memoId")]
@@ -247,10 +254,27 @@ impl Default for MemoMetadataFile {
 /// - `removed`: `memo index` 有但磁盘上文件已不存在的条目, 被清理出 memo index 的条数。
 ///
 /// `added == 0 && removed == 0` 时调用方可以视为 no-op (幂等)。
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct ReconcileReport {
     pub added: usize,
     pub removed: usize,
+    /// Entries removed from the index during a complete disk scan. Callers
+    /// can use these snapshots to publish deletion tombstones after the
+    /// index mutation has succeeded.
+    pub removed_memos: Vec<Memo>,
+}
+
+/// Report returned by version-history maintenance.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MemoVersionCleanupReport {
+    /// Version directories moved to the notebook that owns the memo ID.
+    pub moved: usize,
+    /// Version directories removed after the orphan retention period.
+    pub removed: usize,
+    /// Unknown version directories retained because they are still recent.
+    pub retained_recent: usize,
+    /// Entries that could not be inspected or moved/removed.
+    pub failed: usize,
 }
 
 /// [`crate::memo_file::MemoFile::move_memo_tag_locked`] 的返回报告。

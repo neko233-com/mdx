@@ -101,6 +101,7 @@ export function mapAgentChunkToEvent(
     runId: resolveChunkRunId(chunk, threadId, st),
     timestamp: now(),
     messageId: messageMetadata.message_id,
+    messageType: messageMetadata.message_type,
     messagePhase: messageMetadata.message_phase,
     contentMode: messageMetadata.content_mode,
     sourceTimestamp: messageMetadata.source_timestamp,
@@ -123,6 +124,7 @@ export function mapAgentChunkToEvent(
             chunk.id,
           ) ?? chunk.id,
         text: chunk.text,
+        attachments: chunk.attachments,
         messageType: messageMetadata.message_type,
         messageId:
           canonicalAgentMessageId(

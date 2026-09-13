@@ -10,7 +10,11 @@ import {
 } from './composer-slash-command-controller';
 import { ComposerSlashToken } from './composer-slash-token';
 
-function setup(options: { onModelSelect?: () => void; onPermissionSelect?: () => void } = {}) {
+function setup(options: {
+  agentType?: 'deepseek-harness' | 'codex';
+  onModelSelect?: () => void;
+  onPermissionSelect?: () => void;
+} = {}) {
   const composer = document.createElement('div');
   const input = document.createElement('div');
   input.contentEditable = 'true';
@@ -40,7 +44,7 @@ function setup(options: { onModelSelect?: () => void; onPermissionSelect?: () =>
     input,
     composer,
     editor,
-    agentType: 'deepseek-harness',
+    agentType: options.agentType ?? 'deepseek-harness',
     onModelSelect: options.onModelSelect,
     onPermissionSelect: options.onPermissionSelect,
   });
@@ -120,10 +124,31 @@ describe('ComposerSlashCommandController', () => {
 
     expect(editor.getMarkdown()).toBe('[/goal](flowix://slash/deepseek-harness/goal)');
     expect(composer.querySelector('.agent-thread-card__slash-token')?.textContent).toBe('/goal');
+    const wrapper = composer.querySelector('.agent-thread-card__slash-token-wrapper');
+    expect(wrapper?.childNodes).toHaveLength(3);
+    expect(wrapper?.firstChild?.textContent).toBe('\u200B');
+    expect(wrapper?.lastChild?.textContent).toBe('\u200B');
+
+    editor.commands.insertContent('继续输入');
+    expect(editor.getMarkdown()).toBe('[/goal](flowix://slash/deepseek-harness/goal)继续输入');
 
     editor.commands.focus('start');
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
     expect(composer.querySelector('.agent-thread-card__slash-token')).toBeNull();
+    controller.dispose();
+    editor.destroy();
+  });
+
+  it('keeps a Codex goal chip and the following text in the same paragraph', () => {
+    const { input, editor, controller } = setup({ agentType: 'codex' });
+    type(editor, '/goal');
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    editor.commands.insertContent('继续描述目标');
+
+    expect(editor.getMarkdown()).toBe('[/goal](flowix://slash/codex/goal)继续描述目标');
+    expect(editor.getJSON().content?.[0]?.type).toBe('paragraph');
+    expect(editor.getJSON().content?.[0]?.content).toHaveLength(2);
     controller.dispose();
     editor.destroy();
   });

@@ -189,6 +189,8 @@ export type AgentConversationInstanceUpsert = Omit<AgentConversationInstance, 't
 
 export interface AgentRuntimeAvailability {
   available: boolean;
+  /** Executable/runtime presence, independent from model or dependency setup. */
+  installed?: boolean;
   reason?: string | null;
 }
 

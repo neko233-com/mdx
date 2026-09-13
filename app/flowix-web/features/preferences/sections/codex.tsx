@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, CircleAlert, Gauge, Loader2, LockKeyhole, MessageSquareText, Plug, Sparkles, UsersRound, Wrench } from 'lucide-react';
+import { Check, CircleAlert, FolderKanban, Gauge, Loader2, LockKeyhole, MessageSquareText, Plug, Sparkles, UsersRound, Wrench } from 'lucide-react';
 import { agent, type CodexProjectCapabilities } from '@platform/tauri/client';
 import { useMemoStore, type Notebook } from '@features/memo';
 import { Button } from '@shared/ui/button';
@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { displayNameForComposerSkill } from '@features/agent/thread-card/composer/composer-skill-token';
 import { cn } from '@/lib/utils';
 
-type CodexSection = 'model' | 'permissions' | 'connections' | 'skills' | 'prompts' | 'agents' | 'other';
+type CodexSection = 'project' | 'model' | 'permissions' | 'connections' | 'skills' | 'prompts' | 'agents' | 'other';
 type JsonObject = Record<string, unknown>;
 const obj = (v: unknown): JsonObject => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as JsonObject : {};
 const arr = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
@@ -34,7 +34,7 @@ export function CodexSettingsSection({ notebookPath }: { notebookPath?: string }
   const initialized = useMemoStore((s) => s.notebooksInitialized);
   const loadNotebooks = useMemoStore((s) => s.loadNotebooks);
   const [selectedNotebookId, setSelectedNotebookId] = useState<string | null>(null);
-  const [section, setSection] = useState<CodexSection>('model');
+  const [section, setSection] = useState<CodexSection>('project');
   const [catalog, setCatalog] = useState<CodexProjectCapabilities | null>(null);
   const [form, setForm] = useState<Record<string, string | boolean>>({});
   const [loading, setLoading] = useState(false);
@@ -121,22 +121,24 @@ export function CodexSettingsSection({ notebookPath }: { notebookPath?: string }
 
   if (!notebook) return <div className="space-y-5"><Empty icon={Sparkles} title="没有当前笔记本" text="请先在主窗口选择一个笔记本。" /></div>;
   const navigation: Array<[CodexSection, string, typeof Gauge]> = [
+    ['project', '项目', FolderKanban],
     ['model', '模型', Gauge],
     ['permissions', '权限', LockKeyhole],
     ['connections', '连接', Plug],
     ['skills', '技能', Sparkles],
     ['prompts', '提示词', MessageSquareText],
     ['agents', '子Agent', UsersRound],
-    ['other', '其他', Wrench],
+    ['other', '插件', Wrench],
   ];
   const sectionMeta: Record<CodexSection, { title: string; description: string }> = {
+    project: { title: '项目能力概览', description: '查看当前笔记本项目的 Codex 能力和配置。' },
     model: { title: '模型与运行参数', description: '设置写入当前笔记本的 .codex/config.toml。模型和推理设置对新会话生效。' },
     permissions: { title: '审批与 Sandbox', description: '保存时 Codex 会再次校验组织策略；高优先级策略可以覆盖项目值。' },
     connections: { title: '连接', description: '管理当前笔记本项目使用的 MCP Server。' },
     skills: { title: '技能', description: '管理当前项目发现的 Skill，也可以创建新的项目 Skill。' },
     prompts: { title: '提示词', description: '设置当前笔记本项目的默认指令，保存后写入 .codex/config.toml。' },
     agents: { title: '子Agent', description: '查看当前笔记本项目配置的子 Agent。' },
-    other: { title: '其他', description: '管理 Codex 插件，并查看当前项目的能力概览。' },
+    other: { title: '插件', description: '管理当前笔记本项目使用的 Codex 插件。' },
   };
   return <div className="space-y-5">
     {!notebookPath && <ProjectHeader
@@ -152,16 +154,17 @@ export function CodexSettingsSection({ notebookPath }: { notebookPath?: string }
         </div>
       </nav>
       <div className="w-full min-w-0">
-        <div className="mx-auto w-full max-w-[620px] space-y-4">
+        <div className="mx-auto w-full max-w-[620px] space-y-4 py-3">
           {notice && <Banner icon={Check} text={notice} />}{error && <Banner icon={CircleAlert} text={error} destructive />}
           {loading && !catalog ? <Panel {...sectionMeta[section]}><Loading /></Panel> : catalog && <>
+            {section === 'project' && <Overview catalog={catalog} counts={[skills.length, mcp.length, agents.length, installed.length]} />}
             {section === 'model' && <General form={form} setForm={setForm} models={models} disabled={saving !== null} onSave={() => void save(['model', 'model_reasoning_effort', 'model_verbosity', 'review_model', 'service_tier', 'web_search'])} />}
             {section === 'permissions' && <Security form={form} setForm={setForm} requirements={catalog.requirements} disabled={saving !== null} onSave={() => void save(['approval_policy', 'approvals_reviewer', 'sandbox_mode', 'sandbox_workspace_write.network_access'])} />}
             {section === 'connections' && <Connections mcp={mcp} cwd={notebook.path} projectVersion={projectVersion} saving={saving} run={run} />}
             {section === 'skills' && <Skills skills={skills} cwd={notebook.path} saving={saving} run={run} />}
             {section === 'prompts' && <Panel title="提示词" description="设置当前笔记本项目的默认指令，保存后写入 .codex/config.toml。"><ProjectPromptEditor form={form} setForm={setForm} disabled={saving !== null} onSave={() => void save(['instructions', 'developer_instructions'], true)} /></Panel>}
             {section === 'agents' && <Agents agents={agents} />}
-            {section === 'other' && <Other catalog={catalog} installed={installed} available={available} installedIds={installedIds} saving={saving} cwd={notebook.path} run={run} counts={[skills.length, mcp.length, agents.length, installed.length]} />}
+            {section === 'other' && <Other installed={installed} available={available} installedIds={installedIds} saving={saving} cwd={notebook.path} run={run} />}
           </>}
         </div>
       </div>
@@ -233,12 +236,28 @@ function Agents({ agents }: { agents: JsonObject[] }) {
     <List items={agents} empty="未发现子 Agent">{(x, i) => <Row key={`${str(x.id, str(x.name))}:${i}`} title={str(x.name, str(x.preview, '子 Agent'))} text={str(x.description, str(x.preview))} meta={str(x.model)} />}</List>
   </Panel>;
 }
-function Other({ catalog, installed, available, installedIds, saving, cwd, run, counts }: { catalog: CodexProjectCapabilities; installed: JsonObject[]; available: JsonObject[]; installedIds: Set<string>; saving: string | null; cwd: string; run: ActionRunner; counts: number[] }) {
+function Other({ installed, available, installedIds, saving, cwd, run }: { installed: JsonObject[]; available: JsonObject[]; installedIds: Set<string>; saving: string | null; cwd: string; run: ActionRunner }) {
+  const [pluginFilter, setPluginFilter] = useState<'all' | 'installed' | 'uninstalled'>('all');
+  const plugins = (available.length ? available : installed).filter((plugin) => {
+    if (pluginFilter === 'all') return true;
+    const id = str(plugin.id, str(plugin.name));
+    const isInstalled = bool(plugin.installed) || installedIds.has(id) || installedIds.has(str(plugin.name));
+    return pluginFilter === 'installed' ? isInstalled : !isInstalled;
+  });
   return <div className="space-y-4">
-    <Panel title="其他" description="管理 Codex 插件，并查看当前项目的能力概览。">
-      <List items={available.length ? available : installed} empty="没有可用插件">{(x, i) => { const id = str(x.id, str(x.name)); const isInstalled = bool(x.installed) || installedIds.has(id) || installedIds.has(str(x.name)); const actionId = isInstalled ? id : str(x.name, id); const key = `plugin:${id}`; return <Row key={`${id}:${i}`} title={str(obj(x.interface).displayName, str(x.name, id))} text={str(x.description, str(obj(x.interface).shortDescription))} meta={str(x.marketplace)} action={<Button size="sm" variant="outline" className="rounded-lg px-3" disabled={saving !== null || !actionId} onClick={() => void run(key, () => agent.setCodexPluginInstalled(cwd, actionId, !isInstalled), isInstalled ? '插件已卸载。' : '插件已安装。', true)}>{saving === key ? '处理中…' : isInstalled ? '卸载' : '安装'}</Button>} />; }}</List>
+    <Panel title="插件" description="管理当前笔记本项目使用的 Codex 插件。">
+      <div className="flex justify-end">
+        <Select value={pluginFilter} onValueChange={(value) => setPluginFilter(value as typeof pluginFilter)}>
+          <SelectTrigger className="h-8 w-28 rounded-lg"><SelectValue /></SelectTrigger>
+          <SelectContent align="end">
+            <SelectItem value="all">全部</SelectItem>
+            <SelectItem value="installed">已安装</SelectItem>
+            <SelectItem value="uninstalled">未安装</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <List items={plugins} empty="没有符合条件的插件" className="grid grid-cols-3 gap-3" emptyClassName="col-span-3">{(x, i) => { const id = str(x.id, str(x.name)); const isInstalled = bool(x.installed) || installedIds.has(id) || installedIds.has(str(x.name)); const actionId = isInstalled ? id : str(x.name, id); const key = `plugin:${id}`; return <PluginCard key={`${id}:${i}`} title={str(obj(x.interface).displayName, str(x.name, id))} text={str(x.description, str(obj(x.interface).shortDescription))} address={str(x.marketplace)} action={<Button size="sm" variant={isInstalled ? "outline" : "default"} className="shrink-0 rounded-lg px-3" disabled={saving !== null || !actionId} onClick={() => void run(key, () => agent.setCodexPluginInstalled(cwd, actionId, !isInstalled), isInstalled ? '插件已卸载。' : '插件已安装。', true)}>{saving === key ? '处理中…' : isInstalled ? '卸载' : '安装'}</Button>} />; }}</List>
     </Panel>
-    <Overview catalog={catalog} counts={counts} />
   </div>;
 }
 
@@ -275,7 +294,7 @@ function ProjectSkillEditor({ cwd, saving, run }: { cwd: string; saving: string 
 
 function ProjectPromptEditor({ form, setForm, disabled, onSave }: FormProps) {
   const set = (key: string, value: string) => setForm((x) => ({ ...x, [key]: value }));
-  return <div className="space-y-4"><Banner icon={Sparkles} text="Prompt 只写入当前笔记本项目；已有会话可能需要重新创建后才会采用新指令。" /><Field label="项目指令（instructions）"><textarea className="min-h-36 w-full rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 text-sm leading-5 outline-none focus:border-[var(--primary)]" value={str(form.instructions)} placeholder="描述项目目标、约束、术语和默认工作方式。" onChange={(e) => set('instructions', e.target.value)} /></Field><Field label="开发者指令（developer_instructions）"><textarea className="min-h-44 w-full rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 font-mono text-xs leading-5 outline-none focus:border-[var(--primary)]" value={str(form.developer_instructions)} placeholder="描述代码规范、验证要求、目录边界等开发规则。" onChange={(e) => set('developer_instructions', e.target.value)} /></Field><Save disabled={disabled} onClick={onSave} /></div>;
+  return <div className="space-y-4"><p className="text-xs text-[var(--muted-foreground)]">Prompt 只写入当前笔记本项目；已有会话可能需要重新创建后才会采用新指令。</p><Field label="项目指令（instructions）"><textarea className="min-h-36 w-full rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 text-sm leading-5 outline-none focus:border-[var(--primary)]" value={str(form.instructions)} placeholder="描述项目目标、约束、术语和默认工作方式。" onChange={(e) => set('instructions', e.target.value)} /></Field><Field label="开发者指令（developer_instructions）"><textarea className="min-h-44 w-full rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 font-mono text-xs leading-5 outline-none focus:border-[var(--primary)]" value={str(form.developer_instructions)} placeholder="描述代码规范、验证要求、目录边界等开发规则。" onChange={(e) => set('developer_instructions', e.target.value)} /></Field><Save disabled={disabled} onClick={onSave} /></div>;
 }
 
 function flattenPlugins(source: JsonObject): JsonObject[] { return arr(source.marketplaces).flatMap((m) => arr(obj(m).plugins).map((p) => ({ ...obj(p), marketplace: str(obj(m).name) }))); }
@@ -300,7 +319,7 @@ function ProjectHeader({ notebook, notebooks, selectedNotebookId, onNotebookChan
     </div>
   </div>;
 }
-function Panel({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <section className="space-y-6"><div className="space-y-1 border-b border-[var(--divider)] pb-3"><h3 className="text-base font-medium text-[var(--foreground)]">{title}</h3><p className="text-sm leading-6 text-[var(--muted-foreground)]">{description}</p></div>{children}</section>; }
+function Panel({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { return <section className="space-y-6"><div className="border-b border-[var(--divider)] pb-3"><h3 className="text-[1.2rem] font-medium text-[var(--foreground)]">{title}</h3><p className="text-sm leading-6 text-[var(--muted-foreground)]">{description}</p></div>{children}</section>; }
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block space-y-1.5"><span className="text-xs font-medium">{label}</span>{children}</label>; }
 function OptionSelect({ value, options: optionList, onChange }: { value: string; options: SelectOption[]; onChange: (v: string) => void }) {
   const selected = optionList.find((option) => option.value === value);
@@ -313,9 +332,10 @@ function OptionSelect({ value, options: optionList, onChange }: { value: string;
     </SelectContent>
   </Select>;
 }
-function Save({ disabled, onClick }: { disabled: boolean; onClick: () => void }) { return <div className="flex justify-end"><Button disabled={disabled} onClick={onClick}>{disabled ? '保存中…' : '保存到当前项目'}</Button></div>; }
+function Save({ disabled, onClick }: { disabled: boolean; onClick: () => void }) { return <div className="flex justify-start"><Button disabled={disabled} onClick={onClick}>{disabled ? '保存中…' : '保存到当前项目'}</Button></div>; }
+function PluginCard({ title, text, address, action }: { title: string; text?: string; address?: string; action: React.ReactNode }) { return <div className="flex min-w-0 flex-col rounded-lg border border-[var(--divider)] px-3 py-2.5"><div className="truncate text-sm font-medium">{title}</div>{text && <div className="mt-0.5 line-clamp-2 text-xs text-[var(--muted-foreground)]">{text}</div>}<div className="mt-auto flex min-w-0 items-center gap-2 pt-3">{action}{address && <div className="min-w-0 flex-1 truncate text-right font-mono text-[10px] text-[var(--muted-foreground)]" title={address}>{address}</div>}</div></div>; }
 function Row({ title, text, meta, action }: { title: string; text?: string; meta?: string; action?: React.ReactNode }) { return <div className="flex items-start gap-3 rounded-lg border border-[var(--divider)] px-3 py-2.5"><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{title}</div>{text && <div className="mt-0.5 line-clamp-2 text-xs text-[var(--muted-foreground)]">{text}</div>}{meta && <div className="mt-1 truncate font-mono text-[10px] text-[var(--muted-foreground)]">{meta}</div>}</div>{action}</div>; }
-function List({ items, empty, children }: { items: JsonObject[]; empty: string; children: (item: JsonObject, index: number) => React.ReactNode }) { return <div className="space-y-2">{items.length ? items.map(children) : <div className="py-10 text-center text-sm text-[var(--muted-foreground)]">{empty}</div>}</div>; }
+function List({ items, empty, children, className, emptyClassName }: { items: JsonObject[]; empty: string; children: (item: JsonObject, index: number) => React.ReactNode; className?: string; emptyClassName?: string }) { return <div className={className ?? 'space-y-2'}>{items.length ? items.map(children) : <div className={cn('py-10 text-center text-sm text-[var(--muted-foreground)]', emptyClassName)}>{empty}</div>}</div>; }
 function Banner({ icon: Icon, text, destructive = false }: { icon: typeof Check; text: string; destructive?: boolean }) { return <div className={cn('flex items-start gap-2 rounded-lg border px-3 py-2 text-xs', destructive ? 'border-[color-mix(in_oklch,var(--destructive)_25%,var(--divider))]' : 'border-[var(--divider)]')}><Icon className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', destructive ? 'text-[var(--destructive)]' : 'text-[var(--primary)]')} /><span className="text-[var(--muted-foreground)]">{text}</span></div>; }
 function Loading() { return <div className="flex min-h-48 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-[var(--primary)]" /></div>; }
 function Empty({ icon: Icon, title, text }: { icon: typeof Sparkles; title: string; text: string }) { return <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--divider)] text-center"><Icon className="h-6 w-6 text-[var(--muted-foreground)]" /><div className="mt-3 text-sm font-medium">{title}</div><p className="mt-1 text-xs text-[var(--muted-foreground)]">{text}</p></div>; }

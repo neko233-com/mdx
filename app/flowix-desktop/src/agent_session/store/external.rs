@@ -737,7 +737,7 @@ pub(crate) fn materialize_external_messages(events: Vec<AgentExternalEvent>) -> 
                     .unwrap_or(&message_id)
                     .to_string();
                 let id = external_run_scoped_id(&event.runtime, &payload, "user", &raw_id);
-                messages.push(external_history_message(
+                let mut message = external_history_message(
                     id,
                     "user",
                     payload
@@ -746,7 +746,11 @@ pub(crate) fn materialize_external_messages(events: Vec<AgentExternalEvent>) -> 
                         .unwrap_or_default()
                         .to_string(),
                     timestamp,
-                ));
+                );
+                message.attachments = payload
+                    .get("attachments")
+                    .and_then(|value| serde_json::from_value(value.clone()).ok());
+                messages.push(message);
             }
             Some("text") | Some("reasoning") => {
                 let role = if kind == Some("reasoning") {
@@ -1034,5 +1038,6 @@ fn external_history_message(
         codex_turn_id: None,
         turn_duration_ms: None,
         source_sequence: None,
+        attachments: None,
     }
 }

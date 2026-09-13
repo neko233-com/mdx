@@ -619,6 +619,21 @@ describe('frontmatter property helpers', () => {
     expect(input?.value).toBe('name');
 
     if (input) {
+      input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      input.value = '名称';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }));
+      expect(editor.getMarkdown()).toContain('description: Before');
+      expect(document.body.querySelector('.frontmatter-property__edit-popover')).not.toBeNull();
+      input.dispatchEvent(new CompositionEvent('compositionend', {
+        bubbles: true,
+        data: '名称',
+      }));
+
       input.value = 'summary';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new KeyboardEvent('keydown', {
@@ -955,6 +970,30 @@ describe('frontmatter property helpers', () => {
     host.querySelector<HTMLButtonElement>('.frontmatter-property__add-property')?.click();
     expect([...host.querySelectorAll('.frontmatter-property__key')]
       .map((element) => element.textContent)).toEqual(['status', 'key1', 'key2']);
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('hides the empty property list until a property is added', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter.configure({ memoId: '8c7dxu0l' })],
+      content: '---\nkey: 8c7dxu0l\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    expect(host.querySelector('.frontmatter-property__list')).toBeNull();
+    expect(host.querySelector('.frontmatter-property__add-property')).not.toBeNull();
+
+    host.querySelector<HTMLButtonElement>('.frontmatter-property__add-property')?.click();
+
+    expect(host.querySelector('.frontmatter-property__list')).not.toBeNull();
+    expect(host.querySelector('[data-property-key="key1"]')).not.toBeNull();
 
     editor.destroy();
     host.remove();

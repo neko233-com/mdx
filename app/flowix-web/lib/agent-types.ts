@@ -47,6 +47,21 @@ export const LOCAL_AGENT_DISPLAY_PRIORITY = [
   'opencode',
 ] as const satisfies readonly AgentTypeKey[];
 
+/**
+ * Product entry points that must remain discoverable even before their local
+ * runtime has been installed. Other agents only appear in the new-conversation
+ * menu after runtime detection confirms that they are installed.
+ */
+export const ALWAYS_VISIBLE_NEW_CONVERSATION_AGENT_KEYS = new Set<AgentTypeKey>([
+  'deepseek-harness',
+  'codex',
+  'claude',
+]);
+
+export function isAlwaysVisibleNewConversationAgent(typeKey: AgentTypeKey): boolean {
+  return ALWAYS_VISIBLE_NEW_CONVERSATION_AGENT_KEYS.has(typeKey);
+}
+
 export function pickFirstAvailableAgent(
   statusByType: Partial<Record<AgentTypeKey, { available: boolean }>>,
 ): AgentTypeKey | null {

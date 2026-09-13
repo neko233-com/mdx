@@ -29,12 +29,70 @@
  * margin-left: auto 在 flex column 容器里把 user 推右 (CSS 端
  * 替代 row-reverse, 不破坏 assistant 左对齐)。 */
 .markdown-editor .agent-thread-card__message--user {
+  width: 100%;
   margin-top: 1rem;
-  margin-left: auto;
+  max-width: 100%;
+  padding: 0;
+  justify-items: end;
+}
+
+.markdown-editor .agent-thread-card__message-user-bubble {
+  width: fit-content;
   max-width: 100%;
   padding: 8px 12px;
   border-radius: 8px 16px 8px 8px;
   background: var(--muted);
+}
+
+.markdown-editor .agent-thread-card__message-attachments {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 100%;
+  margin-top: 0;
+  overflow-x: auto;
+}
+
+.markdown-editor .agent-thread-card__message-attachment {
+  position: relative;
+  display: block;
+  align-items: center;
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  max-width: 52px;
+  min-height: 52px;
+  max-height: 52px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  background: var(--muted);
+  color: var(--foreground);
+  cursor: default;
+}
+
+.markdown-editor .agent-thread-card__message-attachment-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+.markdown-editor .agent-thread-card__message-attachment-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.markdown-editor .agent-thread-card__message-attachment-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 0.4rem;
+  object-fit: cover;
 }
 
 /* ── assistant: 纯文本, 无气泡, 顶部 mt-1 留白 ────────────────

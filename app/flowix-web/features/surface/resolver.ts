@@ -3,7 +3,10 @@ import { canonicalPath } from '@/lib/path';
 import type {
   DocumentSurfaceContext,
   PluginWorkbenchContext,
-  ResolveWorkColumnSurfaceInput,
+  WorkColumnContentPresentation,
+  ResolveWorkColumnContentInput,
+  WorkColumnEmptyReason,
+  WorkColumnEmptyStateTone,
   WorkColumnSurface,
 } from './types';
 import type { WorkColumnTarget } from '@features/workspace/store/work-column-target';
@@ -12,8 +15,16 @@ function assertNever(value: never): never {
   throw new Error(`Unsupported plugin artifact renderer: ${String(value)}`);
 }
 
-function emptySurface(message: string): WorkColumnSurface {
-  return { kind: 'empty', instanceKey: 'empty', message };
+function emptyContent(
+  message: string,
+  reason: WorkColumnEmptyReason,
+  tone: WorkColumnEmptyStateTone = 'document',
+): WorkColumnContentPresentation {
+  return { status: 'empty', message, reason, tone };
+}
+
+function surfaceContent(surface: WorkColumnSurface): WorkColumnContentPresentation {
+  return { status: 'surface', surface };
 }
 
 function artifactSurface(
@@ -39,17 +50,20 @@ function resolveDocumentSurface(document: DocumentSurfaceContext): WorkColumnSur
   return document.markdown;
 }
 
-function resolveArtifactTargetSurface(
+function resolveArtifactTargetContent(
   target: Extract<WorkColumnTarget, { kind: 'artifact' }>,
-): WorkColumnSurface {
+  emptyMessage: string,
+): WorkColumnContentPresentation {
   const pointerMemoId = target.pointerMemoId.trim();
-  if (!pointerMemoId) return emptySurface('');
-  return artifactSurface(
+  if (!pointerMemoId) {
+    return emptyContent(emptyMessage, 'invalid-artifact');
+  }
+  return surfaceContent(artifactSurface(
     `artifact:${pointerMemoId}`,
     pointerMemoId,
     undefined,
     target.renderer,
-  );
+  ));
 }
 
 function samePath(left: string | null | undefined, right: string | null | undefined): boolean {
@@ -111,42 +125,46 @@ function isPluginWorkbenchContext(
 
 function resolveWorkColumnTarget(
   target: WorkColumnTarget,
-  input: Pick<ResolveWorkColumnSurfaceInput, 'document' | 'pluginWorkbench' | 'emptyMessage'>,
-): WorkColumnSurface {
+  input: Pick<ResolveWorkColumnContentInput, 'document' | 'pluginWorkbench' | 'emptyMessage'>,
+): WorkColumnContentPresentation {
   switch (target.kind) {
     case 'empty':
-      return emptySurface(input.emptyMessage);
+      return emptyContent(input.emptyMessage, 'no-target');
     case 'web':
-      return { kind: 'web', instanceKey: target.url, url: target.url };
+      return surfaceContent({ kind: 'web', instanceKey: target.url, url: target.url });
     case 'agent-conversation':
       return target.instanceId.trim()
-        ? { kind: 'agent-conversation', instanceKey: `agent:${target.instanceId}`, instanceId: target.instanceId }
-        : emptySurface(input.emptyMessage);
+        ? surfaceContent({ kind: 'agent-conversation', instanceKey: `agent:${target.instanceId}`, instanceId: target.instanceId })
+        : emptyContent(input.emptyMessage, 'invalid-target', 'agent');
     case 'plugin-workbench': {
       const context = input.pluginWorkbench;
-      if (!context || !isPluginWorkbenchContext(target, context)) return emptySurface(input.emptyMessage);
-      return {
+      if (!context || !isPluginWorkbenchContext(target, context)) {
+        return emptyContent(input.emptyMessage, 'stale-context');
+      }
+      return surfaceContent({
         kind: 'plugin-workbench',
         instanceKey: `plugin:${target.plugin.manifest.id}`,
         props: context,
-      };
+      });
     }
     case 'artifact':
-      return resolveArtifactTargetSurface(target);
+      return resolveArtifactTargetContent(target, input.emptyMessage);
     case 'memo':
       return input.document && isMemoDocumentContext(target, input.document)
-        ? resolveDocumentSurface(input.document)
-        : emptySurface(input.emptyMessage);
+        ? surfaceContent(resolveDocumentSurface(input.document))
+        : emptyContent(input.emptyMessage, 'stale-context');
     case 'external':
       return input.document && isExternalDocumentContext(target, input.document)
-        ? resolveDocumentSurface(input.document)
-        : emptySurface(input.emptyMessage);
+        ? surfaceContent(resolveDocumentSurface(input.document))
+        : emptyContent(input.emptyMessage, 'stale-context');
     default:
       return assertNever(target);
   }
 }
 
-/** Resolve the main workspace target with presentation data supplied by the host. */
-export function resolveWorkColumnSurface(input: ResolveWorkColumnSurfaceInput): WorkColumnSurface {
+/** Resolve the main workspace target into either a renderable surface or an empty state. */
+export function resolveWorkColumnContent(
+  input: ResolveWorkColumnContentInput,
+): WorkColumnContentPresentation {
   return resolveWorkColumnTarget(input.navigation.target, input);
 }

@@ -272,6 +272,7 @@ pub fn chunks_from_message(
                     .unwrap_or_else(|| "user-message".to_string()),
                 text,
                 timestamp: chrono::Utc::now().timestamp_millis(),
+                attachments: Vec::new(),
             })
             .into_iter()
             .collect(),

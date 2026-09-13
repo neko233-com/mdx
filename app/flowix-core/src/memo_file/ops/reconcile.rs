@@ -12,7 +12,7 @@ impl MemoFile {
             return Ok(0);
         }
         let mut markdown_paths = Vec::new();
-        collect_markdown_paths(&base, &base, &mut markdown_paths)?;
+        let _ = collect_markdown_paths(&base, &base, &mut markdown_paths)?;
 
         let known_paths: std::collections::HashSet<String> = self
             .read_index()
@@ -84,7 +84,10 @@ impl MemoFile {
 
         // 1. 单次 read_dir: 收齐磁盘上所有 .md 文件名 (跳过 `.metadata/`)
         let mut markdown_paths = Vec::new();
-        collect_markdown_paths(&base, &base, &mut markdown_paths)?;
+        let scan_complete = collect_markdown_paths(&base, &base, &mut markdown_paths)?;
+        if !scan_complete {
+            return Err("notebook scan incomplete; refusing to prune memo index".to_string());
+        }
         let disk_paths: std::collections::HashSet<String> = markdown_paths
             .iter()
             .map(|path| notebook_relative_path(&base, path))
@@ -126,6 +129,19 @@ impl MemoFile {
         //    rename_memo_file_locked) 已改写过磁盘, 局部 `initial_list` 已过时。
         //    基于磁盘最新状态算 prune 差集, 避免误删刚注册的 entry。
         let mut list = self.read_index().unwrap_or_default();
+        let removed_memos: Vec<Memo> = list
+            .memos
+            .iter()
+            .filter(|entry| {
+                let indexed = if entry.relative_path.is_empty() {
+                    &entry.filename
+                } else {
+                    &entry.relative_path
+                };
+                !disk_paths.contains(indexed)
+            })
+            .map(MemoFile::index_entry_to_memo)
+            .collect();
         let before = list.memos.len();
         list.memos.retain(|e| {
             let indexed = if e.relative_path.is_empty() {
@@ -142,7 +158,11 @@ impl MemoFile {
                 .map_err(|e| format!("write_index failed: {e}"))?;
         }
 
-        Ok(ReconcileReport { added, removed })
+        Ok(ReconcileReport {
+            added,
+            removed,
+            removed_memos,
+        })
     }
 
     /// Reconcile one configured notebook without changing the current
@@ -152,23 +172,21 @@ impl MemoFile {
         &self,
         notebook_id: &str,
     ) -> Result<ReconcileReport, String> {
-        self.reconcile_notebook_with_disk_bidirectional_inner(notebook_id, true)
+        self.reconcile_notebook_with_disk_bidirectional_inner(notebook_id)
     }
 
-    /// Reconcile a newly imported notebook without modifying existing
-    /// Markdown files. The index receives generated IDs for documents that do
-    /// not already have a Flowix key, but their frontmatter/body is preserved.
+    /// Reconcile a newly imported notebook. Every imported Markdown file gets
+    /// a Flowix frontmatter key; an existing conflicting key is re-keyed.
     pub fn reconcile_notebook_with_disk_bidirectional_for_import(
         &self,
         notebook_id: &str,
     ) -> Result<ReconcileReport, String> {
-        self.reconcile_notebook_with_disk_bidirectional_inner(notebook_id, false)
+        self.reconcile_notebook_with_disk_bidirectional_inner(notebook_id)
     }
 
     fn reconcile_notebook_with_disk_bidirectional_inner(
         &self,
         notebook_id: &str,
-        stamp_missing_key: bool,
     ) -> Result<ReconcileReport, String> {
         let base = self.memo_base_for_notebook_id_result(notebook_id)?;
         if !base.exists() {
@@ -176,7 +194,10 @@ impl MemoFile {
         }
 
         let mut markdown_paths = Vec::new();
-        collect_markdown_paths(&base, &base, &mut markdown_paths)?;
+        let scan_complete = collect_markdown_paths(&base, &base, &mut markdown_paths)?;
+        if !scan_complete {
+            return Err("notebook scan incomplete; refusing to prune memo index".to_string());
+        }
         let disk_paths: std::collections::HashSet<String> = markdown_paths
             .iter()
             .map(|path| notebook_relative_path(&base, path))
@@ -200,11 +221,7 @@ impl MemoFile {
         let mut added = 0;
         for relative_path in disk_paths.difference(&known) {
             let path = notebook_path_from_relative(&base, relative_path)?;
-            let registered = if stamp_missing_key {
-                self.register_existing_file_for_notebook_id(notebook_id, &path)
-            } else {
-                self.register_existing_file_for_notebook_id_without_frontmatter(notebook_id, &path)
-            };
+            let registered = self.register_existing_file_for_notebook_id(notebook_id, &path);
             match registered {
                 Ok(_) => added += 1,
                 Err(error) => tracing::warn!(
@@ -221,6 +238,19 @@ impl MemoFile {
             .read_index_for_notebook_id(Some(notebook_id))
             .map_err(|error| format!("read_index failed: {error}"))?
             .unwrap_or_default();
+        let removed_memos: Vec<Memo> = current
+            .memos
+            .iter()
+            .filter(|entry| {
+                let relative_path = if entry.relative_path.is_empty() {
+                    &entry.filename
+                } else {
+                    &entry.relative_path
+                };
+                !disk_paths.contains(relative_path)
+            })
+            .map(MemoFile::index_entry_to_memo)
+            .collect();
         let before = current.memos.len();
         current.memos.retain(|entry| {
             let relative_path = if entry.relative_path.is_empty() {
@@ -236,7 +266,11 @@ impl MemoFile {
             self.write_index_for_notebook_id(notebook_id, &current)
                 .map_err(|error| format!("write_index failed: {error}"))?;
         }
-        Ok(ReconcileReport { added, removed })
+        Ok(ReconcileReport {
+            added,
+            removed,
+            removed_memos,
+        })
     }
 
     /// 重新读 .md 派生 preview / tags / todos, 同步到 memo index。
@@ -249,7 +283,10 @@ impl MemoFile {
         }
 
         let mut markdown_paths = Vec::new();
-        collect_markdown_paths(&base, &base, &mut markdown_paths)?;
+        let scan_complete = collect_markdown_paths(&base, &base, &mut markdown_paths)?;
+        if !scan_complete {
+            return Err("notebook scan incomplete; refusing to prune memo index".to_string());
+        }
         let disk_paths: std::collections::HashSet<String> = markdown_paths
             .iter()
             .map(|path| notebook_relative_path(&base, path))
@@ -300,7 +337,11 @@ impl MemoFile {
                 .map_err(|e| format!("write_index failed: {e}"))?;
         }
 
-        Ok(ReconcileReport { added, removed })
+        Ok(ReconcileReport {
+            added,
+            removed,
+            removed_memos: Vec::new(),
+        })
     }
 
     pub fn reload_memo_from_disk(&self, id: &str) -> Result<Memo, String> {
@@ -770,12 +811,18 @@ impl MemoFile {
             notebook_path_from_relative(&base, parent_relative_path)?
         };
         if !parent.is_dir() {
-            return Err(format!("memo destination directory does not exist: {}", parent.display()));
+            return Err(format!(
+                "memo destination directory does not exist: {}",
+                parent.display()
+            ));
         }
         let destination_relative = if parent_relative_path.trim().is_empty() {
             memo.filename.clone()
         } else {
-            format!("{parent_relative_path}/{filename}", filename = memo.filename)
+            format!(
+                "{parent_relative_path}/{filename}",
+                filename = memo.filename
+            )
         };
         if !parent_relative_path.trim().is_empty()
             && is_internal_notebook_path(Path::new(parent_relative_path))
@@ -866,32 +913,52 @@ fn collect_markdown_paths(
     base: &Path,
     directory: &Path,
     output: &mut Vec<PathBuf>,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let entries = fs::read_dir(directory).map_err(|e| format!("read_dir failed: {e}"))?;
-    for entry in entries.filter_map(|entry| entry.ok()) {
+    let mut complete = true;
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                complete = false;
+                tracing::warn!(
+                    path = %directory.display(),
+                    %error,
+                    "failed to read notebook directory entry"
+                );
+                continue;
+            }
+        };
         let path = entry.path();
         if is_internal_notebook_path(path.strip_prefix(base).unwrap_or(&path)) {
             continue;
         }
-        if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
-            if let Err(error) = collect_markdown_paths(base, &path, output) {
-                tracing::warn!(
-                    path = %path.display(),
-                    %error,
-                    "skipping unreadable notebook subdirectory"
-                );
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) => {
+                complete = false;
+                tracing::warn!(path = %path.display(), %error, "failed to inspect notebook entry");
+                continue;
             }
-        } else if entry
-            .file_type()
-            .map(|kind| kind.is_file())
-            .unwrap_or(false)
-            && path.is_md()
-        {
+        };
+        if file_type.is_dir() {
+            match collect_markdown_paths(base, &path, output) {
+                Ok(child_complete) => complete &= child_complete,
+                Err(error) => {
+                    complete = false;
+                    tracing::warn!(
+                        path = %path.display(),
+                        %error,
+                        "skipping unreadable notebook subdirectory"
+                    );
+                }
+            }
+        } else if file_type.is_file() && path.is_md() {
             output.push(path);
         }
     }
     if directory == base {
         output.sort();
     }
-    Ok(())
+    Ok(complete)
 }

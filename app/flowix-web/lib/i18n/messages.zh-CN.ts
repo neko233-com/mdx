@@ -409,6 +409,7 @@ const zhCN = {
     "agent.status.available": "可用",
     "agent.status.checking": "检测中...",
     "agent.status.notChecked": "未检测",
+    "agent.status.notInstalled": "未安装",
     "agent.status.setup": "配置",
     "agent.status.comingSoon": "暂未开放",
 
@@ -665,7 +666,7 @@ const zhCN = {
     "agent.model.menu": "模型",
     "agent.model.title": "模型",
     "agent.workspace.title": "空间",
-    "agent.workspace.access": "访问",
+    "agent.workspace.access": "可访问",
     "agent.workspace.unset": "未设置",
     "agent.workspace.settings": "设置",
     "agent.reasoningDepth.title": "深度",
@@ -1029,7 +1030,6 @@ const zhCN = {
     "notebook.edit.remove": "移除",
 
     // document
-    "document.empty": "请选择一个文档",
     "document.file.unavailable": "文件无法查看",
     "document.file.loading": "正在加载文件…",
     "document.file.reveal": "在访达中展示",

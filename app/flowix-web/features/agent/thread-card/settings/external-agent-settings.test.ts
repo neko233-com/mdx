@@ -23,7 +23,7 @@ describe("createCodexSettingsItem", () => {
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
-  it("renders a selected workspace as a non-interactive menu item", () => {
+  it("renders a selected workspace as a disabled menu item", () => {
     const onSelect = vi.fn();
     const item = createCodexSettingsItem(
       "开发任务管理",
@@ -34,6 +34,7 @@ describe("createCodexSettingsItem", () => {
     ) as HTMLButtonElement;
 
     expect(item.disabled).toBe(true);
+    expect(item.getAttribute("aria-disabled")).toBe("true");
     expect(item.classList.contains("agent-thread-card__codex-settings-item--readonly"))
       .toBe(true);
     expect(item.getAttribute("aria-checked")).toBe("true");

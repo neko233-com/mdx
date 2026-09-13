@@ -19,7 +19,7 @@ impl MemoFile {
         };
         let sql = format!(
             r#"
-            SELECT t.content, t.status, t.memo_id, t.priority, t.time_range, t.owner, t.assignee,
+            SELECT t.todo_id, t.content, t.status, t.memo_id, t.priority, t.time_range, t.owner, t.assignee,
                    t.created_at, t.updated_at
             FROM memo_todos t
             JOIN memos m ON m.id = t.memo_id
@@ -31,15 +31,16 @@ impl MemoFile {
         let rows = stmt
             .query_map(params![notebook_id], |row| {
                 Ok(MemoTodoEntry {
-                    content: row.get(0)?,
-                    status: row.get(1)?,
-                    memo_id: row.get(2)?,
-                    priority: row.get(3)?,
-                    time_range: row.get(4)?,
-                    owner: row.get(5)?,
-                    assignee: row.get(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
+                    todo_id: row.get(0)?,
+                    content: row.get(1)?,
+                    status: row.get(2)?,
+                    memo_id: row.get(3)?,
+                    priority: row.get(4)?,
+                    time_range: row.get(5)?,
+                    owner: row.get(6)?,
+                    assignee: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
                 })
             })
             .map_err(sqlite_to_io)?;
