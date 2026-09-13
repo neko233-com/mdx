@@ -41,7 +41,6 @@ export function DocumentTitlebarMac({
     visible: showNavigationButtons = true,
   },
   contentCapabilities: {
-    properties: canEditProperties,
     copyFullText: canCopyFullText,
     exportContent: canExportContent,
     saveAsTemplate: canSaveAsTemplate,
@@ -50,7 +49,6 @@ export function DocumentTitlebarMac({
   actions: {
     onCopyLink,
     onCopyFullText,
-    onOpenProperties,
     onTogglePin,
     onExportMarkdown,
     onSaveAsTemplate,
@@ -71,7 +69,7 @@ export function DocumentTitlebarMac({
       <WorkColumnTitlebarShell
       isWindows={false}
       showTrafficLightSpacer={isSidebarHidden && !noteNavigationVisible}
-      className={isAgentThreadCardFullscreen ? 'agent-thread-card-fullscreen-titlebar' : ''}
+      className={isAgentThreadCardFullscreen ? 'agent-surface-titlebar' : ''}
       style={isAgentThreadCardFullscreen ? undefined : { backgroundImage: WORK_COLUMN_TITLEBAR_GRADIENT }}
     >
       <div className="flex shrink-0 items-center gap-1">
@@ -134,14 +132,12 @@ export function DocumentTitlebarMac({
             iconButtonClass={ICON_BTN}
             onCopyLink={onCopyLink}
             onCopyFullText={onCopyFullText}
-            onOpenProperties={onOpenProperties}
             onTogglePin={onTogglePin}
             onExportMarkdown={onExportMarkdown}
             onSaveAsTemplate={onSaveAsTemplate}
             onExportWord={onExportWord}
             onRequestDeleteMemo={onRequestDeleteMemo}
             onColorsChange={onColorsChange ?? (() => {})}
-            canEditProperties={canEditProperties}
             canCopyFullText={canCopyFullText}
             canExportContent={canExportContent}
             canSaveAsTemplate={canSaveAsTemplate}

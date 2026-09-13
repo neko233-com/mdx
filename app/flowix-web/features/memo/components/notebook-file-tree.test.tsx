@@ -2,7 +2,8 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { files, type DocTreeItem } from '@platform/tauri/client';
+import { files, memos, type DocTreeItem } from '@platform/tauri/client';
+import type { MemoItem } from '@/types/memo-item';
 import type { FolderTreeController } from './use-folder-tree';
 import { NotebookFileTree } from './notebook-file-tree';
 import { resolveMemoByPath } from '@features/memo/use-cases/open-by-target';
@@ -25,7 +26,12 @@ vi.mock('@shared/ui/context-menu', () => ({
 vi.mock('@features/memo/components/file-type-icon', () => ({ FileTypeIcon: () => null }));
 vi.mock('@features/memo/components/memo-card-actions', () => ({ MemoCardActions: () => null }));
 vi.mock('@features/memo/services/memo-repository', () => ({ memoRepository: {} }));
-vi.mock('@features/memo', () => ({ useMemoStore: { getState: vi.fn() } }));
+vi.mock('@features/memo', () => ({
+  useMemoStore: Object.assign(
+    (selector: (state: { memos: never[]; selectedMemo: null }) => unknown) => selector({ memos: [], selectedMemo: null }),
+    { getState: vi.fn() },
+  ),
+}));
 vi.mock('@features/memo/use-cases/open-by-target', () => ({ resolveMemoByPath: vi.fn() }));
 
 function item(fullPath: string, type: 'folder' | 'document'): DocTreeItem {
@@ -39,6 +45,7 @@ function item(fullPath: string, type: 'folder' | 'document'): DocTreeItem {
     sizeBytes: type === 'document' ? 0 : null,
     modifiedMs: null,
     createdMs: null,
+    memoCreatedMs: null,
   };
 }
 
@@ -70,6 +77,7 @@ describe('NotebookFileTree pointer dragging', () => {
   afterEach(() => {
     host.remove();
     environment.IS_REACT_ACT_ENVIRONMENT = false;
+    vi.mocked(resolveMemoByPath).mockReset();
     vi.restoreAllMocks();
   });
 
@@ -102,6 +110,41 @@ describe('NotebookFileTree pointer dragging', () => {
     const { root } = await mount(async () => {});
 
     expect(resolveMemoByPath).toHaveBeenCalledWith('/notes/a.md');
+    await act(async () => root.unmount());
+  });
+
+  it('renders the Markdown-derived note icon and falls back to the file icon while loading', async () => {
+    vi.mocked(resolveMemoByPath).mockResolvedValue({ memoId: 'memo-1' } as never);
+    const markdownMemo = {
+      id: 'memo-1',
+      filename: 'a.md',
+      preview: '',
+      tags: [],
+      todos: [],
+      agents: [],
+      createdAt: 0,
+      updatedAt: 0,
+      favorited: false,
+      icon: 'flashlight',
+      colors: [],
+      properties: { flowix_icon: 'flashlight' },
+    } satisfies MemoItem;
+    let resolveReadMemo: ((memo: MemoItem | null) => void) | undefined;
+    vi.spyOn(memos, 'readMemo').mockReturnValue(new Promise((resolve) => {
+      resolveReadMemo = resolve;
+    }));
+
+    const { root } = await mount(async () => {});
+    const noteRow = host.querySelector<HTMLElement>('[data-notebook-tree-kind="note"]')!;
+
+    // Before read_memo resolves the stable file icon is the fallback.
+    expect(noteRow.querySelector('svg')).not.toBeNull();
+    await act(async () => {
+      resolveReadMemo?.(markdownMemo);
+      await Promise.resolve();
+    });
+    expect(noteRow.querySelector('img')).not.toBeNull();
+    expect(noteRow.querySelector('.lucide-file')).toBeNull();
     await act(async () => root.unmount());
   });
 
@@ -183,6 +226,21 @@ describe('NotebookFileTree pointer dragging', () => {
     }
     await act(async () => root.unmount());
   });
+
+  it.each(['note', 'folder'] as const)(
+    'renders the matching %s icon beside the draft input',
+    async (kind) => {
+      const { root } = await mountDraft(kind, '/notes');
+      const input = host.querySelector<HTMLInputElement>('input')!;
+      const icon = host.querySelector<HTMLElement>(`[data-notebook-tree-draft-icon="${kind}"]`)!;
+
+      expect(icon).not.toBeNull();
+      expect(icon.nextElementSibling).toBe(input);
+      expect(icon.querySelector('svg')).not.toBeNull();
+      expect(input.classList.contains('ml-1.5')).toBe(true);
+      await act(async () => root.unmount());
+    },
+  );
 
   it.each(['note', 'folder'] as const)(
     'keeps the new %s draft focused when Enter confirms an IME candidate',

@@ -14,6 +14,7 @@ function item(name: string, type: DocTreeItem['type']): DocTreeItem {
     sizeBytes: null,
     modifiedMs: null,
     createdMs: null,
+    memoCreatedMs: null,
   };
 }
 
@@ -54,5 +55,21 @@ describe('notebook folder sorting', () => {
       .toEqual(['projects', 'alpha.md', 'Zulu.md']);
     expect(sortNotebookTreeItems([zulu, alpha, folder], 'filenameDesc').map((entry) => entry.name))
       .toEqual(['projects', 'Zulu.md', 'alpha.md']);
+  });
+
+  it('uses the indexed memo creation time when the file was atomically replaced', () => {
+    const replacedOlder = {
+      ...item('older.md', 'document'),
+      createdMs: 100,
+      memoCreatedMs: 10,
+    };
+    const genuinelyNewer = {
+      ...item('newer.md', 'document'),
+      createdMs: 20,
+      memoCreatedMs: 20,
+    };
+
+    expect(sortNotebookTreeItems([replacedOlder, genuinelyNewer], 'createdAt').map((entry) => entry.name))
+      .toEqual(['newer.md', 'older.md']);
   });
 });

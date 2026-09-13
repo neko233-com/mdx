@@ -16,6 +16,7 @@ import { BrowserColumnHeader } from './browser-column-header';
 import { useI18n } from '@/lib/i18n';
 import {
   BrowserColumnSurfaceHost,
+  getBrowserColumnSurfaceDefinition,
   type BrowserColumnFlushRegistration,
   resolveBrowserColumnSurface,
 } from '@features/surface/public/shell-api';
@@ -26,6 +27,32 @@ export interface BrowserColumnProps {
   onResize: (width: number) => void;
   toolbarCollapsed: boolean;
   onToolbarCollapsedChange: (collapsed: boolean) => void;
+}
+
+/**
+ * Give React's optimistic tab-header update one real paint before mounting the
+ * next surface. A large Markdown document can otherwise monopolize the same
+ * frame and keep the new tab background invisible until parsing is finished.
+ */
+function waitForTabHeaderPaint(): Promise<void> {
+  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(fallback);
+      resolve();
+    };
+    const fallback = window.setTimeout(finish, 50);
+    window.requestAnimationFrame(() => {
+      // The optimistic header is painted between these two frame callbacks.
+      window.requestAnimationFrame(finish);
+    });
+  });
 }
 
 export function BrowserColumn({
@@ -50,7 +77,8 @@ export function BrowserColumn({
     if (activeTabId === null) return;
     registerBrowserColumnFlush(activeTabId, flush, discard);
   }, [activeTabId]);
-  const handleSelectTab = useCallback((tabId: string) => {
+  const handleSelectTab = useCallback(async (tabId: string) => {
+    await waitForTabHeaderPaint();
     return selectBrowserColumnTab(tabId);
   }, []);
   const closeWithDiscardFallback = useCallback(async (
@@ -106,6 +134,9 @@ export function BrowserColumn({
         nativeOverlayOpen,
       )
     : null;
+  const activeSurfaceChrome = activeSurface
+    ? getBrowserColumnSurfaceDefinition(activeSurface).chrome
+    : 'document';
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef({ x: 0, width });
 
@@ -159,6 +190,7 @@ export function BrowserColumn({
       <BrowserColumnHeader
         tabs={tabs}
         activeTabId={activeTabId}
+        activeSurfaceChrome={activeSurfaceChrome}
         onSelectTab={handleSelectTab}
         onCloseTab={handleCloseTab}
         onCloseOtherTabs={handleCloseOtherTabs}

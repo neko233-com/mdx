@@ -344,6 +344,15 @@ export function NotePropertiesDialog({
                         disabled={isKeyField}
                         onChange={(value) => updateRow(row.id, { value })}
                       />
+                    ) : row.type === 'List' ? (
+                      <textarea
+                        value={row.value}
+                        rows={3}
+                        onChange={(event) => updateRow(row.id, { value: event.target.value })}
+                        disabled={isKeyField}
+                        className="min-h-8 w-full resize-y rounded-lg border border-input bg-background px-2 py-1.5 text-sm outline-none transition-colors focus-visible:border-[var(--primary)]"
+                        aria-label={row.key}
+                      />
                     ) : (
                       <Input
                         type={row.type === 'URL' ? 'url' : row.type === 'Number' ? 'number' : 'text'}

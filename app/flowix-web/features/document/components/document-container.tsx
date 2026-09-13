@@ -13,7 +13,7 @@ import {
 } from '@features/document';
 import { getDocumentInstanceKey } from '@/lib/path';
 import { toast } from '@/lib/toast';
-import { openPath } from '@platform/tauri/opener';
+import { product } from '@platform/tauri/client/desktop';
 import {
   initialDocumentContainerState,
   type DocumentContainerProps,
@@ -412,6 +412,18 @@ export function DocumentContainer({
   return (
     <div ref={containerRef} onFocusCapture={() => useWorkspaceFocusStore.getState().focusHost(hostId)} onPointerDownCapture={() => useWorkspaceFocusStore.getState().focusHost(hostId)} className="document-container h-full w-full min-w-0 flex flex-col bg-transparent relative overflow-hidden">
       <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
+        {state.isLoading && (
+          <div
+            role="status"
+            aria-label="Loading"
+            className="flex h-full w-full items-center justify-center"
+          >
+            <div
+              aria-hidden="true"
+              className="h-5 w-5 animate-spin rounded-full border-2 border-[color-mix(in_oklch,var(--muted-foreground)_26%,transparent)] border-t-[var(--brand)]"
+            />
+          </div>
+        )}
         {!state.isLoading && isImagePreview && (
           <ImageFilePreview filePath={filePath} scopePath={externalScopePath} />
         )}
@@ -513,20 +525,17 @@ function UnavailableFileView({ filePath }: { filePath: string }) {
       <span>{t('document.file.unavailable')}</span>
       <button
         type="button"
-        onClick={() => void openPath(parentDirectory(filePath))}
+        onClick={() => {
+          void product.revealInFileManager(filePath).catch(() => {
+            toast.error(t('memo.fileTree.openFailed'));
+          });
+        }}
         className="inline-flex h-8 items-center rounded-lg border border-[var(--border)] px-3 text-xs text-[var(--foreground)] transition-colors hover:bg-[var(--muted)]"
       >
         {t('document.file.reveal')}
       </button>
     </div>
   );
-}
-
-function parentDirectory(path: string): string {
-  const normalized = path.replace(/[\\/]+$/, '');
-  const separator = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'));
-  if (separator > 0) return normalized.slice(0, separator);
-  return normalized.startsWith('/') ? '/' : normalized;
 }
 
 function ImageFilePreview({ filePath, scopePath }: { filePath: string; scopePath: string | null }) {

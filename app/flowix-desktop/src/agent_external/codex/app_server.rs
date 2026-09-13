@@ -29,6 +29,7 @@ use crate::agent_wire::{AgentChunk, AgentRuntimeConfig, AgentUserMessage, RunInf
 
 const INITIALIZE_METHOD: &str = "initialize";
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+const MAX_PENDING_TURN_NOTIFICATIONS: usize = 4096;
 const CONTEXT_COMPACTION_MESSAGE_TYPE: &str = "context-compaction";
 const CODEX_COMMAND_MESSAGE_TYPE: &str = "codex-command";
 const MIN_PAGINATED_CODEX_VERSION: &str = "0.150.0";
@@ -55,6 +56,11 @@ struct ActiveTurn {
     run_id: String,
     codex_thread_id: String,
     codex_turn_id: String,
+    binding: TurnBinding,
+    /// Turn-scoped notifications can beat the `turn/start` response. Ordinary
+    /// chats keep them here until that response supplies the authoritative id.
+    pending_notifications: Vec<Value>,
+    turn_ready: Arc<tokio::sync::Notify>,
     /// The UI can stop a native command before Codex announces its provider
     /// turn. Keep the registry entry until that turn id arrives so the
     /// notification path can interrupt the real provider work.
@@ -67,6 +73,46 @@ struct ActiveTurn {
     started_at: i64,
     last_event_at: i64,
     stream_end_emitted: Arc<AtomicBool>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TurnBinding {
+    /// An ordinary chat is bound only by its own `turn/start` response.
+    StartResponse,
+    /// Native asynchronous commands do not always return a turn id and must
+    /// bind from their first `turn/started` notification.
+    StartedNotification,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UnboundNotificationAction {
+    Buffer,
+    Bind,
+    Ignore,
+}
+
+fn unbound_notification_action(
+    binding: TurnBinding,
+    method: &str,
+    has_thread_and_turn: bool,
+) -> UnboundNotificationAction {
+    if !has_thread_and_turn || !turn_scoped_notification(method) {
+        return UnboundNotificationAction::Ignore;
+    }
+    match binding {
+        TurnBinding::StartResponse => UnboundNotificationAction::Buffer,
+        TurnBinding::StartedNotification if method == "turn/started" => {
+            UnboundNotificationAction::Bind
+        }
+        TurnBinding::StartedNotification => UnboundNotificationAction::Buffer,
+    }
+}
+
+fn buffer_turn_notification(active: &mut ActiveTurn, message: &Value) {
+    if active.pending_notifications.len() == MAX_PENDING_TURN_NOTIFICATIONS {
+        active.pending_notifications.remove(0);
+    }
+    active.pending_notifications.push(message.clone());
 }
 
 struct Inner {
@@ -86,6 +132,8 @@ struct Inner {
     pending_cancellations: Mutex<HashMap<String, String>>,
     app_handle: Mutex<Option<tauri::AppHandle>>,
     active_turns: Mutex<HashMap<String, ActiveTurn>>,
+    /// Keep notification routing and buffered-event replay in one total order.
+    notification_dispatch: Mutex<()>,
     latest_usage: Mutex<HashMap<String, crate::agent_types::UsageInfo>>,
     next_request_id: AtomicU64,
 }
@@ -106,6 +154,7 @@ impl CodexAppServerManager {
                 pending_cancellations: Mutex::new(HashMap::new()),
                 app_handle: Mutex::new(None),
                 active_turns: Mutex::new(HashMap::new()),
+                notification_dispatch: Mutex::new(()),
                 latest_usage: Mutex::new(HashMap::new()),
                 next_request_id: AtomicU64::new(1),
             }),
@@ -667,6 +716,9 @@ impl CodexAppServerManager {
                 run_id: run_id.clone(),
                 codex_thread_id: codex_thread_id.clone(),
                 codex_turn_id: String::new(),
+                binding: TurnBinding::StartResponse,
+                pending_notifications: Vec::new(),
+                turn_ready: Arc::new(tokio::sync::Notify::new()),
                 cancel_requested: false,
                 command_id: None,
                 command: None,
@@ -690,25 +742,30 @@ impl CodexAppServerManager {
             // `turn/completed` can race the RPC response. Only update an
             // active run that still belongs to this invocation; never revive a
             // run that the notification path has already finalized.
-            let should_interrupt = {
+            let _dispatch = self.inner.notification_dispatch.lock().await;
+            let (should_interrupt, pending_notifications) = {
                 let mut active_turns = self.inner.active_turns.lock().await;
                 let active = active_turns
                     .get_mut(&flowix_thread_id)
                     .filter(|active| active.run_id == run_id);
                 if let Some(active) = active {
-                    if active.codex_turn_id.is_empty() {
-                        active.codex_turn_id = codex_turn_id;
-                    }
+                    active.codex_turn_id = codex_turn_id;
+                    active.turn_ready.notify_one();
+                    let pending = std::mem::take(&mut active.pending_notifications);
                     let should_interrupt =
                         active.cancel_requested && !active.codex_turn_id.is_empty();
                     if should_interrupt {
                         active.cancel_requested = false;
                     }
-                    should_interrupt
+                    (should_interrupt, pending)
                 } else {
-                    false
+                    (false, Vec::new())
                 }
             };
+            for notification in pending_notifications {
+                dispatch_notification_inner(&self.inner, &notification).await;
+            }
+            drop(_dispatch);
             if should_interrupt {
                 let active = self
                     .inner
@@ -730,13 +787,17 @@ impl CodexAppServerManager {
             Ok::<(), String>(())
         }.await;
         if let Err(error) = started {
-            let active = self
-                .inner
-                .active_turns
-                .lock()
-                .await
-                .remove(&flowix_thread_id)
-                .filter(|active| active.run_id == run_id);
+            let active = {
+                let mut turns = self.inner.active_turns.lock().await;
+                if turns
+                    .get(&flowix_thread_id)
+                    .is_some_and(|active| active.run_id == run_id)
+                {
+                    turns.remove(&flowix_thread_id)
+                } else {
+                    None
+                }
+            };
             // If the notification path already completed the turn, its
             // terminal event owns the run. Otherwise surface the RPC failure
             // and close the pre-registered lifecycle exactly once.
@@ -767,12 +828,33 @@ impl CodexAppServerManager {
         app_handle: &tauri::AppHandle,
     ) -> Result<(), String> {
         self.ensure_connection().await?;
+        let (turn_ready, is_chat_starting) = self
+            .inner
+            .active_turns
+            .lock()
+            .await
+            .get(flowix_thread_id)
+            .map(|turn| {
+                (
+                    turn.turn_ready.clone(),
+                    turn.binding == TurnBinding::StartResponse
+                        && turn.codex_turn_id.is_empty()
+                        && turn.command_id.is_none(),
+                )
+            })
+            .ok_or_else(|| "Codex has no steerable active turn".to_string())?;
+        if is_chat_starting {
+            tokio::time::timeout(REQUEST_TIMEOUT, turn_ready.notified())
+                .await
+                .map_err(|_| "Codex turn did not become steerable in time".to_string())?;
+        }
         let active = self
             .inner
             .active_turns
             .lock()
             .await
             .get(flowix_thread_id)
+            .filter(|turn| turn.command_id.is_none() && !turn.codex_turn_id.is_empty())
             .map(|turn| (turn.codex_thread_id.clone(), turn.codex_turn_id.clone()))
             .ok_or_else(|| "Codex has no steerable active turn".to_string())?;
         let mut input = vec![json!({
@@ -817,6 +899,15 @@ impl CodexAppServerManager {
         run_id: Option<&str>,
         app_handle: &tauri::AppHandle,
     ) -> bool {
+        if let Some(expected_run_id) = run_id.filter(|id| !id.trim().is_empty()) {
+            let turns = self.inner.active_turns.lock().await;
+            if turns
+                .get(thread_id)
+                .is_some_and(|active| active.run_id != expected_run_id)
+            {
+                return false;
+            }
+        }
         let active = {
             let mut active_turns = self.inner.active_turns.lock().await;
             match active_turns.get_mut(thread_id) {
@@ -1446,6 +1537,9 @@ impl CodexAppServerManager {
                 run_id: run_id.clone(),
                 codex_thread_id: codex_thread_id.clone(),
                 codex_turn_id: String::new(),
+                binding: TurnBinding::StartedNotification,
+                pending_notifications: Vec::new(),
+                turn_ready: Arc::new(tokio::sync::Notify::new()),
                 cancel_requested: false,
                 command_id: Some(command_id.clone()),
                 command: Some(command.to_string()),
@@ -1472,11 +1566,14 @@ impl CodexAppServerManager {
         let result = match self.execute_slash_request(&codex_thread_id, command).await {
             Ok(result) => result,
             Err(error) => {
-                self.inner
-                    .active_turns
-                    .lock()
-                    .await
-                    .remove(flowix_thread_id);
+                let mut turns = self.inner.active_turns.lock().await;
+                if turns
+                    .get(flowix_thread_id)
+                    .is_some_and(|active| active.run_id == run_id)
+                {
+                    turns.remove(flowix_thread_id);
+                }
+                drop(turns);
                 // A stop can win while the command RPC is still pending. In
                 // that case stop_chat already emitted the cancelled command
                 // and stream end; do not overwrite them with an RPC error.
@@ -1512,7 +1609,8 @@ impl CodexAppServerManager {
             .and_then(Value::as_str)
             .filter(|id| !id.trim().is_empty())
             .map(str::to_string);
-        let (has_provider_turn, should_interrupt) = {
+        let _dispatch = self.inner.notification_dispatch.lock().await;
+        let (has_provider_turn, should_interrupt, pending_notifications) = {
             let mut active_turns = self.inner.active_turns.lock().await;
             let active = active_turns
                 .get_mut(flowix_thread_id)
@@ -1521,8 +1619,14 @@ impl CodexAppServerManager {
                 if active.codex_turn_id.is_empty() {
                     if let Some(turn_id) = response_turn_id {
                         active.codex_turn_id = turn_id;
+                        active.turn_ready.notify_one();
                     }
                 }
+                let pending = if active.codex_turn_id.is_empty() {
+                    Vec::new()
+                } else {
+                    std::mem::take(&mut active.pending_notifications)
+                };
                 let should_interrupt = active.cancel_requested && !active.codex_turn_id.is_empty();
                 if should_interrupt {
                     // Only one path should schedule the interrupt. The
@@ -1530,11 +1634,15 @@ impl CodexAppServerManager {
                     // turn/started event that beats this RPC response.
                     active.cancel_requested = false;
                 }
-                (!active.codex_turn_id.is_empty(), should_interrupt)
+                (!active.codex_turn_id.is_empty(), should_interrupt, pending)
             } else {
-                (false, false)
+                (false, false, Vec::new())
             }
         };
+        for notification in pending_notifications {
+            dispatch_notification_inner(&self.inner, &notification).await;
+        }
+        drop(_dispatch);
         if should_interrupt {
             let active = self
                 .inner
@@ -1566,11 +1674,14 @@ impl CodexAppServerManager {
         // operations remain synchronous and are finalized from their RPC
         // response.
         if !has_provider_turn && !waits_for_provider_turn {
-            self.inner
-                .active_turns
-                .lock()
-                .await
-                .remove(flowix_thread_id);
+            let mut turns = self.inner.active_turns.lock().await;
+            if turns
+                .get(flowix_thread_id)
+                .is_some_and(|active| active.run_id == run_id)
+            {
+                turns.remove(flowix_thread_id);
+            }
+            drop(turns);
             self.emit_codex_command(
                 app_handle,
                 flowix_thread_id,
@@ -1955,6 +2066,11 @@ async fn write_server_response(stdin: &Arc<Mutex<ChildStdin>>, id: &Value, resul
 }
 
 async fn dispatch_notification(inner: &Arc<Inner>, message: &Value) {
+    let _dispatch = inner.notification_dispatch.lock().await;
+    dispatch_notification_inner(inner, message).await;
+}
+
+async fn dispatch_notification_inner(inner: &Arc<Inner>, message: &Value) {
     let Some(method) = message.get("method").and_then(Value::as_str) else {
         return;
     };
@@ -1998,6 +2114,41 @@ async fn dispatch_notification(inner: &Arc<Inner>, message: &Value) {
         let requires_exact_turn = turn_scoped_notification(method);
         let found = (thread_id.is_some() || turn_id.is_some())
             && (!requires_exact_turn || (thread_id.is_some() && turn_id.is_some()));
+        let waiting_for_start_response =
+            if requires_exact_turn && thread_id.is_some() && turn_id.is_some() {
+                turns.values_mut().find(|active| {
+                    active.codex_turn_id.is_empty()
+                        && unbound_notification_action(active.binding, method, true)
+                            == UnboundNotificationAction::Buffer
+                        && active.binding == TurnBinding::StartResponse
+                        && thread_id == Some(active.codex_thread_id.as_str())
+                })
+            } else {
+                None
+            };
+        if let Some(active) = waiting_for_start_response {
+            buffer_turn_notification(active, message);
+            return;
+        }
+        let waiting_for_started_notification = if requires_exact_turn
+            && method != "turn/started"
+            && thread_id.is_some()
+            && turn_id.is_some()
+        {
+            turns.values_mut().find(|active| {
+                active.codex_turn_id.is_empty()
+                    && unbound_notification_action(active.binding, method, true)
+                        == UnboundNotificationAction::Buffer
+                    && active.binding == TurnBinding::StartedNotification
+                    && thread_id == Some(active.codex_thread_id.as_str())
+            })
+        } else {
+            None
+        };
+        if let Some(active) = waiting_for_started_notification {
+            buffer_turn_notification(active, message);
+            return;
+        }
         let mut found = found
             .then(|| {
                 turns.values_mut().find(|active| {
@@ -2009,15 +2160,17 @@ async fn dispatch_notification(inner: &Arc<Inner>, message: &Value) {
                 })
             })
             .flatten();
-        // The first turn-scoped notification is also authoritative for the
-        // provider turn id. Usually this is `turn/started`, but some server
-        // versions deliver the first `item/*` notification first. The request
-        // response is not a safe source on its own because notifications and
-        // JSON-RPC responses may cross in either order.
+        // Ordinary chats are bound by their own `turn/start` response above.
+        // Native asynchronous commands may have no response turn id, so only
+        // their `turn/started` notification is allowed to establish identity.
         if let Some(active) = found.as_deref_mut() {
-            if active.codex_turn_id.is_empty() {
+            if active.codex_turn_id.is_empty()
+                && active.binding == TurnBinding::StartedNotification
+                && method == "turn/started"
+            {
                 if let Some(turn_id) = turn_id {
                     active.codex_turn_id = turn_id.to_string();
+                    active.turn_ready.notify_one();
                 }
             }
             if active.cancel_requested && !active.codex_turn_id.is_empty() {
@@ -2039,13 +2192,22 @@ async fn dispatch_notification(inner: &Arc<Inner>, message: &Value) {
                 active.command_id.clone(),
                 active.command.clone(),
                 active.started_at,
+                if method == "turn/started" {
+                    std::mem::take(&mut active.pending_notifications)
+                } else {
+                    Vec::new()
+                },
             )
         })
     };
-    let Some((flowix_thread_id, run_id, app, ended, command_id, command, started_at)) = active
+    let Some((flowix_thread_id, run_id, app, ended, command_id, command, started_at, pending)) =
+        active
     else {
         return;
     };
+    for notification in pending {
+        Box::pin(dispatch_notification_inner(inner, &notification)).await;
+    }
     if let Some((codex_thread_id, codex_turn_id)) = interrupt_target {
         let inner = inner.clone();
         tokio::spawn(async move {
@@ -2269,7 +2431,12 @@ async fn dispatch_notification(inner: &Arc<Inner>, message: &Value) {
                 )
                 .await;
             }
-            inner.active_turns.lock().await.remove(&flowix_thread_id);
+            let mut turns = inner.active_turns.lock().await;
+            if turns.get(&flowix_thread_id).is_some_and(|active| {
+                active.run_id == run_id && turn_id.is_some_and(|id| id == active.codex_turn_id)
+            }) {
+                turns.remove(&flowix_thread_id);
+            }
         }
         _ => {}
     }
@@ -2573,8 +2740,7 @@ fn annotate_goal_turn(turns: &mut [Value], response: &Value) {
             .get("completedAt")
             .and_then(Value::as_i64)
             .unwrap_or_else(|| started_at.saturating_add(5));
-        updated_at >= started_at.saturating_sub(2)
-            && updated_at <= completed_at.saturating_add(2)
+        updated_at >= started_at.saturating_sub(2) && updated_at <= completed_at.saturating_add(2)
     });
     // Before a goal's first status update, createdAt and turn/start are
     // emitted together. Keep a narrowly-bounded creation-time fallback.
@@ -3387,7 +3553,10 @@ Budget:
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[0].content, "Old");
         assert_eq!(messages[1].content, "/goal 你好");
-        assert_eq!(messages[1].codex_turn_id.as_deref(), Some("turn-edited-goal"));
+        assert_eq!(
+            messages[1].codex_turn_id.as_deref(),
+            Some("turn-edited-goal")
+        );
         assert_eq!(messages[2].content, "New");
     }
 
@@ -3842,5 +4011,45 @@ Budget:
             ["u0", "a0"]
         );
         assert_eq!(older.snapshot_sequence, Some(3));
+    }
+
+    #[test]
+    fn ordinary_chat_waits_for_its_start_response_before_routing_events() {
+        assert_eq!(
+            unbound_notification_action(TurnBinding::StartResponse, "turn/started", true),
+            UnboundNotificationAction::Buffer
+        );
+        assert_eq!(
+            unbound_notification_action(
+                TurnBinding::StartResponse,
+                "item/agentMessage/delta",
+                true,
+            ),
+            UnboundNotificationAction::Buffer
+        );
+        assert_eq!(
+            unbound_notification_action(
+                TurnBinding::StartResponse,
+                "thread/tokenUsage/updated",
+                true,
+            ),
+            UnboundNotificationAction::Ignore
+        );
+    }
+
+    #[test]
+    fn asynchronous_commands_bind_only_from_turn_started() {
+        assert_eq!(
+            unbound_notification_action(TurnBinding::StartedNotification, "turn/started", true,),
+            UnboundNotificationAction::Bind
+        );
+        assert_eq!(
+            unbound_notification_action(TurnBinding::StartedNotification, "item/completed", true,),
+            UnboundNotificationAction::Buffer
+        );
+        assert_eq!(
+            unbound_notification_action(TurnBinding::StartedNotification, "turn/started", false,),
+            UnboundNotificationAction::Ignore
+        );
     }
 }

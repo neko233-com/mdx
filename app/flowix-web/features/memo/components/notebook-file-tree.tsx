@@ -30,6 +30,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@shared/ui/dialog';
 import folderIcon from '@/assets/folder-outline.svg?raw';
 import type { FolderTreeController } from '@features/memo/components/use-folder-tree';
+import { getPropertyIconOption } from '@features/document/properties/property-icons';
 import { files, memos, type DocTreeItem } from '@platform/tauri/client';
 
 const TREE_EDGE_GUTTER = 6;
@@ -533,6 +534,20 @@ function NotebookTreeDraft({
         ...style,
       }}
     >
+      <span
+        aria-hidden="true"
+        data-notebook-tree-draft-icon={draft.kind}
+        className="relative flex h-[15px] w-[15px] shrink-0 items-center justify-center text-[color-mix(in_oklch,var(--foreground)_90%,white_10%)]"
+      >
+        {draft.kind === 'folder' ? (
+          <span
+            className="absolute inset-0 flex items-center justify-center"
+            dangerouslySetInnerHTML={{ __html: folderIcon }}
+          />
+        ) : (
+          <File className="h-[15px] w-[15px]" strokeWidth={1.3} />
+        )}
+      </span>
       <input
         key={draft.requestId}
         autoFocus
@@ -552,7 +567,7 @@ function NotebookTreeDraft({
             onCancel();
           }
         }}
-        className="h-5 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm outline-none"
+        className="ml-1.5 h-5 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm outline-none"
       />
     </div>
   );
@@ -588,6 +603,22 @@ function NotebookTreeRow({
   const { t } = useI18n();
   const isFolder = item.type === 'folder';
   const [memo, setMemo] = useState<MemoItem | null>(null);
+  // The memo is initially loaded by path because the file tree can contain
+  // notes outside the currently loaded list query. Keep listening to the
+  // store as well so changes made from the work column are reflected here
+  // immediately, without requiring a tree refresh.
+  const storeMemo = useMemoStore((state) => {
+    if (!memo) return null;
+    return state.memos.find((candidate) => candidate.id === memo.id)
+      ?? (state.selectedMemo?.id === memo.id ? state.selectedMemo : null);
+  });
+  const displayedMemo = storeMemo ?? memo;
+  // `memo` is loaded from read_memo, which derives icon from the current
+  // Markdown frontmatter. Do not let a possibly stale list-store value
+  // override an explicit icon (or an explicit clear) from the file content.
+  const noteIcon = !isFolder && memo
+    ? getPropertyIconOption(memo.icon ?? '')
+    : null;
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -686,11 +717,18 @@ function NotebookTreeRow({
           )} />
         </span>
       ) : (
-        <span
-          aria-hidden="true"
-          className="relative h-[15px] w-[15px] shrink-0 text-[color-mix(in_oklch,var(--foreground)_90%,white_10%)]"
-        >
-          <File className="absolute inset-0 h-[15px] w-[15px]" strokeWidth={1.3} />
+        <span className="relative flex h-[15px] w-[15px] shrink-0 items-center justify-center text-[color-mix(in_oklch,var(--foreground)_90%,white_10%)]">
+          {noteIcon ? (
+            <img
+              src={noteIcon.src}
+              alt=""
+              aria-hidden="true"
+              className="h-[15px] w-[15px] object-contain"
+              draggable={false}
+            />
+          ) : (
+            <File aria-hidden="true" className="h-[15px] w-[15px]" strokeWidth={1.3} />
+          )}
         </span>
       )}
       <span className={cn(
@@ -733,12 +771,12 @@ function NotebookTreeRow({
           </button>
         </span>
       )}
-      {!isFolder && memo && memo.colors.length > 0 && (
+      {!isFolder && displayedMemo && displayedMemo.colors.length > 0 && (
         <span
           aria-label="Note colors"
           className="ml-2 inline-flex h-6 shrink-0 items-center justify-center gap-0.5 px-2"
         >
-          {memo.colors.map((color) => (
+          {displayedMemo.colors.map((color) => (
             <span
               key={color}
               aria-hidden="true"
@@ -794,9 +832,9 @@ function NotebookTreeRow({
         {!isFolder && (
           <div role="separator" aria-hidden="true" className={TREE_MENU_DIVIDER_CLASS} />
         )}
-        {!isFolder && memo && (
+        {!isFolder && displayedMemo && (
           <MemoCardActions
-            memo={memo}
+            memo={displayedMemo}
             onOpenInSplit={onOpenInNewTab
               ? () => onOpenInNewTab()
               : undefined}

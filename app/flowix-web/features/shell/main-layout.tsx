@@ -347,13 +347,6 @@ export function MainLayout({
     );
   }, [currentMemo]);
 
-  const handleOpenNoteProperties = useCallback(() => {
-    if (!currentMemo) return;
-    window.dispatchEvent(
-      new CustomEvent('flowix:open-note-properties', { detail: { memoId: currentMemo.id } })
-    );
-  }, [currentMemo]);
-
   const workColumnDocument = currentDocumentPath
     ? {
         identity: activeMemoSession
@@ -434,7 +427,6 @@ export function MainLayout({
       onNavigateForward: handleNavigateForward,
     },
     contentCapabilities: {
-      properties: surfaceSupports(workColumnSurface, 'properties'),
       copyFullText: surfaceSupports(workColumnSurface, 'copy-content'),
       exportContent: surfaceSupports(workColumnSurface, 'export-content'),
       saveAsTemplate: surfaceSupports(workColumnSurface, 'save-template'),
@@ -443,7 +435,6 @@ export function MainLayout({
     actions: {
       onCopyLink: handleCopyLink,
       onCopyFullText: handleCopyFullText,
-      onOpenProperties: handleOpenNoteProperties,
       onTogglePin: handleTogglePin,
       onExportMarkdown: handleExportMarkdown,
       onSaveAsTemplate: handleSaveAsTemplate,

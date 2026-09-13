@@ -12,7 +12,6 @@ import {
   ClockIcon,
   TrashSimpleIcon,
   SwatchesIcon,
-  StackSimpleIcon,
 } from '@phosphor-icons/react';
 import {
   DropdownMenu,
@@ -86,7 +85,6 @@ export interface DocumentTitlebarProps {
     visible?: boolean;
   };
   contentCapabilities: {
-    properties: boolean;
     copyFullText: boolean;
     exportContent: boolean;
     saveAsTemplate: boolean;
@@ -95,7 +93,6 @@ export interface DocumentTitlebarProps {
   actions: {
     onCopyLink: () => void;
     onCopyFullText: () => void;
-    onOpenProperties: () => void;
     onTogglePin: () => void;
     onExportMarkdown: () => void;
     onSaveAsTemplate: () => void;
@@ -699,14 +696,12 @@ export function MemoActions({
   iconButtonClass,
   onCopyLink,
   onCopyFullText,
-  onOpenProperties,
   onTogglePin,
   onExportMarkdown,
   onSaveAsTemplate,
   onExportWord,
   onRequestDeleteMemo,
   onColorsChange,
-  canEditProperties,
   canCopyFullText,
   canExportContent,
   canSaveAsTemplate,
@@ -716,14 +711,12 @@ export function MemoActions({
   iconButtonClass: string;
   onCopyLink: () => void;
   onCopyFullText: () => void;
-  onOpenProperties: () => void;
   onTogglePin: () => void;
   onExportMarkdown: () => void;
   onSaveAsTemplate: () => void;
   onExportWord: () => void;
   onRequestDeleteMemo: () => void;
   onColorsChange: (next: MemoColor[]) => void;
-  canEditProperties: boolean;
   canCopyFullText: boolean;
   canExportContent: boolean;
   canSaveAsTemplate: boolean;
@@ -817,14 +810,6 @@ export function MemoActions({
               className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
             >
               <CopyIcon className="w-4 h-4 mr-2" /> {t("document.action.copyFullText")}
-            </DropdownMenuItem>
-          )}
-          {canEditProperties && (
-            <DropdownMenuItem
-              onClick={onOpenProperties}
-              className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
-            >
-              <StackSimpleIcon className="w-4 h-4 mr-2" /> {t("document.action.properties")}
             </DropdownMenuItem>
           )}
           <DropdownMenuItem

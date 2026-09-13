@@ -25,7 +25,7 @@ it('moves actual focus across successive arrow presses and Home/End, and shows t
   }));
   function Harness() {
     const [activeTabId, setActiveTabId] = useState('one');
-    return <BrowserColumnHeader tabs={tabs} activeTabId={activeTabId} onSelectTab={setActiveTabId}
+    return <BrowserColumnHeader tabs={tabs} activeTabId={activeTabId} activeSurfaceChrome="document" onSelectTab={setActiveTabId}
       onCloseTab={vi.fn()} onCloseOtherTabs={vi.fn()} onCloseTabsToRight={vi.fn()}
       onCloseAllTabs={vi.fn()} onOpenTabInWorkColumn={vi.fn()} onReorderTab={vi.fn()}
       isTabMenuOpen={false} onTabMenuOpenChange={vi.fn()} onContextMenuOpenChange={vi.fn()}
@@ -65,7 +65,7 @@ async function withHeader(
     id, title: id, icon: null, target: { kind: 'web', url: `https://${id}.example` },
   }));
   try {
-    await act(async () => root.render(<BrowserColumnHeader tabs={tabs} activeTabId="one" onSelectTab={onSelectTab}
+    await act(async () => root.render(<BrowserColumnHeader tabs={tabs} activeTabId="one" activeSurfaceChrome="document" onSelectTab={onSelectTab}
       onCloseTab={vi.fn()} onCloseOtherTabs={vi.fn()} onCloseTabsToRight={vi.fn()}
       onCloseAllTabs={vi.fn()} onOpenTabInWorkColumn={vi.fn()} onReorderTab={vi.fn()}
       isTabMenuOpen={false} onTabMenuOpenChange={vi.fn()} onContextMenuOpenChange={vi.fn()}
@@ -91,6 +91,49 @@ it.each([false, null, 'throw'] as const)('restores selected-tab focus when activ
   });
 });
 
+it('uses the Agent surface titlebar skin for an active Agent conversation', async () => {
+  const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+  environment.IS_REACT_ACT_ENVIRONMENT = true;
+  const element = document.createElement('div');
+  document.body.append(element);
+  const root = createRoot(element);
+  const tab: BrowserColumnTab = {
+    id: 'agent-tab',
+    title: 'Agent conversation',
+    icon: null,
+    target: { kind: 'agent_conversation', instanceId: 'agent-1' },
+  };
+  try {
+    await act(async () => root.render(
+      <BrowserColumnHeader
+        tabs={[tab]}
+        activeTabId={tab.id}
+        activeSurfaceChrome="agent"
+        onSelectTab={vi.fn()}
+        onCloseTab={vi.fn()}
+        onCloseOtherTabs={vi.fn()}
+        onCloseTabsToRight={vi.fn()}
+        onCloseAllTabs={vi.fn()}
+        onOpenTabInWorkColumn={vi.fn()}
+        onReorderTab={vi.fn()}
+        isTabMenuOpen={false}
+        onTabMenuOpenChange={vi.fn()}
+        onContextMenuOpenChange={vi.fn()}
+        isFocused={false}
+      />,
+    ));
+    const header = element.querySelector<HTMLElement>('[data-browser-column-header]');
+    expect(header?.classList.contains('agent-surface-titlebar')).toBe(true);
+    // The Agent surface class owns the gradient; the default inline gradient
+    // must be absent so CSS can match fullscreen Thread Card chrome exactly.
+    expect(header?.style.backgroundImage).toBe('');
+  } finally {
+    await act(async () => root.unmount());
+    element.remove();
+    environment.IS_REACT_ACT_ENVIRONMENT = false;
+  }
+});
+
 it('does not steal focus from the editor after a delayed save failure', async () => {
   let finish!: (value: boolean) => void;
   await withHeader(() => new Promise<boolean>((resolve) => { finish = resolve; }), async (buttons, outside) => {
@@ -100,6 +143,38 @@ it('does not steal focus from the editor after a delayed save failure', async ()
     outside.focus();
     await act(async () => finish(false));
     expect(document.activeElement).toBe(outside);
+  });
+});
+
+it('shows the requested tab as active while content activation is pending', async () => {
+  let finish!: (value: boolean) => void;
+  await withHeader(() => new Promise<boolean>((resolve) => { finish = resolve; }), async (buttons) => {
+    await act(async () => { buttons[1].dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(buttons[0].getAttribute('aria-selected')).toBe('false');
+    expect(buttons[1].getAttribute('aria-selected')).toBe('true');
+    expect(buttons[1].parentElement?.classList.contains('browser-column-tab-active')).toBe(true);
+    expect(buttons[0].parentElement?.classList.contains('browser-column-tab-active')).toBe(false);
+    expect(buttons[0].parentElement?.classList.contains('bg-transparent')).toBe(true);
+    expect(buttons[0].parentElement?.classList.contains('shadow-none')).toBe(true);
+
+    await act(async () => finish(false));
+    expect(buttons[0].getAttribute('aria-selected')).toBe('true');
+    expect(buttons[1].getAttribute('aria-selected')).toBe('false');
+  });
+});
+
+it('commits the requested tab chrome before starting content activation', async () => {
+  let renderedButtons: HTMLButtonElement[] = [];
+  let selectedWhenActivationStarted: string | null = null;
+  await withHeader(() => {
+    selectedWhenActivationStarted = renderedButtons.find(
+      (button) => button.getAttribute('aria-selected') === 'true',
+    )?.textContent ?? null;
+    return false;
+  }, async (buttons) => {
+    renderedButtons = buttons;
+    await act(async () => { buttons[1].dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(selectedWhenActivationStarted).toBe('two');
   });
 });
 

@@ -702,7 +702,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         Tag,
         ManagedPasteRules,
         MarkdownPaste,
-        Frontmatter,
+        Frontmatter.configure({ memoId }),
         NoteReference,
         NoteMention,
         WikiNoteMention,

@@ -53,7 +53,9 @@ export function filterNotebookTreeItems(
 
 export function sortNotebookTreeItems(items: DocTreeItem[], sort: SortType): DocTreeItem[] {
   const timestamp = (item: DocTreeItem) => (
-    sort === 'updatedAt' ? item.modifiedMs : item.createdMs
+    sort === 'updatedAt'
+      ? item.modifiedMs
+      : item.memoCreatedMs ?? item.createdMs
   ) ?? 0;
   return [...items].sort((left, right) => {
     if (left.type !== right.type) return left.type === 'folder' ? -1 : 1;

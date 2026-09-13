@@ -89,7 +89,11 @@ export type BrowserColumnSurface =
 
 export type BrowserColumnSurfaceKind = BrowserColumnSurface['kind'];
 
+/** Titlebar skin owned by the surface currently mounted in Browser Column. */
+export type BrowserColumnSurfaceChrome = 'document' | 'agent';
+
 export interface BrowserColumnSurfaceDefinition {
+  chrome: BrowserColumnSurfaceChrome;
   capabilities: readonly BrowserColumnSurfaceCapability[];
   render: (surface: BrowserColumnSurface) => ReactNode;
 }
@@ -449,12 +453,14 @@ type SurfaceOfKind<K extends BrowserColumnSurfaceKind> = Extract<BrowserColumnSu
 function defineSurface<K extends BrowserColumnSurfaceKind>(
   kind: K,
   options: {
+    chrome: BrowserColumnSurfaceChrome;
     capabilities?: readonly BrowserColumnSurfaceCapability[];
     component: ComponentType<{ surface: SurfaceOfKind<K> }>;
   },
 ): BrowserColumnSurfaceDefinition {
   const Component = options.component;
   return Object.freeze({
+    chrome: options.chrome,
     capabilities: Object.freeze([...(options.capabilities ?? [])]),
     render(surface: BrowserColumnSurface) {
       if (surface.kind !== kind) {
@@ -467,22 +473,27 @@ function defineSurface<K extends BrowserColumnSurfaceKind>(
 
 export const browserColumnSurfaceRegistry = Object.freeze({
   document: defineSurface('document', {
+    chrome: 'document',
     capabilities: ['edit', 'search'],
     component: BrowserDocumentSurfaceView,
   }),
   'file-browser': defineSurface('file-browser', {
+    chrome: 'document',
     capabilities: ['edit', 'search'],
     component: BrowserFileBrowserSurfaceView,
   }),
   web: defineSurface('web', {
+    chrome: 'document',
     capabilities: ['web-navigation'],
     component: BrowserWebSurfaceView,
   }),
   artifact: defineSurface('artifact', {
+    chrome: 'document',
     capabilities: ['fullscreen', 'fit', 'zoom'],
     component: BrowserArtifactSurfaceView,
   }),
   'agent-conversation': defineSurface('agent-conversation', {
+    chrome: 'agent',
     capabilities: ['stream-conversation'],
     component: BrowserAgentConversationSurfaceView,
   }),

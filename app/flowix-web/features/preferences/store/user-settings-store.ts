@@ -136,7 +136,7 @@ function sanitizePropertiesConfig(properties: PropertiesConfig | undefined): Pro
     const name = String(field?.name ?? '').trim();
     const type = field?.type;
     if (!key || !name) return;
-    if (!['Text', 'Number', 'Date', 'URL', 'Icon', 'Select', 'MultiSelect'].includes(type)) return;
+    if (!['Text', 'Number', 'Date', 'URL', 'Icon', 'Select', 'MultiSelect', 'List'].includes(type)) return;
     deduped.set(key, {
       key,
       name,

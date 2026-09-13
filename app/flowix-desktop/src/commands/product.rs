@@ -1,4 +1,6 @@
 use serde::Serialize;
+use std::path::Path;
+use std::process::Command;
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
 
@@ -55,4 +57,38 @@ pub fn open_log_dir(app: AppHandle) -> Result<(), String> {
     app.opener()
         .open_path(dir.display().to_string(), None::<String>)
         .map_err(|err| err.to_string())
+}
+
+/// Reveal a file in the platform file manager instead of opening it with its
+/// default application. This deliberately lives outside the opener plugin:
+/// macOS and Windows expose selection through platform-specific commands.
+#[tauri::command]
+pub fn reveal_in_file_manager(file_path: String) -> Result<(), String> {
+    let path = Path::new(&file_path);
+    if !path.exists() {
+        return Err(format!("Path does not exist: {}", path.display()));
+    }
+
+    let status = if cfg!(target_os = "macos") {
+        Command::new("open").arg("-R").arg(path).status()
+    } else if cfg!(target_os = "windows") {
+        Command::new("explorer")
+            .arg(format!("/select,{}", path.display()))
+            .status()
+    } else {
+        let directory = if path.is_dir() {
+            path
+        } else {
+            path.parent()
+                .ok_or_else(|| format!("Path has no parent directory: {}", path.display()))?
+        };
+        Command::new("xdg-open").arg(directory).status()
+    }
+    .map_err(|err| format!("Failed to launch file manager: {err}"))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("File manager exited with status {status}"))
+    }
 }

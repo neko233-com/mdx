@@ -44,7 +44,7 @@ export function WorkColumnTitlebarShell({
           style={style}
         >
           {isMac() && showTrafficLightSpacer && (
-            <div aria-hidden="true" className="h-full w-[80px] shrink-0" />
+            <div aria-hidden="true" className="h-full w-[88px] shrink-0" />
           )}
           {children}
         </div>

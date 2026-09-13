@@ -36,7 +36,8 @@ export type PropertyKind =
   | 'URL'
   | 'Icon'
   | 'Select'
-  | 'MultiSelect';
+  | 'MultiSelect'
+  | 'List';
 
 /** Field types in display order. Single source for both the dialog's type
  *  column and the Custom popup's type chip group. */
@@ -48,6 +49,7 @@ export const PROPERTY_KINDS: readonly PropertyKind[] = [
   'Icon',
   'Select',
   'MultiSelect',
+  'List',
 ];
 
 /**

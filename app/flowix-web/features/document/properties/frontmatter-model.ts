@@ -1,4 +1,4 @@
-import YAML, { isMap, isScalar, type YAMLMap } from 'yaml';
+import YAML, { isMap, isScalar, isSeq, type YAMLMap } from 'yaml';
 import type { PropertyKind } from '@features/document/properties/presets';
 import { canonicalizePropertyKey } from '@features/document/properties/property-key';
 import { isValidTagPath } from '@/lib/tag-path';
@@ -6,11 +6,15 @@ import { isValidTagPath } from '@/lib/tag-path';
 export const FRONTMATTER_RE = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 export const SYSTEM_FRONTMATTER_KEYS = new Set(['key']);
 
+const FLOWIX_COLOR_VALUES = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'gray'] as const;
+const FLOWIX_COLOR_SET = new Set<string>(FLOWIX_COLOR_VALUES);
+
 export type FrontmatterPropertyErrorCode =
   | 'empty-key'
   | 'reserved-key'
   | 'duplicate-key'
   | 'invalid-tag'
+  | 'invalid-color'
   | 'invalid-number'
   | 'invalid-yaml'
   | 'non-mapping'
@@ -49,6 +53,8 @@ export interface FrontmatterPropertyValue {
   key: string;
   value: unknown;
 }
+
+type FrontmatterInputKind = PropertyKind | 'Boolean';
 
 function nodeKeyToString(key: unknown): string {
   if (isScalar(key)) return String(key.value ?? '');
@@ -115,6 +121,21 @@ export function parseVisibleFrontmatter(yamlContent: string): ParsedVisibleFront
   }
 }
 
+/** Returns whether a property's YAML value uses flow collection syntax. */
+export function isFrontmatterPropertyFlowSequence(
+  yamlContent: string,
+  propertyKey: string,
+): boolean {
+  try {
+    const document = parseDocument(yamlContent);
+    const map = document.contents as unknown as YAMLMap;
+    const pair = map.items.find((item) => nodeKeyToString(item.key) === propertyKey);
+    return Boolean(pair && isSeq(pair.value) && pair.value.flow === true);
+  } catch {
+    return false;
+  }
+}
+
 export function extractFrontmatter(content: string): ExtractedFrontmatter {
   const match = FRONTMATTER_RE.exec(content);
   const yamlContent = match?.[1]?.trim() ?? '';
@@ -162,7 +183,16 @@ function parseMultiSelect(value: string): string[] {
   } catch {
     // A comma-separated list is the inline editor's friendly fallback.
   }
-  return value.split(',').map((item) => item.trim()).filter(Boolean);
+  return value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function parseList(value: string): string[] {
+  if (!value.trim()) return [];
+  const lines = value
+    .split(/\r?\n/)
+    .map((item) => item.trim().replace(/^-\s*/, ''))
+    .filter(Boolean);
+  return lines;
 }
 
 function normalizeDocumentTags(value: unknown): string[] {
@@ -190,9 +220,26 @@ function normalizeDocumentTags(value: unknown): string[] {
   return normalized;
 }
 
+function normalizeFlowixColors(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    throw new FrontmatterPropertyError('invalid-color', 'Flowix colors must be a list');
+  }
+  const selected = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== 'string' || !FLOWIX_COLOR_SET.has(item.trim())) {
+      throw new FrontmatterPropertyError(
+        'invalid-color',
+        'Flowix colors must use the product color palette',
+      );
+    }
+    selected.add(item.trim());
+  }
+  return FLOWIX_COLOR_VALUES.filter((color) => selected.has(color));
+}
+
 function parsePropertyInput(
   value: string,
-  kind: PropertyKind | undefined,
+  kind: FrontmatterInputKind | undefined,
   previousValue: unknown,
 ): unknown {
   switch (kind) {
@@ -202,10 +249,17 @@ function parsePropertyInput(
       if (!Number.isFinite(number)) {
         throw new FrontmatterPropertyError('invalid-number', 'Property value must be a number');
       }
+      if (!Number.isInteger(number)) {
+        throw new FrontmatterPropertyError('invalid-number', 'Property value must be an integer');
+      }
       return number;
     }
+    case 'Boolean':
+      return value.trim() === 'true';
     case 'MultiSelect':
       return parseMultiSelect(value);
+    case 'List':
+      return parseList(value);
     case 'Text':
     case 'Date':
     case 'URL':
@@ -240,7 +294,7 @@ export function updateVisibleFrontmatterProperty(
   previousKey: string | null,
   nextKeyInput: string,
   nextValueInput: string,
-  kind?: PropertyKind,
+  kind?: FrontmatterInputKind,
 ): string {
   const nextKey = canonicalizePropertyKey(nextKeyInput);
   if (!nextKey) {
@@ -258,7 +312,10 @@ export function updateVisibleFrontmatterProperty(
   const targetPair = previousKey
     ? map.items.find((pair) => nodeKeyToString(pair.key) === previousKey)
     : undefined;
-  const duplicatePair = map.items.find((pair) => nodeKeyToString(pair.key) === nextKey);
+  const duplicatePair = map.items.find((pair) => (
+    canonicalizePropertyKey(nodeKeyToString(pair.key)) === nextKey
+    && pair !== targetPair
+  ));
   if (duplicatePair && duplicatePair !== targetPair) {
     throw new FrontmatterPropertyError('duplicate-key', 'Property key already exists');
   }
@@ -271,16 +328,82 @@ export function updateVisibleFrontmatterProperty(
     ? asRecord(document.toJS())[previousKey]
     : undefined;
   const parsedValue = parsePropertyInput(nextValueInput, kind, previousValue);
-  const nextValue = nextKey === 'tags'
-    ? normalizeDocumentTags(parsedValue)
+  const collectionKey = nextKey === 'tags' || nextKey === 'flowix_colors';
+  // A key-only edit starts with the old scalar value. Switch collection
+  // properties to an empty collection until the user chooses their items,
+  // instead of rejecting the key change because the old value has the wrong
+  // shape.
+  const collectionValue = collectionKey && kind === undefined && !Array.isArray(parsedValue)
+    ? []
     : parsedValue;
+  const nextValue = nextKey === 'tags'
+    ? normalizeDocumentTags(collectionValue)
+    : nextKey === 'flowix_colors'
+      ? normalizeFlowixColors(collectionValue)
+      : collectionValue;
+  const valueNode = document.createNode(nextValue);
+  if (
+    Array.isArray(nextValue)
+    && (kind === 'MultiSelect' || nextKey === 'tags' || nextKey === 'flowix_colors')
+    && isSeq(valueNode)
+  ) {
+    valueNode.flow = true;
+  }
   if (targetPair && isScalar(targetKey)) {
     targetKey.value = nextKey;
-    targetPair.value = document.createNode(nextValue);
+    targetPair.value = valueNode;
   } else {
-    map.add(document.createPair(nextKey, nextValue));
+    map.add(document.createPair(nextKey, valueNode));
   }
 
+  return document.toString({ lineWidth: 0 }).trimEnd();
+}
+
+export function moveVisibleFrontmatterProperty(
+  yamlContent: string,
+  propertyKey: string,
+  direction: 'up' | 'down',
+): string {
+  const document = parseDocument(yamlContent);
+  const map = document.contents as unknown as YAMLMap;
+  const visiblePairs = map.items.filter((pair) => {
+    const key = nodeKeyToString(pair.key);
+    return key && !SYSTEM_FRONTMATTER_KEYS.has(key);
+  });
+  const currentIndex = visiblePairs.findIndex(
+    (pair) => nodeKeyToString(pair.key) === propertyKey,
+  );
+  if (currentIndex < 0) return document.toString({ lineWidth: 0 }).trimEnd();
+
+  const offset = direction === 'up' ? -1 : 1;
+  const nextIndex = currentIndex + offset;
+  if (nextIndex < 0 || nextIndex >= visiblePairs.length) {
+    return document.toString({ lineWidth: 0 }).trimEnd();
+  }
+
+  const currentPair = visiblePairs[currentIndex];
+  const nextPair = visiblePairs[nextIndex];
+  const currentMapIndex = map.items.indexOf(currentPair);
+  const nextMapIndex = map.items.indexOf(nextPair);
+  [map.items[currentMapIndex], map.items[nextMapIndex]] = [
+    map.items[nextMapIndex],
+    map.items[currentMapIndex],
+  ];
+
+  return document.toString({ lineWidth: 0 }).trimEnd();
+}
+
+export function deleteVisibleFrontmatterProperty(
+  yamlContent: string,
+  propertyKey: string,
+): string {
+  const document = parseDocument(yamlContent);
+  const map = document.contents as unknown as YAMLMap;
+  const propertyIndex = map.items.findIndex((pair) => (
+    nodeKeyToString(pair.key) === propertyKey
+    && !SYSTEM_FRONTMATTER_KEYS.has(propertyKey)
+  ));
+  if (propertyIndex >= 0) map.items.splice(propertyIndex, 1);
   return document.toString({ lineWidth: 0 }).trimEnd();
 }
 
@@ -317,7 +440,11 @@ export function replaceVisibleFrontmatterProperties(
     const canonicalKey = canonicalizePropertyKey(key);
     map.set(
       canonicalKey,
-      canonicalKey === 'tags' ? normalizeDocumentTags(value) : value,
+      canonicalKey === 'tags'
+        ? normalizeDocumentTags(value)
+        : canonicalKey === 'flowix_colors'
+          ? normalizeFlowixColors(value)
+          : value,
     );
   });
 

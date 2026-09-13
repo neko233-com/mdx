@@ -3,10 +3,16 @@ import { describe, expect, it } from 'vitest';
 import { isContentSemanticallyEqual, isDocumentContentEqual } from './buffer-equality';
 
 describe('document buffer semantic equality', () => {
-  it('ignores line endings and YAML key order', () => {
+  it('ignores line endings when frontmatter field order is unchanged', () => {
     const left = '---\r\nkey: abc12345\r\nstatus: draft\r\n---\r\nbody\r\n';
-    const right = '---\nstatus: draft\nkey: abc12345\n---\nbody\n';
+    const right = '---\nkey: abc12345\nstatus: draft\n---\nbody\n';
     expect(isContentSemanticallyEqual(left, right)).toBe(true);
+  });
+
+  it('treats frontmatter field order as a real edit', () => {
+    const left = '---\nkey: abc12345\nstatus: draft\npriority: high\n---\nbody\n';
+    const right = '---\nkey: abc12345\npriority: high\nstatus: draft\n---\nbody\n';
+    expect(isContentSemanticallyEqual(left, right)).toBe(false);
   });
 
   it('treats a tags change as a real edit', () => {

@@ -16,6 +16,12 @@ const Frontmatter = Node.create({
   draggable: false,
   content: '',
 
+  addOptions() {
+    return {
+      memoId: undefined as string | undefined,
+    };
+  },
+
   addAttributes() {
     return {
       yamlContent: {
@@ -26,7 +32,12 @@ const Frontmatter = Node.create({
   },
 
   addNodeView() {
-    return ({ node, view, getPos }) => new FrontmatterPropertyNodeView(node, view, getPos);
+    return ({ node, view, getPos }) => new FrontmatterPropertyNodeView(
+      node,
+      view,
+      getPos,
+      this.options.memoId,
+    );
   },
 
   addKeyboardShortcuts() {

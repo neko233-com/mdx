@@ -11,6 +11,7 @@ export interface DocTreeItem {
   sizeBytes: number | null;
   modifiedMs: number | null;
   createdMs: number | null;
+  memoCreatedMs: number | null;
 }
 
 export const files = {
@@ -88,6 +89,7 @@ export interface ProductInfo {
 export const product = {
   getInfo: () => invoke<ProductInfo>('get_product_info'),
   openLogDir: () => invoke<void>('open_log_dir'),
+  revealInFileManager: (filePath: string) => invoke<void>('reveal_in_file_manager', { filePath }),
 };
 
 export interface PluginManifest {

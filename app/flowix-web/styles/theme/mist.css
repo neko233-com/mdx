@@ -64,6 +64,9 @@
 
 	--code-bg: oklch(0.982 0.005 var(--neutral-hue));
 	--editor-block-bg: oklch(0.982 0.005 var(--neutral-hue));
+	/* Agent conversation surfaces currently follow editor blocks; keep the
+	 * semantic token separate so they can evolve independently later. */
+	--agent-surface-bg: var(--editor-block-bg);
 
 	--floating-bg: oklch(0.32 0.012 var(--neutral-hue));
 	--floating-foreground: oklch(0.95 0 0);

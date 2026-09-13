@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -8,6 +9,7 @@ use tauri::State;
 
 use crate::config::path_is_inside;
 use crate::lock_utils::read_lock;
+use flowix_core::memo_file::notebook_path_from_relative;
 
 use super::helpers::{
     can_access_scoped_file, is_agent_access_folder, is_registered_notebook_path,
@@ -31,6 +33,9 @@ pub struct DocTreeItem {
     pub modified_ms: Option<u64>,
     /// 创建时间 (Unix epoch 毫秒; macOS/Windows 免费读, 其余平台为 None)。
     pub created_ms: Option<u64>,
+    /// Flowix 笔记的业务创建时间 (Unix epoch 毫秒)。对于已索引的笔记，
+    /// 该值来自 memo index，不受原子替换文件导致的文件系统创建时间变化影响。
+    pub memo_created_ms: Option<u64>,
 }
 
 // ==================== 域内 helper ====================
@@ -80,7 +85,50 @@ fn created_time_ms(meta: &fs::Metadata) -> Option<u64> {
 /// 单层目录列举 ── 只列直接子项, folder 的 `children` 置空占位, 由前端
 /// 展开时再对子目录调 `get_dir_children` 惰性拉取 (VSCode 风格)。资料
 /// 文夹可能很大, 全量递归会卡首屏; 单层也天然规避符号链接循环。
-fn read_dir_single_level(dir_path: &Path) -> Vec<DocTreeItem> {
+fn canonical_path(path: &Path) -> std::path::PathBuf {
+    dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// 读取目录所属笔记本的业务创建时间，按规范化物理路径建立索引。
+/// 非笔记本目录返回 None，外部 Markdown 文件继续使用文件系统时间。
+fn memo_created_times_for_path(
+    scope_path: &Path,
+    state: &State<AppState>,
+) -> Option<HashMap<std::path::PathBuf, u64>> {
+    let memo_file = read_lock(&state.memo_file, "memo_file");
+    let scope_path = canonical_path(scope_path);
+    let config = memo_file
+        .read_notebook_configs()
+        .ok()?
+        .into_iter()
+        .filter(|config| path_is_inside(&scope_path, Path::new(&config.path)))
+        .max_by_key(|config| Path::new(&config.path).components().count())?;
+    let index = memo_file
+        .read_index_for_notebook_id(Some(&config.id))
+        .ok()??;
+
+    Some(
+        index
+            .memos
+            .into_iter()
+            .filter_map(|entry| {
+                let relative_path = if entry.relative_path.is_empty() {
+                    entry.filename
+                } else {
+                    entry.relative_path
+                };
+                let path =
+                    notebook_path_from_relative(Path::new(&config.path), &relative_path).ok()?;
+                Some((canonical_path(&path), u64::try_from(entry.created_at).ok()?))
+            })
+            .collect(),
+    )
+}
+
+fn read_dir_single_level(
+    dir_path: &Path,
+    memo_created_times: Option<&HashMap<std::path::PathBuf, u64>>,
+) -> Vec<DocTreeItem> {
     let mut items = Vec::new();
 
     if !dir_path.exists() {
@@ -111,6 +159,8 @@ fn read_dir_single_level(dir_path: &Path) -> Vec<DocTreeItem> {
             };
             let modified_ms = meta.as_ref().and_then(modified_time_ms);
             let created_ms = meta.as_ref().and_then(created_time_ms);
+            let memo_created_ms =
+                memo_created_times.and_then(|times| times.get(&canonical_path(&path)).copied());
             let item = DocTreeItem {
                 id: generate_stable_id(&path.to_string_lossy()),
                 full_path: path.to_string_lossy().to_string(),
@@ -125,6 +175,7 @@ fn read_dir_single_level(dir_path: &Path) -> Vec<DocTreeItem> {
                 size_bytes,
                 modified_ms,
                 created_ms,
+                memo_created_ms,
             };
 
             items.push(item);
@@ -156,7 +207,8 @@ pub fn get_file_tree(space_path: String, state: State<AppState>) -> Option<Vec<D
     if !path.exists() || !is_browsable_scope(path, &state) {
         return None;
     }
-    Some(read_dir_single_level(path))
+    let memo_created_times = memo_created_times_for_path(path, &state);
+    Some(read_dir_single_level(path, memo_created_times.as_ref()))
 }
 
 #[tauri::command]
@@ -166,7 +218,8 @@ pub fn get_dir_children(dir_path: String, state: State<AppState>) -> Vec<DocTree
     if !path.exists() || !is_browsable_scope(path, &state) {
         return vec![];
     }
-    read_dir_single_level(path)
+    let memo_created_times = memo_created_times_for_path(path, &state);
+    read_dir_single_level(path, memo_created_times.as_ref())
 }
 
 /// 文件树可浏览作用域 ── 注册笔记本根 或 资料文件夹 (agent access
@@ -364,6 +417,7 @@ pub fn create_folder(
         size_bytes: None,
         modified_ms: None,
         created_ms: None,
+        memo_created_ms: None,
     })
 }
 
@@ -405,6 +459,7 @@ pub fn create_document(
         size_bytes: Some(0),
         modified_ms: None,
         created_ms: None,
+        memo_created_ms: None,
     })
 }
 
@@ -419,7 +474,7 @@ mod tests {
         fs::create_dir(directory.path().join("folder")).unwrap();
         fs::create_dir(directory.path().join(".flowix")).unwrap();
         fs::write(directory.path().join(".hidden.md"), "hidden").unwrap();
-        let items = read_dir_single_level(directory.path());
+        let items = read_dir_single_level(directory.path(), None);
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].name, "folder");
         assert_eq!(items[1].name, "note.md");
@@ -438,7 +493,7 @@ mod tests {
         symlink(&outside, root.join("outside.md")).unwrap();
         symlink(root.join("missing"), root.join("dangling.md")).unwrap();
         symlink(root.join("note.md"), root.join("inside.md")).unwrap();
-        let names: Vec<_> = read_dir_single_level(&root)
+        let names: Vec<_> = read_dir_single_level(&root, None)
             .into_iter()
             .map(|item| item.name)
             .collect();

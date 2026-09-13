@@ -29,7 +29,8 @@ function getPropertyTypeLabelKey(kind: PropertyType) {
     | 'document.properties.type.url'
     | 'document.properties.type.icon'
     | 'document.properties.type.select'
-    | 'document.properties.type.multiSelect';
+    | 'document.properties.type.multiSelect'
+    | 'document.properties.type.list';
 }
 
 /**

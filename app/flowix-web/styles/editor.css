@@ -177,7 +177,6 @@
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) em:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   font-style: italic;
-  font-weight: 300;
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) code {
@@ -624,7 +623,7 @@
   display: inline;
   color: var(--document-tag-foreground, var(--primary-foreground));
   font-weight: 400;
-  font-size: 0.78rem;
+  font-size: 88%;
   cursor: pointer;
   background: var(--document-tag-bg);
   border-radius: 8px;

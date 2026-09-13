@@ -99,6 +99,9 @@
 
 	--code-bg: oklch(0.229 0.018 275);
 	--editor-block-bg: oklch(0.176 0.014 var(--neutral-hue));
+	/* Agent conversation surfaces currently follow editor blocks; keep the
+	 * semantic token separate so they can evolve independently later. */
+	--agent-surface-bg: var(--editor-block-bg);
 
 	--floating-bg: oklch(0.213 0.013 var(--neutral-hue));
 	/* 浮层文字: 与 floating-bg 配对, 三主题统一柔和白, 避纯白在深底的眩光 */

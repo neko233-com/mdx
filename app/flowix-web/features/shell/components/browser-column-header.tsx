@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { Blocks, Check, ChevronDown, File as FileIcon, FileText, Folder, Globe, MessageSquare, X } from 'lucide-react';
 import {
   canMoveBrowserColumnTargetToWorkColumn,
@@ -9,6 +10,7 @@ import {
   useFullscreenAgentThreadCardInfo,
 } from '@features/document/public/shell-api';
 import { AgentIcon } from '@features/agent/public/shell-api';
+import type { BrowserColumnSurfaceChrome } from '@features/surface/public/shell-api';
 import { useI18n } from '@/lib/i18n';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -59,6 +61,7 @@ function tabIcon(tab: BrowserColumnTab) {
 export interface BrowserColumnHeaderProps {
   tabs: BrowserColumnTab[];
   activeTabId: string | null;
+  activeSurfaceChrome: BrowserColumnSurfaceChrome;
   onSelectTab: (tabId: string) => void | boolean | null | Promise<void | boolean | null>;
   onCloseTab: (tabId: string) => void | Promise<void>;
   onCloseOtherTabs: (tabId: string) => void | Promise<void>;
@@ -76,6 +79,7 @@ export interface BrowserColumnHeaderProps {
 export function BrowserColumnHeader({
   tabs,
   activeTabId,
+  activeSurfaceChrome,
   onSelectTab,
   onCloseTab,
   onCloseOtherTabs,
@@ -93,10 +97,21 @@ export function BrowserColumnHeader({
   const tabButtons = useRef(new Map<string, HTMLButtonElement>());
   const selectionRequest = useRef(0);
   const activeTabIdRef = useRef(activeTabId);
+  const [pendingActiveTabId, setPendingActiveTabId] = useState<string | null>(null);
   activeTabIdRef.current = activeTabId;
+  const displayedActiveTabId = pendingActiveTabId ?? activeTabId;
+
+  useEffect(() => {
+    if (pendingActiveTabId === activeTabId || (pendingActiveTabId && !tabs.some((tab) => tab.id === pendingActiveTabId))) {
+      setPendingActiveTabId(null);
+    }
+  }, [activeTabId, pendingActiveTabId, tabs]);
 
   const selectTab = async (tabId: string) => {
     const request = ++selectionRequest.current;
+    // The active-tab chrome must reach the DOM before navigation can mount and
+    // parse a large document on the main thread.
+    flushSync(() => setPendingActiveTabId(tabId));
     let succeeded = false;
     try {
       const result = await onSelectTab(tabId);
@@ -105,6 +120,7 @@ export function BrowserColumnHeader({
       // Keep the current document and recover focus just as for a rejected save.
     }
     if (succeeded || request !== selectionRequest.current || tabButtons.current.size === 0) return;
+    setPendingActiveTabId(null);
     const activeButton = activeTabIdRef.current
       ? tabButtons.current.get(activeTabIdRef.current)
       : undefined;
@@ -121,10 +137,13 @@ export function BrowserColumnHeader({
   // host-scoped info hook only fires for cards mounted in the browser column —
   // work-column fullscreen never reaches this header.
   const fullscreenInfo = useFullscreenAgentThreadCardInfo('browser-column');
+  const isAgentSurface = activeSurfaceChrome === 'agent' || Boolean(fullscreenInfo);
 
   useEffect(() => {
-    if (activeTabId) tabButtons.current.get(activeTabId)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
-  }, [activeTabId]);
+    if (displayedActiveTabId) {
+      tabButtons.current.get(displayedActiveTabId)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    }
+  }, [displayedActiveTabId]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     let nextIndex = index;
@@ -150,12 +169,12 @@ export function BrowserColumnHeader({
       className={cn(
         'relative flex shrink-0 items-center pl-1 pr-2',
         isWindows ? 'h-9 min-h-9 pr-[126px]' : 'h-12 min-h-12',
-        fullscreenInfo && 'agent-thread-card-fullscreen-titlebar',
+        isAgentSurface && 'agent-surface-titlebar',
       )}
       // Keep the tab strip visually continuous with the work-column titlebar.
       // The tabs themselves stay transparent so this fade remains visible
       // behind active and inactive tabs alike.
-      style={fullscreenInfo ? undefined : { backgroundImage: WORK_COLUMN_TITLEBAR_GRADIENT }}
+      style={isAgentSurface ? undefined : { backgroundImage: WORK_COLUMN_TITLEBAR_GRADIENT }}
     >
       <div
         role="tablist"
@@ -164,7 +183,7 @@ export function BrowserColumnHeader({
         className="flex h-10 min-h-10 min-w-0 flex-1 items-center gap-0 overflow-x-auto overflow-y-hidden p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {tabs.map((tab, index) => {
-          const selected = tab.id === activeTabId;
+          const selected = tab.id === displayedActiveTabId;
           const moveUnavailableReason = tab.target.kind === 'web'
             ? t('tabWindow.context.moveWebUnavailable')
             : tab.target.kind === 'file-browser' && !tab.target.activeFilePath
@@ -172,7 +191,7 @@ export function BrowserColumnHeader({
               : null;
           // 仅激活 tab 会挂载内容，全屏卡片必然在其中 ── 全屏期间激活
           // tab 换成 Agent 图标 + 对话标题，退出后回退 tab 自身标题。
-          const tabFullscreen = selected && fullscreenInfo
+          const tabFullscreen = tab.id === activeTabId && fullscreenInfo
             ? { title: fullscreenInfo.title || tab.title, typeKey: fullscreenInfo.typeKey }
             : null;
           return (
@@ -205,12 +224,12 @@ export function BrowserColumnHeader({
                     setDraggedTabId(null);
                   }}
                   className={cn(
-                    'group relative flex h-8 min-w-[96px] max-w-[150px] shrink basis-[150px] select-none items-center overflow-hidden border text-xs transition-[color,background-color,border-color,opacity] [-webkit-app-region:no-drag]',
+                    'group relative flex h-8 min-w-[96px] max-w-[150px] shrink basis-[150px] select-none items-center border text-xs transition-[color,opacity] [-webkit-app-region:no-drag]',
                     selected && isFocused
-                      ? 'rounded-t-xl border-[var(--border)] border-b-transparent bg-transparent text-[var(--foreground)] shadow-[0_-1px_6px_-3px_rgb(0_0_0_/_0.20)]'
+                      ? 'browser-column-tab-active rounded-t-xl border-[var(--border)] border-b-transparent text-[var(--foreground)] shadow-[0_-1px_4px_-3px_rgb(0_0_0_/_0.08)]'
                       : selected
-                        ? 'rounded-t-xl border-[var(--border)] border-b-transparent bg-transparent text-[var(--foreground)] shadow-[0_-1px_6px_-3px_rgb(0_0_0_/_0.20)]'
-                        : 'rounded-lg border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]',
+                        ? 'browser-column-tab-active rounded-t-xl border-[var(--border)] border-b-transparent text-[var(--foreground)] shadow-[0_-1px_4px_-3px_rgb(0_0_0_/_0.08)]'
+                        : 'rounded-lg border-transparent bg-transparent text-[var(--muted-foreground)] shadow-none hover:text-[var(--foreground)]',
                     draggedTabId === tab.id && 'opacity-45',
                   )}
                 >
@@ -218,7 +237,7 @@ export function BrowserColumnHeader({
                 <span
                   key={`${tab.id}-${activeTabId}-${isFocused ? 'focused' : 'unfocused'}`}
                   aria-hidden="true"
-                  className="browser-column-active-tab-indicator pointer-events-none absolute inset-x-0 top-0 h-px"
+                  className="browser-column-active-tab-indicator pointer-events-none absolute left-[5%] right-[5%] top-0 h-px"
                 />
               )}
               <button
@@ -354,7 +373,7 @@ export function BrowserColumnHeader({
               </DropdownMenuLabel>
               <div className="space-y-0.5">
                 {tabs.map((tab) => {
-                  const selected = tab.id === activeTabId;
+                  const selected = tab.id === displayedActiveTabId;
                   return (
                     <DropdownMenuItem
                       key={tab.id}

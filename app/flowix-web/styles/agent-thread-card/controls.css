@@ -331,16 +331,15 @@
  * 只作用于 AgentConversationTitlebar, 不覆盖布局级 --bg-titlebar, 因此
  * 普通文档标题栏、偏好设置标题栏和 WindowsTitlebarControls 保持原样。 */
 .agent-conversation-titlebar {
-  background-color: var(--editor-block-bg, var(--document-bg));
+  background-color: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
   background-image: none;
 }
 
-/* When an embedded Thread Card owns the document surface, promote the same
- * Agent conversation chrome to the work-column titlebar. The card remains
- * responsible for the fullscreen state; this class only changes the outer
- * titlebar skin while that state is active. */
-.agent-thread-card-fullscreen-titlebar {
-  background-color: var(--editor-block-bg, var(--document-bg));
+/* Agent-owned titlebars use the same surface as the conversation body. This
+ * class is intentionally independent of fullscreen state so Browser Column
+ * conversations and fullscreen embedded Thread Cards cannot drift apart. */
+.agent-surface-titlebar {
+  background-color: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
   background-image: linear-gradient(
     to bottom,
     color-mix(in oklch, var(--primary) 3%, transparent),

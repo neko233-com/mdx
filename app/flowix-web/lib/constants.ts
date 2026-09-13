@@ -76,7 +76,8 @@ export type PropertyFieldType =
   | 'URL'
   | 'Icon'
   | 'Select'
-  | 'MultiSelect';
+  | 'MultiSelect'
+  | 'List';
 
 export interface PropertyFieldConfig {
   key: string;
