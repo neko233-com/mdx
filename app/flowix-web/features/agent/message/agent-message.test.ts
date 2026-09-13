@@ -17,12 +17,12 @@ function errorMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
 }
 
 describe("DeepSeek Harness reconnect error display", () => {
-  it("hides provider commentary from the normal transcript", () => {
+  it("keeps provider commentary visible in the normal transcript", () => {
     expect(
       shouldRenderAgentMessage(
         errorMessage({ messageType: "agent-commentary" }),
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(shouldRenderAgentMessage(errorMessage())).toBe(true);
   });
 

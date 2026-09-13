@@ -120,11 +120,6 @@ export function isLastMessageInTurnAndAssistant(
     const laterMessage = messages[i];
     if (laterMessage.role === "user") break;
 
-    // Provider commentary is retained for live/history reconciliation but is
-    // not part of the visible transcript, so it must not prevent the real
-    // final assistant row from receiving its actions.
-    if (laterMessage.messageType === "agent-commentary") continue;
-
     // Codex turn ids are authoritative when both rows provide one. Rows
     // without an id are tolerated inside the user-delimited turn because
     // reasoning/tool rows may omit the id. Any such later row still means

@@ -3475,7 +3475,7 @@ mod tests {
     }
 
     #[test]
-    fn projects_codex_commentary_as_hidden_agent_message_type() {
+    fn projects_codex_commentary_as_agent_message_type() {
         let message = app_server_item_message(
             &json!({
                 "id": "commentary-1",

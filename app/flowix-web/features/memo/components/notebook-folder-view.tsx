@@ -14,7 +14,8 @@ import {
   type NotebookNoteCreateRequest,
 } from '@features/memo/components/notebook-file-tree';
 import { useFolderTree } from '@features/memo/components/use-folder-tree';
-import { openNoteByTarget, resolveMemoByPath } from '@features/memo/use-cases/open-by-target';
+import { resolveMemoByPath } from '@features/memo/use-cases/open-by-target';
+import { openMemoSession } from '@features/memo/use-cases/open-memo-session';
 import { openBrowserColumnFileBrowser, openBrowserColumnMemoById } from '@features/workspace/use-cases/browser-column-navigation';
 import { openExternalTarget } from '@features/workspace/use-cases/workspace-navigation';
 import { files, memos, type DocTreeItem, type FileBrowserDirectoriesChangedEvent } from '@platform/tauri/client';
@@ -172,7 +173,10 @@ export function NotebookFolderView({
     try {
       const memo = await resolveMemoByPath(filePath);
       if (memo?.notebookId === notebook.id) {
-        await openNoteByTarget(memo);
+        // Keep the file-tree entry point aligned with the memo list. Plugin
+        // pointer notes (for example mindmaps) must open their artifact
+        // renderer instead of the pointer Markdown source.
+        await openMemoSession(memo.memo, notebook);
         return;
       }
       await openExternalTarget(filePath, {

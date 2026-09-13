@@ -46,21 +46,37 @@ describe("mergeMessagesForThreadRender", () => {
     ).toBe(true);
   });
 
-  it("does not require hidden commentary in the terminal history snapshot", () => {
+  it("requires commentary rows when they are present in the live turn", () => {
+    const live = [
+      message("user-live", "user", "ask", "2026-01-01T00:00:00Z"),
+      {
+        ...message("commentary-live", "assistant", "checking", "2026-01-01T00:00:00Z"),
+        messageType: "agent-commentary" as const,
+      },
+      message("assistant-live", "assistant", "done", "2026-01-01T00:00:01Z"),
+    ];
+
     expect(
       historyCoversLiveTurn(
         [
           message("user-provider", "user", "ask", "2026-01-01T00:00:00Z"),
           message("assistant-provider", "assistant", "done", "2026-01-01T00:00:01Z"),
         ],
+        live,
+      ),
+    ).toBe(false);
+
+    expect(
+      historyCoversLiveTurn(
         [
-          message("user-live", "user", "ask", "2026-01-01T00:00:00Z"),
+          message("user-provider", "user", "ask", "2026-01-01T00:00:00Z"),
           {
-            ...message("commentary-live", "assistant", "checking", "2026-01-01T00:00:00Z"),
+            ...message("commentary-provider", "assistant", "checking", "2026-01-01T00:00:00Z"),
             messageType: "agent-commentary",
           },
-          message("assistant-live", "assistant", "done", "2026-01-01T00:00:01Z"),
+          message("assistant-provider", "assistant", "done", "2026-01-01T00:00:01Z"),
         ],
+        live,
       ),
     ).toBe(true);
   });
@@ -91,7 +107,7 @@ describe("mergeMessagesForThreadRender", () => {
     ]);
   });
 
-  it("removes provider commentary from renderable messages", () => {
+  it("keeps provider commentary in renderable messages", () => {
     expect(filterRenderableHistoryMessages([
       {
         ...message("commentary", "assistant", "checking", "2026-01-01T00:00:00.000Z"),
@@ -99,6 +115,10 @@ describe("mergeMessagesForThreadRender", () => {
       },
       message("final", "assistant", "done", "2026-01-01T00:00:01.000Z"),
     ])).toEqual([
+      {
+        ...message("commentary", "assistant", "checking", "2026-01-01T00:00:00.000Z"),
+        messageType: "agent-commentary",
+      },
       message("final", "assistant", "done", "2026-01-01T00:00:01.000Z"),
     ]);
   });

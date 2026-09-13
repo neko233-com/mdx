@@ -37,6 +37,22 @@ function context(isLoading = false): AgentThreadCardMessageRenderContext {
 }
 
 describe("Codex turn-end message actions", () => {
+  it("renders commentary assistant rows around Codex tool rows", () => {
+    const messages = [
+      {
+        ...message("assistant-commentary", "assistant", "turn-1"),
+        messageType: "agent-commentary" as const,
+      },
+      message("tool-1", "tool", "turn-1"),
+      message("assistant-final", "assistant", "turn-1"),
+    ];
+
+    const { list } = createRenderedAgentMessageList(messages, context());
+
+    expect(list.textContent).toContain("assistant-commentary");
+    expect(list.textContent).toContain("assistant-final");
+  });
+
   it("shows copy and time only on the final assistant for agents without turn ids", () => {
     const messages = [
       message("assistant-1", "assistant"),

@@ -271,7 +271,7 @@ export interface ChatMessage {
 
 /** Display categories for messages that are not ordinary human/agent text. */
 export type AgentMessageType =
-  /** Provider commentary/progress item, kept for reconciliation but hidden from the transcript. */
+  /** Provider commentary/progress item. It remains a normal transcript row. */
   | "agent-commentary"
   | "context-compaction"
   | "goal-round"
