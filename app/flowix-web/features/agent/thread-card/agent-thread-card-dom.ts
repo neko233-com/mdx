@@ -80,7 +80,10 @@ export function canSkipMessageRebuild(
 }
 
 export function isAgentThreadCardInteractiveTarget(target: Element): boolean {
-  return !!target.closest(
+  const card = target.closest(".agent-thread-card");
+  if (!card) return false;
+
+  const interactive = target.closest(
     [
       "button",
       "a[href]",
@@ -94,6 +97,10 @@ export function isAgentThreadCardInteractiveTarget(target: Element): boolean {
       ".agent-thread-card__message-reasoning-header",
     ].join(","),
   );
+  // `closest('[contenteditable=true]')` must not escape the NodeView and match
+  // the outer ProseMirror editor. Otherwise every point inside the card is
+  // treated as interactive and the header drag controller can never start.
+  return interactive !== null && card.contains(interactive);
 }
 
 export function isAgentThreadCardSelectableMessageText(
