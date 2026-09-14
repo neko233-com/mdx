@@ -7,6 +7,7 @@ use crate::agent_session::AgentExternalEvent;
 use crate::agent_wire::{AgentChatResponse, AgentUserMessage, RunInfo};
 use crate::app::state::AppState;
 
+use super::flowix_instructions::sync_native_agent_instructions;
 use super::image_cache::{
     resolve_cached_agent_image, MAX_AGENT_IMAGE_BYTES, MAX_AGENT_IMAGE_COUNT,
 };
@@ -98,6 +99,10 @@ pub async fn chat_with_agent_stream(
         if !Path::new(path).is_dir() {
             return Err(format!("Agent workspace directory is unavailable: {path}"));
         }
+    }
+
+    if let Some(path) = runtime_cwd.as_deref() {
+        sync_native_agent_instructions(Path::new(path), runtime.key())?;
     }
 
     // runtime 的 `chat_stream` 内部已经 `tokio::spawn` ── IPC 立即返回,

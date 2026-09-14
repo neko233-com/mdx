@@ -217,7 +217,7 @@ pub fn is_ignored_notebook_relative_path(path: &Path) -> bool {
         name.starts_with('.')
             || matches!(
                 name.as_ref(),
-                "attachments" | "attachments-cache" | "node_modules"
+                "AGENTS.md" | "attachments" | "attachments-cache" | "node_modules"
             )
     })
 }

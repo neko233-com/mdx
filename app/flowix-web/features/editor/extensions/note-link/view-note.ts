@@ -374,6 +374,12 @@ class NoteReferenceView implements ProseMirrorNodeView {
     // 上鼠标按住拖动只会触发选区, 不会启动 DnD 流.
     const wrapper = document.createElement('span');
     wrapper.className = 'editor-note-reference';
+    // NoteReference remains the single source of truth for memo identity,
+    // path validation, and navigation. Only its composer surface gets a
+    // presentation modifier, so Agent chips cannot leak into document links.
+    if (this.view.dom.closest('.agent-thread-card__composer')) {
+      wrapper.classList.add('editor-note-reference--composer');
+    }
     wrapper.contentEditable = 'false';
     wrapper.draggable = true;
 

@@ -179,6 +179,9 @@ pub struct PreferenceFile {
     /// Memo list surface ("cards" | "folders").
     #[serde(default)]
     pub memo_list_view: String,
+    /// Whether the notebook file tree includes hidden directories and their Markdown files.
+    #[serde(default)]
+    pub show_hidden_notebook_files: bool,
     /// User shortcut overrides keyed by action id.
     #[serde(default)]
     pub shortcuts: HashMap<String, String>,

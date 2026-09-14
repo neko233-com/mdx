@@ -369,7 +369,7 @@ export function FolderFileTree({
                       <div role="separator" aria-hidden="true" className={FOLDER_MENU_DIVIDER_CLASS} />
                       <DropdownMenuItem
                         onClick={() => void handleDelete(item)}
-                        className={cn(FOLDER_MENU_ITEM_CLASS, 'text-[var(--destructive)]')}
+                        className={cn(FOLDER_MENU_ITEM_CLASS, 'hover:text-[var(--destructive)]')}
                       >
                         {t('memo.fileTree.delete')}
                       </DropdownMenuItem>
@@ -429,7 +429,7 @@ export function FolderFileTree({
             <div role="separator" aria-hidden="true" className={FOLDER_MENU_DIVIDER_CLASS} />
             <ContextMenuItem
               onClick={() => void handleDelete(item)}
-              className={cn(FOLDER_MENU_ITEM_CLASS, 'text-[var(--destructive)]')}
+              className={cn(FOLDER_MENU_ITEM_CLASS, 'hover:text-[var(--destructive)]')}
             >
               {t('memo.fileTree.delete')}
             </ContextMenuItem>

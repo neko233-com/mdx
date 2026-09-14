@@ -208,7 +208,7 @@ export function NotebookAccessFilesList({
             <ContextMenuContent className={ACCESS_MENU_CLASS}>
               <ContextMenuItem
                 onClick={() => handleRemoveFolder(item.path)}
-                className={cn(ACCESS_MENU_ITEM_CLASS, 'text-[var(--destructive)]')}
+                className={cn(ACCESS_MENU_ITEM_CLASS, 'hover:text-[var(--destructive)]')}
               >
                 {t('agent.access.contextDelete')}
               </ContextMenuItem>

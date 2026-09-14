@@ -117,6 +117,8 @@ export interface UserSettings {
   region: Region;
   /** Whether the memo list is rendered as a detailed list or as the notebook file tree. */
   memoListView: MemoListView;
+  /** Whether the notebook file tree includes hidden directories and their Markdown files. */
+  showHiddenNotebookFiles: boolean;
   /**
    * 快捷键用户覆盖层 — actionId → chord 字符串 (e.g. 'Mod+Shift+K')。
    * 只存与 ActionDefinition.defaultBinding 不同的部分, 缺省走默认。
@@ -240,6 +242,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   // 让大陆特性 (MiniMax / GLM 等) 在 SSR / IPC 还没回来时也可见。
   region: 'mainland',
   memoListView: 'detailed',
+  showHiddenNotebookFiles: false,
   // 启动时无任何用户覆盖, 所有 action 走 ActionDefinition.defaultBinding。
   shortcuts: {},
   properties: {

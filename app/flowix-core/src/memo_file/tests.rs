@@ -1691,6 +1691,7 @@ fn reconcile_skips_hidden_paths_and_generated_directories() {
         fs::write(base.join(directory).join("Ignored.md"), "# Ignored\n").unwrap();
     }
     fs::write(base.join(".hidden-note.md"), "# Hidden\n").unwrap();
+    fs::write(base.join("AGENTS.md"), "# Agent instructions\n").unwrap();
     fs::create_dir_all(base.join("docs/public")).unwrap();
     fs::write(base.join("docs/public/Visible.md"), "# Visible\n").unwrap();
 

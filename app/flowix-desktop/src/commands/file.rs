@@ -128,6 +128,7 @@ fn memo_created_times_for_path(
 fn read_dir_single_level(
     dir_path: &Path,
     memo_created_times: Option<&HashMap<std::path::PathBuf, u64>>,
+    include_hidden_directories: bool,
 ) -> Vec<DocTreeItem> {
     let mut items = Vec::new();
 
@@ -143,15 +144,24 @@ fn read_dir_single_level(
             }
             let name = entry.file_name().to_string_lossy().to_string();
 
-            // Skip hidden files
-            if name.starts_with('.') {
+            // AGENTS.md is project-local Agent configuration, not a note or
+            // a user-facing file-tree item. It remains on disk for native
+            // Agent runtimes to load.
+            if name == "AGENTS.md" {
+                continue;
+            }
+
+            // Hidden files remain hidden. The notebook tree can opt into
+            // hidden directories so Markdown files below them can be loaded,
+            // but dot-files themselves are never tree items.
+            let meta = fs::metadata(&path).ok();
+            let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+            if name.starts_with('.') && (!is_dir || !include_hidden_directories) {
                 continue;
             }
 
             // 一次 fs::metadata() 同时拿类型与大小 (语义与原先 path.is_dir()
             // 一致、跟随符号链接): 文件取 len()、folder 置 None, 不做递归统计。
-            let meta = fs::metadata(&path).ok();
-            let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
             let size_bytes = if is_dir {
                 None
             } else {
@@ -201,25 +211,41 @@ fn read_dir_single_level(
 // ==================== IPC ====================
 
 #[tauri::command]
-pub fn get_file_tree(space_path: String, state: State<AppState>) -> Option<Vec<DocTreeItem>> {
+pub fn get_file_tree(
+    space_path: String,
+    include_hidden_directories: Option<bool>,
+    state: State<AppState>,
+) -> Option<Vec<DocTreeItem>> {
     let path = Path::new(&space_path);
     start_security_bookmark_access(&state, path);
     if !path.exists() || !is_browsable_scope(path, &state) {
         return None;
     }
     let memo_created_times = memo_created_times_for_path(path, &state);
-    Some(read_dir_single_level(path, memo_created_times.as_ref()))
+    Some(read_dir_single_level(
+        path,
+        memo_created_times.as_ref(),
+        include_hidden_directories.unwrap_or(false),
+    ))
 }
 
 #[tauri::command]
-pub fn get_dir_children(dir_path: String, state: State<AppState>) -> Vec<DocTreeItem> {
+pub fn get_dir_children(
+    dir_path: String,
+    include_hidden_directories: Option<bool>,
+    state: State<AppState>,
+) -> Vec<DocTreeItem> {
     let path = Path::new(&dir_path);
     start_security_bookmark_access(&state, path);
     if !path.exists() || !is_browsable_scope(path, &state) {
         return vec![];
     }
     let memo_created_times = memo_created_times_for_path(path, &state);
-    read_dir_single_level(path, memo_created_times.as_ref())
+    read_dir_single_level(
+        path,
+        memo_created_times.as_ref(),
+        include_hidden_directories.unwrap_or(false),
+    )
 }
 
 /// 文件树可浏览作用域 ── 注册笔记本根 或 资料文件夹 (agent access
@@ -387,6 +413,46 @@ pub fn rename_file(
 }
 
 #[tauri::command]
+pub fn rename_folder(
+    folder_path: String,
+    name: String,
+    space_path: String,
+    state: State<AppState>,
+) -> Result<String, String> {
+    validate_file_name(&name)?;
+    let source = Path::new(&folder_path);
+    let scope = Path::new(&space_path);
+    let parent = source.parent().ok_or("INVALID_FILE_PATH")?;
+    let target = parent.join(name);
+
+    // A notebook root is the scope boundary and must never be renamed from
+    // inside the tree. Both paths are checked so a symlink cannot escape the
+    // registered notebook/access-folder scope during the mutation.
+    if source == scope
+        || !path_is_inside(source, scope)
+        || !path_is_inside(&target, scope)
+        || !is_browsable_scope(scope, &state)
+    {
+        return Err("FILE_PERMISSION_DENIED".to_string());
+    }
+    start_security_bookmark_access(&state, source);
+    if !fs::symlink_metadata(source)
+        .map_err(file_mutation_error)?
+        .is_dir()
+    {
+        return Err("SOURCE_NOT_DIRECTORY".to_string());
+    }
+    if fs::symlink_metadata(&target).is_ok() {
+        return Err(file_mutation_error(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "target already exists",
+        )));
+    }
+    fs::rename(source, &target).map_err(file_mutation_error)?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
 pub fn create_folder(
     space_path: String,
     name: String,
@@ -471,13 +537,35 @@ mod tests {
     fn directory_listing_preserves_regular_files_and_folders() {
         let directory = tempfile::tempdir().unwrap();
         fs::write(directory.path().join("note.md"), "body").unwrap();
+        fs::write(directory.path().join("AGENTS.md"), "agent rules").unwrap();
         fs::create_dir(directory.path().join("folder")).unwrap();
         fs::create_dir(directory.path().join(".flowix")).unwrap();
         fs::write(directory.path().join(".hidden.md"), "hidden").unwrap();
-        let items = read_dir_single_level(directory.path(), None);
+        let items = read_dir_single_level(directory.path(), None, false);
         assert_eq!(items.len(), 2);
+        assert!(items.iter().all(|item| item.name != "AGENTS.md"));
         assert_eq!(items[0].name, "folder");
         assert_eq!(items[1].name, "note.md");
+    }
+
+    #[test]
+    fn directory_listing_can_include_hidden_directories_but_not_dot_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let hidden = directory.path().join(".codex");
+        fs::create_dir(&hidden).unwrap();
+        fs::write(hidden.join("skill.md"), "skill").unwrap();
+        fs::write(directory.path().join(".gitignore"), "ignored").unwrap();
+
+        let items = read_dir_single_level(directory.path(), None, true);
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.name.as_str())
+                .collect::<Vec<_>>(),
+            vec![".codex"]
+        );
+        let hidden_children = read_dir_single_level(&hidden, None, true);
+        assert_eq!(hidden_children[0].name, "skill.md");
     }
 
     #[cfg(unix)]
@@ -493,7 +581,7 @@ mod tests {
         symlink(&outside, root.join("outside.md")).unwrap();
         symlink(root.join("missing"), root.join("dangling.md")).unwrap();
         symlink(root.join("note.md"), root.join("inside.md")).unwrap();
-        let names: Vec<_> = read_dir_single_level(&root, None)
+        let names: Vec<_> = read_dir_single_level(&root, None, false)
             .into_iter()
             .map(|item| item.name)
             .collect();

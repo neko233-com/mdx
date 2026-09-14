@@ -16,6 +16,10 @@ import { DEFAULT_USER_SETTINGS } from '@/lib/constants';
 const mockedPreferences = vi.mocked(preferences);
 
 describe('user-settings-store · region loadInitial', () => {
+  it('defaults hidden notebook files to disabled', () => {
+    expect(DEFAULT_USER_SETTINGS.showHiddenNotebookFiles).toBe(false);
+  });
+
   it('persists the notebook folder view', async () => {
     await useUserSettingsStore.getState().updateSettings({ memoListView: 'folders' });
     const after = useUserSettingsStore.getState().settings;
@@ -49,6 +53,7 @@ describe('user-settings-store · region loadInitial', () => {
         language: 'zh-CN',
         region: 'mainland',
         memoListView: 'detailed',
+        showHiddenNotebookFiles: false,
         shortcuts: {},
         properties: { fields: [] },
         agents: { enabledByType: {} },
@@ -85,6 +90,7 @@ describe('user-settings-store · legacy quickPhrases migration', () => {
         language: 'zh-CN',
         region: 'mainland',
         memoListView: 'detailed',
+        showHiddenNotebookFiles: false,
         shortcuts: {},
         properties: { fields: [] },
         agents: { enabledByType: {} },

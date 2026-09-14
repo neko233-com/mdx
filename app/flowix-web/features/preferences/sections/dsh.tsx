@@ -427,7 +427,7 @@ function GeneralTab({
           </Button>
           <Button
             variant="outline"
-            className="px-3 text-[var(--destructive)] hover:text-[var(--destructive)]"
+            className="px-3 text-[var(--muted-foreground)] hover:text-[var(--destructive)]"
             title={t('preferences.dsh.runtime.uninstall')}
             disabled={busy || !status?.installed}
             onClick={() => void startUninstall()}

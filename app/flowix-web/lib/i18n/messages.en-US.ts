@@ -867,6 +867,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
       "Standard mode + plugin experimentation/design",
     "agent.reasoning.title": "Reasoning",
     "agent.files.title": "Files",
+    "agent.files.referenceLocal": "Reference local materials",
+    "agent.files.projectNotes": "Notes",
     "agent.menu.skills": "Skills",
     "agent.menu.instructions": "Instructions",
     "agent.welcome.prompts.sop": "Product workflow SOP",

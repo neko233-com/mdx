@@ -10,8 +10,8 @@ import {
 } from '@features/memo/components/use-folder-tree';
 
 // files IPC mock ── getTree / getDirChildren 均按测试用例注入。
-const getTreeMock = vi.fn<(path: string) => Promise<DocTreeItem[] | null>>();
-const getDirChildrenMock = vi.fn<(path: string) => Promise<DocTreeItem[]>>();
+const getTreeMock = vi.fn<(path: string, includeHiddenDirectories: boolean) => Promise<DocTreeItem[] | null>>();
+const getDirChildrenMock = vi.fn<(path: string, includeHiddenDirectories: boolean) => Promise<DocTreeItem[]>>();
 
 vi.mock('@platform/tauri/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@platform/tauri/client')>();
@@ -19,8 +19,8 @@ vi.mock('@platform/tauri/client', async (importOriginal) => {
     ...actual,
     files: {
       ...actual.files,
-      getTree: (path: string) => getTreeMock(path),
-      getDirChildren: (path: string) => getDirChildrenMock(path),
+      getTree: (path: string, includeHiddenDirectories: boolean) => getTreeMock(path, includeHiddenDirectories),
+      getDirChildren: (path: string, includeHiddenDirectories: boolean) => getDirChildrenMock(path, includeHiddenDirectories),
     },
   };
 });
@@ -37,8 +37,8 @@ function file(path: string, name: string): DocTreeItem {
 // hook 状态经 onChange 回调写到外层变量。
 let lastState: ReturnType<typeof useFolderTree> | null = null;
 
-function TreeProbe({ folderPath }: { folderPath: string }) {
-  lastState = useFolderTree(folderPath);
+  function TreeProbe({ folderPath, includeHiddenDirectories = false }: { folderPath: string; includeHiddenDirectories?: boolean }) {
+  lastState = useFolderTree(folderPath, { includeHiddenDirectories });
   return null;
 }
 
@@ -61,9 +61,9 @@ describe('useFolderTree', () => {
     container = null;
   });
 
-  function mount(folderPath: string) {
+  function mount(folderPath: string, includeHiddenDirectories = false) {
     act(() => {
-      root?.render(createElement(TreeProbe, { folderPath }));
+      root?.render(createElement(TreeProbe, { folderPath, includeHiddenDirectories }));
     });
   }
 
@@ -72,7 +72,7 @@ describe('useFolderTree', () => {
     mount('/root');
     await vi.waitFor(() => expect(lastState?.loading).toBe(false));
     expect(lastState?.rootChildren).toHaveLength(2);
-    expect(getTreeMock).toHaveBeenCalledWith('/root');
+    expect(getTreeMock).toHaveBeenCalledWith('/root', false);
   });
 
   it('展开 folder 时惰性拉取子级, 收起再展开不重新请求', async () => {

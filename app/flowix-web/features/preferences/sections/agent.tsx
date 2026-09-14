@@ -1835,7 +1835,7 @@ function ConfiguredModelsList({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="size-7"
+                    className="size-7 text-[var(--muted-foreground)] hover:text-[var(--destructive)]"
                     aria-label={t('preferences.agent.provider.configuredModelDelete')}
                     title={t('preferences.agent.provider.configuredModelDelete')}
                     onClick={() => {
@@ -1845,7 +1845,7 @@ function ConfiguredModelsList({
                     }}
                     disabled={busy}
                   >
-                    <Trash2 className="h-3 w-3 text-[var(--destructive)]" />
+                    <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
               )}

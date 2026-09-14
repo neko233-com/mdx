@@ -20,6 +20,18 @@ import {
   ComposerSkillToken,
   composerSkillMarkdownToPrompt,
 } from "@features/agent/thread-card/composer/composer-skill-token";
+import {
+  ComposerFolderToken,
+  composerFolderMarkdownToPrompt,
+} from "@features/agent/thread-card/composer/composer-folder-token";
+import {
+  ComposerFolderController,
+  type ComposerFolderReference,
+} from "@features/agent/thread-card/composer/composer-folder-controller";
+import {
+  queryMentionNotes,
+  type MentionNoteItem,
+} from "@features/editor/extensions/note-mention/note-mention-data";
 import type {
   ComposerSlashCommand,
   ComposerSlashSkill,
@@ -57,6 +69,10 @@ export interface ComposerControllerOptions {
   agentType?: AgentTypeKey;
   listDshSkills?: () => Promise<readonly ComposerSlashSkill[]>;
   listCodexSkills?: () => Promise<readonly ComposerSlashSkill[]>;
+  listFolders?: () => readonly ComposerFolderReference[];
+  folderGroupLabel?: string;
+  listNotes?: (query: string) => Promise<readonly MentionNoteItem[]>;
+  noteGroupLabel?: string;
   onModelSelect?: () => void;
   onPermissionSelect?: () => void;
   onDirectCommand?: (command: ComposerSlashCommand) => void;
@@ -82,6 +98,7 @@ export class ComposerController {
   private readonly submit: () => void;
   private readonly stop: () => void;
   private readonly slashCommands: ComposerSlashCommandController;
+  private readonly folderReferences: ComposerFolderController;
   private readonly removeSelectAllHandler: () => void;
 
   private isComposing = false;
@@ -124,6 +141,7 @@ export class ComposerController {
         }),
         NoteReference,
         ComposerSkillToken,
+        ComposerFolderToken,
         ComposerSlashToken.configure({
           onRemove: () => removeSlashToken?.(),
         }),
@@ -170,6 +188,17 @@ export class ComposerController {
       onCommandChange: () => this.handleEditorUpdate(),
       focusInput: () => this.focus(),
     });
+    this.folderReferences = new ComposerFolderController({
+      editor: this.editor,
+      input: this.input,
+      composer: this.composer,
+      listFolders: options.listFolders ?? (() => []),
+      groupLabel: options.folderGroupLabel,
+      listNotes: options.listNotes ?? queryMentionNotes,
+      noteGroupLabel: options.noteGroupLabel,
+      onChange: () => this.handleEditorUpdate(),
+      focusInput: () => this.focus(),
+    });
     removeSlashToken = () => this.slashCommands.removeSelectedToken();
 
     // macOS routes Cmd+A through the native menu, bypassing the DOM keymap.
@@ -203,7 +232,9 @@ export class ComposerController {
     // hardBreak. Markdown serializes that node as `  \n`; the agent protocol
     // should receive the same newline the user entered, without Markdown's
     // visual line-break marker becoming part of the prompt.
-    return composerSkillMarkdownToPrompt(composerSlashMarkdownToPrompt(this.getDraftMarkdown()))
+    return composerFolderMarkdownToPrompt(
+      composerSkillMarkdownToPrompt(composerSlashMarkdownToPrompt(this.getDraftMarkdown())),
+    )
       .replace(/ {2}\n/g, "\n");
   }
 
@@ -351,6 +382,7 @@ export class ComposerController {
     this.input.removeEventListener("blur", this.handleBlur);
     this.editor.off("selectionUpdate", this.handleSelectionUpdate);
     this.slashCommands.dispose();
+    this.folderReferences.dispose();
     if (this.scrollSelectionFrame !== null) {
       cancelAnimationFrame(this.scrollSelectionFrame);
       this.scrollSelectionFrame = null;

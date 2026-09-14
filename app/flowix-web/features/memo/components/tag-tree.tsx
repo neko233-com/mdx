@@ -887,7 +887,7 @@ export function TagTree({
                 </ContextMenuItem>
                 <ContextMenuItem
                   onClick={() => setDeletingTag(tag)}
-                  className="h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left text-[var(--destructive)] hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
+                  className="h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:text-[var(--destructive)]"
                 >
                   {t('memo.tag.delete')}
                 </ContextMenuItem>

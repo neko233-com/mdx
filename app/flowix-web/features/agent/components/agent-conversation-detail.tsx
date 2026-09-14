@@ -21,6 +21,7 @@ import {
   ComposerDraftController,
   ComposerImageController,
   ComposerAddMenuController,
+  getCurrentNotebookComposerFolders,
   createAgentComposerDom,
   disposeAgentComposerDom,
   getAgentThreadCardUserHistoryMessagesFromMessages,
@@ -668,6 +669,9 @@ export function AgentConversationDetail({
           const cwd = ensured.runtimeConfig.workspaceSnapshot?.cwd ?? ensured.runtimeConfig.cwd;
           return listCodexSkills(cwd ?? '');
         },
+        listFolders: () => getCurrentNotebookComposerFolders(),
+        folderGroupLabel: tRef.current("agent.files.referenceLocal"),
+        noteGroupLabel: tRef.current("agent.files.projectNotes"),
         onModelSelect: () => {
           clearComposerAfterSlashCommand();
           externalSettings.openComposerModelPicker();

@@ -713,6 +713,7 @@ pub fn run() {
             commands::file::read_image_file,
             commands::file::write_file,
             commands::file::rename_file,
+            commands::file::rename_folder,
             commands::file::delete_file,
             commands::file::delete_folder,
             commands::file::create_folder,

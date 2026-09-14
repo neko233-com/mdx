@@ -32,6 +32,18 @@ export {
   insertComposerSkillToken,
 } from "./composer-skill-token";
 export {
+  ComposerFolderToken,
+  composerFolderMarkdownToPrompt,
+  insertComposerFolderToken,
+  type ComposerFolderTokenValue,
+} from "./composer-folder-token";
+export {
+  ComposerFolderController,
+  type ComposerFolderControllerOptions,
+  type ComposerFolderReference,
+} from "./composer-folder-controller";
+export { getCurrentNotebookComposerFolders } from "./composer-folder-data";
+export {
   createAgentComposerDom,
   disposeAgentComposerDom,
   type AgentComposerDomFactoryOptions,

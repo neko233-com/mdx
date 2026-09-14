@@ -65,6 +65,7 @@ import {
   ComposerDraftController,
   ComposerImageController,
   ComposerAddMenuController,
+  getCurrentNotebookComposerFolders,
   type AgentThreadCardInputImage,
   getAgentThreadCardUserHistoryMessagesFromMessages,
 } from "@features/agent/thread-card/composer";
@@ -568,6 +569,9 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
         const cwd = ensured.runtimeConfig.workspaceSnapshot?.cwd ?? ensured.runtimeConfig.cwd;
         return listCodexSkills(cwd ?? "");
       },
+      listFolders: () => getCurrentNotebookComposerFolders(),
+      folderGroupLabel: this.t("agent.files.referenceLocal"),
+      noteGroupLabel: this.t("agent.files.projectNotes"),
       onModelSelect: () => {
         this.clearComposerAfterSlashCommand();
         this.externalAgentSettings.openComposerModelPicker();

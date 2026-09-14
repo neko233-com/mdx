@@ -1,7 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArchiveIcon, PencilSimpleIcon, PlusIcon, StarIcon, TrashSimpleIcon } from '@phosphor-icons/react';
+import {
+  ArchiveIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  SquareSplitHorizontalIcon,
+  StarIcon,
+  TrashSimpleIcon,
+} from '@phosphor-icons/react';
 import { Loader2 } from 'lucide-react';
 import { MoreHorizontal } from 'lucide-react';
 import { useAgentSessionStore } from '@features/agent/store/agent-session-store';
@@ -10,6 +17,7 @@ import { normalizeBackendInstance } from '@features/agent/store/conversation-sli
 import { buildInitialInstanceRuntimeConfig } from '@features/agent/store/initial-runtime-config';
 import { useWorkspaceRestoreStore } from '@features/workspace/store/workspace-restore-store';
 import { selectAndOpenAgentConversation } from '@features/workspace/use-cases/agent-conversation-navigation';
+import { openBrowserColumnAgentConversation } from '@features/workspace/use-cases/browser-column-navigation';
 import { useMemoStore } from '@features/memo';
 import { agentClient } from '@features/agent/store/agent-client';
 import { isAgentConversationRunning } from '@features/agent/store/conversation-run-index';
@@ -537,17 +545,10 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
     [agentRuntimeIsChecking, agentRuntimeStatusByType],
   );
 
-  const revealConversation = useCallback(async (instance: AgentConversationInstance) => {
-    // 第一次访问: 立即清掉该对话的"刚结束"灰色 dot, 做到"看见一次就消失"。
-    if (justEndedIds.has(instance.instanceId)) {
-      const next = new Set(justEndedIds);
-      next.delete(instance.instanceId);
-      setJustEndedIds(next);
-    }
-
+  const prepareConversation = useCallback((instance: AgentConversationInstance) => {
     // The durable list snapshot may arrive before the Zustand session store
     // hydrates. Install this exact persisted instance without rewriting it so
-    // the right panel can immediately resolve its runtime configuration.
+    // either conversation surface can immediately resolve its runtime configuration.
     useAgentSessionStore.getState().setConversationRegistry((registry) => ({
       ...registry,
       instances: {
@@ -566,9 +567,28 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
         activeAgentTypeKey: instance.agentType,
       }));
     }
+  }, []);
+
+  const revealConversation = useCallback(async (instance: AgentConversationInstance) => {
+    // 第一次访问: 立即清掉该对话的"刚结束"灰色 dot, 做到"看见一次就消失"。
+    if (justEndedIds.has(instance.instanceId)) {
+      const next = new Set(justEndedIds);
+      next.delete(instance.instanceId);
+      setJustEndedIds(next);
+    }
+
+    prepareConversation(instance);
 
     await selectAndOpenAgentConversation(instance.instanceId);
-  }, [justEndedIds]);
+  }, [justEndedIds, prepareConversation]);
+
+  const openConversationInBrowserColumn = useCallback((instance: AgentConversationInstance) => {
+    prepareConversation(instance);
+    void openBrowserColumnAgentConversation(instance.instanceId).catch((error) => {
+      logger.error('Failed to open conversation in browser column', { error });
+      toast.error(error instanceof Error ? error.message : String(error));
+    });
+  }, [prepareConversation]);
 
   // 独立对话: 无文档 (memoId / documentPath 均为 null), 但归属当前选中的
   // notebook。notebook 未选中时不可新建 (cwd 无法解析到笔记本路径)。
@@ -819,6 +839,9 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-[160px] space-y-0.5 rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]">
+                              <DropdownMenuItem onClick={() => openConversationInBrowserColumn(instance)} className="group h-7 items-center justify-start rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]">
+                                <SquareSplitHorizontalIcon className="mr-2 h-4 w-4" /> {t('workColumn.context.openInBrowserColumn')}
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => toggleFavorite(instance.instanceId)} className="group h-7 items-center gap-2 rounded-lg px-2 py-0 hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]">
                                 <StarIcon className="h-4 w-4" weight={favoriteIds.has(instance.instanceId) ? 'fill' : 'regular'} />
                                 {favoriteIds.has(instance.instanceId) ? t('agent.chat.conversation.unfavorite') : t('agent.chat.conversation.favorite')}
@@ -829,7 +852,7 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
                               <DropdownMenuItem onClick={() => void removeConversation(instance, 'archive')} className="group h-7 items-center gap-2 rounded-lg px-2 py-0 hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]">
                                 <ArchiveIcon className="h-4 w-4" /> {t('document.agent.archiveConversation')}
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => void removeConversation(instance, 'delete')} className="group h-7 items-center gap-2 rounded-lg px-2 py-0 text-[var(--destructive)] hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]">
+                              <DropdownMenuItem onClick={() => void removeConversation(instance, 'delete')} className="group h-7 items-center gap-2 rounded-lg px-2 py-0 hover:text-[var(--destructive)]">
                                 <TrashSimpleIcon className="h-4 w-4" /> {t('document.agent.deleteConversation')}
                               </DropdownMenuItem>
                             </DropdownMenuContent>
