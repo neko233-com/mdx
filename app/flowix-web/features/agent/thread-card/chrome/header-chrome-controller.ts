@@ -78,7 +78,6 @@ export class AgentThreadCardHeaderChromeController {
     const target = getEventElement(event);
     if (!target || !this.header.contains(target)) return;
     if (isAgentThreadCardInteractiveTarget(target)) return;
-    if (target.closest(".agent-thread-card__title")) return;
 
     this.dragState = {
       pointerId: event.pointerId,

@@ -349,12 +349,16 @@
   min-width: 0;
   overflow: hidden;
   color: var(--foreground);
-  cursor: text;
+  cursor: grab;
   font-size: calc(var(--app-font-size, 15px) * 0.9);
   font-weight: 600;
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.markdown-editor .agent-thread-card--dragging .agent-thread-card__title {
+  cursor: grabbing;
 }
 
 .markdown-editor .agent-thread-card__title-input {

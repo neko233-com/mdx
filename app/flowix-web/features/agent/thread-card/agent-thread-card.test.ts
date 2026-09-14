@@ -260,6 +260,68 @@ async function seedRenderableMessages(
 describe("AgentThreadCard NodeView streaming", () => {
   let editor: Editor | null = null;
 
+  it("moves the card block when dragging its title inside ProseMirror", async () => {
+    const { AgentThreadCard } = await import("@features/agent/thread-card");
+    const { BlockDragExtension } = await import(
+      "@features/editor/extensions/block-drag"
+    );
+    const host = document.createElement("div");
+    document.body.append(host);
+    editor = new Editor({
+      element: host,
+      extensions: [StarterKit, AgentThreadCard, BlockDragExtension],
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "before" }] },
+          {
+            type: "agentThreadCard",
+            attrs: {
+              instanceId: "instance-drag-title",
+              threadId: "thread-drag-title",
+              title: "Drag title",
+              typeKey: "codex",
+            },
+          },
+          { type: "paragraph", content: [{ type: "text", text: "after" }] },
+        ],
+      },
+    });
+
+    const cardPos = editor.state.doc.child(0).nodeSize;
+    const cardSize = editor.state.doc.child(1).nodeSize;
+    const first = editor.view.nodeDOM(0) as HTMLElement;
+    const card = editor.view.nodeDOM(cardPos) as HTMLElement;
+    const last = editor.view.nodeDOM(cardPos + cardSize) as HTMLElement;
+    first.getBoundingClientRect = () => ({ top: 0, bottom: 20, height: 20 } as DOMRect);
+    card.getBoundingClientRect = () => ({ top: 20, bottom: 120, height: 100 } as DOMRect);
+    last.getBoundingClientRect = () => ({ top: 120, bottom: 140, height: 20 } as DOMRect);
+
+    const header = card.querySelector<HTMLElement>(".agent-thread-card__header")!;
+    const title = card.querySelector<HTMLElement>(".agent-thread-card__title")!;
+    header.setPointerCapture = vi.fn();
+    header.hasPointerCapture = vi.fn(() => false);
+    header.releasePointerCapture = vi.fn();
+
+    for (const [type, clientY] of [
+      ["pointerdown", 20],
+      ["pointermove", 139],
+      ["pointerup", 139],
+    ] as const) {
+      title.dispatchEvent(new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        clientX: 10,
+        clientY,
+      }));
+    }
+
+    expect(editor.state.doc.child(0).textContent).toBe("before");
+    expect(editor.state.doc.child(1).textContent).toBe("after");
+    expect(editor.state.doc.child(2).type.name).toBe("agentThreadCard");
+  });
+
   it("persists the card title and fullscreen state in markdown for reload", async () => {
     const {
       parseAgentThreadCardMarkdown,
