@@ -2,6 +2,8 @@ use crate::agent_external::runtime_registry::{ExternalCliRuntime, ExternalRuntim
 use crate::agent_wire::AgentUserMessage;
 use crate::app::state::AppState;
 
+use super::flowix_instructions::sync_native_agent_instructions;
+
 /// Chat dispatch target. The former built-in runtime was removed; every
 /// supported agent is an external CLI runtime now.
 pub(super) type AgentRuntime = ExternalRuntimeKind;
@@ -37,6 +39,14 @@ pub(crate) async fn start_plugin_chat(
     app_handle: &tauri::AppHandle,
 ) -> Result<(), String> {
     let runtime = runtime_from_message(&message)?;
+    if let Some(cwd) = message.cwd_for_runtime(runtime.key()) {
+        let workspace_paths = message.workspace_paths_for_runtime(runtime.key());
+        sync_native_agent_instructions(
+            std::path::Path::new(cwd),
+            runtime.key(),
+            &workspace_paths,
+        )?;
+    }
     runtime_handle(state, runtime)
         .chat_stream(thread_id, message, app_handle)
         .await

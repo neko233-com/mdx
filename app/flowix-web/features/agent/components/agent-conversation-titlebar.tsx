@@ -216,7 +216,7 @@ function AgentConversationHeader({ instanceId }: { instanceId: string }) {
               </DropdownMenuItem>
             ) : null}
             <DropdownMenuItem onClick={onDelete}
-              className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left text-[var(--destructive)] hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]">
+              className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-transparent hover:text-[var(--destructive)]">
               <TrashSimpleIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span>{t('document.agent.deleteConversation')}</span>
             </DropdownMenuItem>

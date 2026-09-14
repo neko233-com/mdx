@@ -385,7 +385,7 @@ export function DocumentContainer({
           <button
             type="button"
             onClick={handleDeleteCurrent}
-            className="inline-flex items-center h-7 px-2.5 text-xs rounded-lg bg-transparent border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+            className="inline-flex items-center h-7 px-2.5 text-xs rounded-lg bg-transparent border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-transparent hover:border-[var(--destructive)] hover:text-[var(--destructive)]"
           >
             {t('document.ghost.deleteButton')}
           </button>

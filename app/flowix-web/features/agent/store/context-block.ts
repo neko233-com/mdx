@@ -1,7 +1,6 @@
 import type { AgentTypeKey } from "@/types/agent";
 import { getActiveDocumentDraft, useDocumentStore } from "@features/document";
 import { CONTEXT_PROMPT_MARKER } from "@features/agent/message";
-import { useAgentAccessStore } from "@features/agent/store/agent-access-store";
 import { useMemoStore } from "@features/memo/store/memo-store";
 import { useTagStore } from "@features/memo/store/tag-store";
 
@@ -38,37 +37,8 @@ function getCurrentTaskTag(): string {
   return normalizeContextValue(tag?.name).replace(/^#+/, "");
 }
 
-export function getCurrentNotePath(): string {
-  const memoState = useMemoStore.getState();
-  const documentState = useDocumentStore.getState();
-  const draft = getActiveDocumentDraft();
-  const notebookPath = memoState.selectedNotebook?.path?.trim();
-  return (
-    documentState.currentDocumentPath?.trim() ||
-    draft?.path?.trim() ||
-    (notebookPath && memoState.selectedMemo?.filename
-      ? joinPath(notebookPath, memoState.selectedMemo.relativePath || memoState.selectedMemo.filename)
-      : "")
-  );
-}
-
 function buildContextPromptBlock(currentNoteContent?: string): string {
-  const memoState = useMemoStore.getState();
-  const accessEntries = useAgentAccessStore.getState().config.entries;
   const draft = getActiveDocumentDraft();
-  const currentNotebookPath = normalizeContextValue(
-    memoState.selectedNotebook?.path,
-  );
-  const allNotebookPaths = accessEntries
-    .filter(
-      (entry) => entry.kind === "notebook" && entry.enabled && !entry.missing,
-    )
-    .map((entry) => {
-      const notebook = memoState.notebooks.find((item) => item.id === entry.id);
-      return normalizeContextValue(notebook?.path || entry.path);
-    })
-    .filter(Boolean)
-    .join("\n");
   const notePreview = truncateContextContent(
     currentNoteContent || draft?.content || "",
   );
@@ -76,14 +46,9 @@ function buildContextPromptBlock(currentNoteContent?: string): string {
 
   return [
     CONTEXT_PROMPT_MARKER,
-    `当前笔记路径: ${normalizeContextValue(getCurrentNotePath()) || "none"}`,
-    `当前笔记本路径: ${currentNotebookPath || "none"}`,
     ...(currentTaskTag
       ? [`当前任务标签：#${currentTaskTag} (注：创建新笔记需写入)`]
       : []),
-    "",
-    "全部笔记本路径:",
-    allNotebookPaths || "none",
     "",
     "当前笔记内容（前500字）:",
     notePreview || "none",
@@ -125,6 +90,11 @@ const FLOWIX_CLI_PROMPT_BLOCK = [
   "仅当用户明确要求生成/创建思维导图时调用 mindmap 工具。先自行整理最终 Markdown（恰好一个一级根标题，分支使用二/三级标题和无序列表），再传给 stdin；不要手工创建 `.plugin-output` 文件。成功后向用户返回 title 和 noteId。",
 ].join("\n");
 
+const NATIVE_AGENTS_INSTRUCTION_AGENT_TYPES = new Set<AgentTypeKey>([
+  "codex",
+  "deepseek-harness",
+]);
+
 export function appendFirstMessageContext(
   content: string,
   isFirstMessage: boolean,
@@ -146,7 +116,7 @@ export function appendFirstMessageContext(
       blocks.push(roleBlock);
     }
   }
-  if (agentType) {
+  if (agentType && !NATIVE_AGENTS_INSTRUCTION_AGENT_TYPES.has(agentType)) {
     blocks.push(FLOWIX_CLI_PROMPT_BLOCK);
   }
   return `${content}\n${blocks.join("\n\n")}`;

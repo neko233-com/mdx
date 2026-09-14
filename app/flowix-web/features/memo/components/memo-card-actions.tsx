@@ -291,7 +291,7 @@ export function MemoCardActions({
       <div role="separator" aria-hidden="true" className={POPUP_DIVIDER_CLASS} />
       <Item
         onClick={() => onDelete(memo)}
-        className={cn(ITEM_BASE, 'text-[var(--destructive)]')}
+        className={cn(ITEM_BASE, 'hover:bg-transparent hover:text-[var(--destructive)]')}
       >
         <TrashSimpleIcon className="w-4 h-4 mr-2" /> {t('memo.action.delete')}
       </Item>

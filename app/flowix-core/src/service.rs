@@ -6,7 +6,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -153,11 +153,20 @@ impl<'a> MemoService<'a> {
 
     pub fn list_memos(&mut self, notebook_key: &str) -> Result<Vec<MemoIndexEntry>, FlowixError> {
         let notebook = self.resolve_notebook(notebook_key)?;
-        Ok(self
+        let mut entries = self
             .memo_file
             .read_index_for_notebook_id(Some(&notebook.id))?
             .unwrap_or_default()
-            .memos)
+            .memos;
+        entries.retain(|entry| {
+            let relative_path = if entry.relative_path.is_empty() {
+                &entry.filename
+            } else {
+                &entry.relative_path
+            };
+            !crate::memo_file::is_ignored_notebook_relative_path(Path::new(relative_path))
+        });
+        Ok(entries)
     }
 
     pub fn list_memos_filtered(

@@ -842,7 +842,7 @@ export function TagTree({
                       event.preventDefault();
                       void confirmDeleteTag(tag);
                     }}
-                    className="ml-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--destructive)] focus:text-[var(--destructive)]"
+                    className="ml-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-transparent hover:text-[var(--destructive)] focus:text-[var(--destructive)]"
                     aria-label={t('memo.tag.batchDelete', { path: tag.fullPath } satisfies I18nParams)}
                     title={t('memo.tag.batchDelete', { path: tag.fullPath } satisfies I18nParams)}
                   >
@@ -887,7 +887,7 @@ export function TagTree({
                 </ContextMenuItem>
                 <ContextMenuItem
                   onClick={() => setDeletingTag(tag)}
-                  className="h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left text-[var(--destructive)] hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
+                  className="h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-transparent hover:text-[var(--destructive)]"
                 >
                   {t('memo.tag.delete')}
                 </ContextMenuItem>

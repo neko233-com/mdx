@@ -50,7 +50,7 @@
 }
 
 .table-bubble-menu .destructive:hover {
-  background: color-mix(in oklch, var(--destructive, #ef4444) 12%, transparent);
+  background: transparent;
   color: var(--destructive, #ef4444);
 }
 

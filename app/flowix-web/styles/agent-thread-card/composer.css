@@ -698,6 +698,7 @@
 
 .markdown-editor .agent-thread-card__composer-input > p {
   min-height: 1rem;
+  line-height: 20px;
   margin-top: 0 !important;
   margin-bottom: 0 !important;
   white-space: pre-wrap;
@@ -757,18 +758,19 @@
 
 .markdown-editor .agent-thread-card__skill-token {
   display: inline-flex;
+  height: 20px;
   max-width: 100%;
   align-items: center;
-  padding: 0.12rem 0.45rem;
+  padding: 0 0.45rem;
   border: 1px solid color-mix(in oklch, var(--border) 90%, var(--foreground) 10%);
   border-radius: 0.35rem;
   background: transparent;
   color: var(--foreground);
   font: inherit;
-  font-size: inherit;
-  line-height: 1.35;
+  font-size: 0.9em;
+  line-height: 20px;
   white-space: nowrap;
-  vertical-align: middle;
+  vertical-align: top;
   cursor: pointer;
 }
 
@@ -778,6 +780,107 @@
   background: transparent;
   color: var(--foreground);
   outline: none;
+}
+
+/* Notebook add-dir mention. Keep the chip geometry aligned with Skill cards;
+ * the @ prefix makes a selected data folder recognizable at a glance. */
+.markdown-editor .agent-thread-card__folder-token {
+  display: inline-flex;
+  height: 20px;
+  max-width: 100%;
+  align-items: center;
+  padding: 0 0.45rem;
+  border: 1px solid color-mix(in oklch, var(--border) 90%, var(--foreground) 10%);
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.9em;
+  line-height: 20px;
+  white-space: nowrap;
+  vertical-align: top;
+  cursor: pointer;
+}
+
+.markdown-editor .agent-thread-card__folder-token:hover,
+.markdown-editor .agent-thread-card__folder-token:focus-visible {
+  border-color: color-mix(in oklch, var(--border) 68%, var(--foreground) 32%);
+  background: transparent;
+  color: var(--foreground);
+  outline: none;
+}
+
+/* Notes selected through the @ picker keep the canonical NoteReference node
+ * (memo id/path validation and double-click navigation), but use the same
+ * compact chip treatment as Skill and folder references inside the composer.
+ * This override is composer-scoped so normal document note links keep their
+ * own presentation. */
+.markdown-editor .agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer,
+.agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+}
+
+.markdown-editor .agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer .editor-note-reference__card,
+.agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer .editor-note-reference__card {
+  display: inline-flex;
+  box-sizing: border-box;
+  height: 20px;
+  max-width: 100%;
+  align-items: center;
+  padding: 0 0.45rem;
+  border: 1px solid color-mix(in oklch, var(--border) 90%, var(--foreground) 10%);
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.9em;
+  line-height: 20px;
+  vertical-align: top;
+}
+
+.markdown-editor .agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer .editor-note-reference__card:hover,
+.markdown-editor .agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer .editor-note-reference__card:focus-visible,
+.agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer .editor-note-reference__card:hover,
+.agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer .editor-note-reference__card:focus-visible {
+  border-color: color-mix(in oklch, var(--border) 68%, var(--foreground) 32%);
+  background: transparent;
+  color: var(--foreground);
+  outline: none;
+}
+
+.markdown-editor .agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer .editor-note-reference__icon,
+.agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer .editor-note-reference__icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  margin: 0 0.25rem 0 0;
+  color: var(--muted-foreground);
+}
+
+.markdown-editor .agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer .editor-note-reference__name,
+.markdown-editor .agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer .editor-note-reference__title,
+.agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer .editor-note-reference__name,
+.agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer .editor-note-reference__title {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--foreground);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markdown-editor .agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer .editor-note-reference__stale-mark,
+.agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer .editor-note-reference__stale-mark {
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+
+.markdown-editor .agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer.is-selected .editor-note-reference__card,
+.agent-thread-card__composer .agent-thread-card__composer-input .editor-note-reference--composer.is-selected .editor-note-reference__card {
+  background-color: color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
 .agent-composer-slash-menu {
@@ -793,6 +896,10 @@
   /* Slash menu shadow is intentionally 1/4 of the standard popover weight. */
   box-shadow: 0 4px 24px -3px rgb(0 0 0 / 6%);
   box-sizing: border-box;
+}
+
+.agent-composer-slash-menu--folder {
+  max-height: min(16.5rem, 36vh);
 }
 
 .agent-composer-slash-menu__item {
@@ -872,6 +979,71 @@
   overflow: visible;
   text-overflow: clip;
   white-space: nowrap;
+}
+
+.agent-composer-slash-menu__item--folder .agent-composer-slash-menu__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  color: var(--foreground);
+  text-overflow: ellipsis;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.agent-composer-slash-menu__item--folder .agent-composer-slash-menu__description {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.8em;
+  text-overflow: ellipsis;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.agent-composer-slash-menu__item--folder:hover .agent-composer-slash-menu__name,
+.agent-composer-slash-menu__item--folder:hover .agent-composer-slash-menu__description,
+.agent-composer-slash-menu__item--folder:focus-visible .agent-composer-slash-menu__name,
+.agent-composer-slash-menu__item--folder:focus-visible .agent-composer-slash-menu__description {
+  color: var(--primary-foreground);
+}
+
+.agent-composer-slash-menu__item--folder.agent-composer-slash-menu__item--active
+  .agent-composer-slash-menu__name {
+  color: var(--primary-foreground);
+}
+
+.agent-composer-slash-menu__item--note .agent-composer-slash-menu__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 62%;
+  overflow: hidden;
+  color: var(--foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-composer-slash-menu__item--note .agent-composer-slash-menu__description {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 0.8em;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-composer-slash-menu__item--note:hover .agent-composer-slash-menu__name,
+.agent-composer-slash-menu__item--note:hover .agent-composer-slash-menu__description,
+.agent-composer-slash-menu__item--note:focus-visible .agent-composer-slash-menu__name,
+.agent-composer-slash-menu__item--note:focus-visible .agent-composer-slash-menu__description,
+.agent-composer-slash-menu__item--note.agent-composer-slash-menu__item--active
+  .agent-composer-slash-menu__name,
+.agent-composer-slash-menu__item--note.agent-composer-slash-menu__item--active
+  .agent-composer-slash-menu__description {
+  color: var(--primary-foreground);
 }
 
 .agent-composer-slash-menu__description {

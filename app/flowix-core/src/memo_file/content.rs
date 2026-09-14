@@ -73,6 +73,16 @@ impl MemoFile {
             .memos
             .iter()
             .filter(|entry| !entry.id.is_empty())
+            .filter(|entry| {
+                let relative_path = if entry.relative_path.is_empty() {
+                    &entry.filename
+                } else {
+                    &entry.relative_path
+                };
+                !super::ops::is_ignored_notebook_relative_path(
+                    std::path::Path::new(relative_path),
+                )
+            })
             .map(MemoFile::index_entry_to_memo)
             .collect();
         memos.sort_by_key(|b| std::cmp::Reverse(b.created_at));

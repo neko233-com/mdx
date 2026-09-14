@@ -48,7 +48,7 @@ export function NotebookDeleteDialog({ target, onCancel, onConfirm }: NotebookDe
           <button
             type="button"
             onClick={onConfirm}
-            className="h-8 px-3 text-sm rounded-lg bg-[var(--destructive)] text-white hover:opacity-90"
+            className="h-8 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 text-sm text-[var(--foreground)] hover:border-[var(--destructive)] hover:bg-transparent hover:text-[var(--destructive)]"
           >
             {t('dialog.delete')}
           </button>

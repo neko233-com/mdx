@@ -106,7 +106,7 @@ export function PluginsSection() {
               <Button variant="ghost" size="icon" disabled={busy || (plugin.isSystem && plugin.enabled)} onClick={() => void setEnabled(plugin)} title={plugin.enabled ? '停用插件' : '启用插件'}>
                 <Power className={`h-4 w-4 ${plugin.enabled ? 'text-emerald-500' : 'text-[var(--muted-foreground)]'}`} />
               </Button>
-              {!plugin.isSystem && <Button variant="ghost" size="icon" disabled={busy} onClick={() => void uninstall(plugin)} title="卸载插件"><Trash2 className="h-4 w-4 text-red-500" /></Button>}
+              {!plugin.isSystem && <Button variant="ghost" size="icon" disabled={busy} onClick={() => void uninstall(plugin)} title="卸载插件" className="text-[var(--muted-foreground)] hover:bg-transparent hover:text-[var(--destructive)]"><Trash2 className="h-4 w-4" /></Button>}
             </div>
           </div>
         ))}

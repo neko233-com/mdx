@@ -6,6 +6,7 @@ import { canonicalPath } from '@/lib/path';
 import { createLogger } from '@/lib/logger';
 import { toast } from '@/lib/toast';
 import { useI18n } from '@/lib/i18n';
+import { useUserSettings } from '@features/preferences/hooks/use-user-settings';
 import { useDocumentStore } from '@features/document/store';
 import { isMarkdownFilePath } from '@features/editor/code-file';
 import {
@@ -30,7 +31,25 @@ function canonicalDirectoryPath(path: string): string {
   return canonicalPath(path).replace(/\/+$/, '') || '/';
 }
 
-export function isNotebookTreeItemVisible(item: DocTreeItem): boolean {
+function isInsideHiddenDirectory(item: DocTreeItem, notebookPath: string): boolean {
+  const root = canonicalDirectoryPath(notebookPath);
+  const itemPath = canonicalPath(item.fullPath);
+  const prefix = root === '/' ? '/' : `${root}/`;
+  if (!itemPath.startsWith(prefix)) return false;
+  const relativeParts = itemPath.slice(prefix.length).split('/').filter(Boolean);
+  const directoryParts = item.type === 'folder' ? relativeParts : relativeParts.slice(0, -1);
+  return directoryParts.some((part) => part.startsWith('.') && part !== '.' && part !== '..');
+}
+
+export function isNotebookTreeItemVisible(
+  item: DocTreeItem,
+  notebookPath?: string,
+  showHiddenNotebookFiles = false,
+): boolean {
+  if (item.name === 'AGENTS.md') return false;
+  if (!showHiddenNotebookFiles && notebookPath && isInsideHiddenDirectory(item, notebookPath)) {
+    return false;
+  }
   if (item.type === 'folder') {
     return !['attachment', 'attachments'].includes(item.name.toLowerCase());
   }
@@ -90,7 +109,10 @@ export function NotebookFolderView({
   isActive?: boolean;
 }) {
   const { t } = useI18n();
-  const tree = useFolderTree(notebook.path);
+  const showHiddenNotebookFiles = useUserSettings((settings) => settings.showHiddenNotebookFiles);
+  const tree = useFolderTree(notebook.path, {
+    includeHiddenDirectories: showHiddenNotebookFiles,
+  });
   const visibleMemoPaths = useMemo(() => {
     if (!isActive || visibleMemos == null) return null;
     return new Set(visibleMemos.map((memo) => memoPath(notebook.path, memo)));
@@ -100,7 +122,14 @@ export function NotebookFolderView({
     return {
       ...tree,
       rootChildren: sortNotebookTreeItems(
-        filterNotebookTreeItems(tree.rootChildren.filter(isNotebookTreeItemVisible), visibleMemoPaths),
+        filterNotebookTreeItems(
+          tree.rootChildren.filter((item) => isNotebookTreeItemVisible(
+            item,
+            notebook.path,
+            showHiddenNotebookFiles,
+          )),
+          visibleMemoPaths,
+        ),
         sort,
       ),
       nodes: new Map([...tree.nodes].map(([path, item]) => [
@@ -109,7 +138,14 @@ export function NotebookFolderView({
           ? {
               ...item,
               children: sortNotebookTreeItems(
-                filterNotebookTreeItems(item.children.filter(isNotebookTreeItemVisible), visibleMemoPaths),
+                filterNotebookTreeItems(
+                  item.children.filter((child) => isNotebookTreeItemVisible(
+                    child,
+                    notebook.path,
+                    showHiddenNotebookFiles,
+                  )),
+                  visibleMemoPaths,
+                ),
                 sort,
               ),
             }
@@ -118,6 +154,8 @@ export function NotebookFolderView({
     };
   }, [
     isActive,
+    notebook.path,
+    showHiddenNotebookFiles,
     sort,
     visibleMemoPaths,
     tree.rootChildren,
@@ -150,7 +188,7 @@ export function NotebookFolderView({
       },
     );
 
-    void files.watchRoot(notebook.path)
+    void files.watchRoot(notebook.path, { ignoreHidden: !showHiddenNotebookFiles })
       .then((nextLeaseId) => {
         if (disposed) {
           void files.unwatchRoot(nextLeaseId).catch(() => undefined);
@@ -167,7 +205,7 @@ export function NotebookFolderView({
       unlisten();
       if (leaseId) void files.unwatchRoot(leaseId).catch(() => undefined);
     };
-  }, [isActive, notebook.path]);
+  }, [isActive, notebook.path, showHiddenNotebookFiles]);
 
   const openFile = useCallback(async (filePath: string) => {
     try {

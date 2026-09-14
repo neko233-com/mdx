@@ -109,6 +109,7 @@ function mergeSettings(base: UserSettings, updates: UserSettingsUpdate): UserSet
     // region 不接受 patch, 只在 loadInitial 时由系统检测写入, 后续走 base。
     region: base.region,
     memoListView: normalizeMemoListView(updates.memoListView ?? base.memoListView),
+    showHiddenNotebookFiles: updates.showHiddenNotebookFiles ?? base.showHiddenNotebookFiles,
     shortcuts: { ...base.shortcuts, ...(updates.shortcuts ?? {}) },
     properties: {
       ...base.properties,
@@ -204,6 +205,7 @@ function sanitizeSettings(settings: UserSettings): UserSettings {
     language: sanitizeAppLanguage(settings.language),
     region: sanitizeRegion(settings.region),
     memoListView: normalizeMemoListView(settings.memoListView),
+    showHiddenNotebookFiles: settings.showHiddenNotebookFiles === true,
     shortcuts: { ...DEFAULT_USER_SETTINGS.shortcuts, ...(settings.shortcuts ?? {}) },
     properties: sanitizePropertiesConfig(settings.properties),
     agents: sanitizeAgentsConfig(settings.agents),
@@ -267,6 +269,7 @@ export interface UserSettingsUpdate {
   theme?: ThemeId;
   language?: AppLanguage;
   memoListView?: MemoListView;
+  showHiddenNotebookFiles?: boolean;
   properties?: Partial<PropertiesConfig>;
   productUpdates?: Partial<ProductUpdatesConfig>;
   /**

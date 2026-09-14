@@ -15,9 +15,15 @@ export interface DocTreeItem {
 }
 
 export const files = {
-  getTree: (spacePath: string) => invoke<DocTreeItem[] | null>('get_file_tree', { spacePath }),
-  getDirChildren: (dirPath: string) => invoke<DocTreeItem[]>('get_dir_children', { dirPath }),
-  watchRoot: (rootPath: string) => invoke<string>('watch_file_browser_root', { rootPath }),
+  getTree: (spacePath: string, includeHiddenDirectories = false) =>
+    invoke<DocTreeItem[] | null>('get_file_tree', { spacePath, includeHiddenDirectories }),
+  getDirChildren: (dirPath: string, includeHiddenDirectories = false) =>
+    invoke<DocTreeItem[]>('get_dir_children', { dirPath, includeHiddenDirectories }),
+  watchRoot: (rootPath: string, options?: { ignoreHidden?: boolean }) =>
+    invoke<string>('watch_file_browser_root', {
+      rootPath,
+      ignoreHidden: options?.ignoreHidden ?? false,
+    }),
   unwatchRoot: (leaseId: string) => invoke<void>('unwatch_file_browser_root', { leaseId }),
   read: (filePath: string, spacePath?: string) => invoke<string | null>('read_file', { filePath, spacePath }),
   readImage: (filePath: string, spacePath?: string) => invoke<string | null>('read_image_file', { filePath, spacePath }),
@@ -28,6 +34,8 @@ export const files = {
     invoke<boolean>('delete_folder', { folderPath, spacePath }),
   rename: (filePath: string, name: string, spacePath: string) =>
     invoke<string>('rename_file', { filePath, name, spacePath }),
+  renameFolder: (folderPath: string, name: string, spacePath: string) =>
+    invoke<string>('rename_folder', { folderPath, name, spacePath }),
   createFolder: (spacePath: string, name: string, parentId?: string) =>
     invoke<DocTreeItem | null>('create_folder', { spacePath, name, parentId }),
   createDocument: (spacePath: string, name: string, parentId?: string) =>

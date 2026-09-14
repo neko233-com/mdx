@@ -5,7 +5,8 @@ import {
   FilePlusIcon,
   FolderPlusIcon,
   LinkIcon,
-  TrashIcon,
+  PencilSimpleIcon,
+  TrashSimpleIcon,
 } from '@phosphor-icons/react';
 import { ChevronRight, File, FolderPlus, MoreHorizontal, Plus } from 'lucide-react';
 
@@ -19,6 +20,7 @@ import { FileTypeIcon } from '@features/memo/components/file-type-icon';
 import { MemoCardActions } from '@features/memo/components/memo-card-actions';
 import { memoRepository } from '@features/memo/services/memo-repository';
 import { MEMO_COLOR_HEX, useMemoStore, type MemoColor, type MemoItem } from '@features/memo';
+import { useDocumentStore } from '@features/document/store';
 import { resolveMemoByPath } from '@features/memo/use-cases/open-by-target';
 import {
   ContextMenu,
@@ -217,6 +219,46 @@ export function NotebookFileTree({
     setDraft({ requestId: Date.now(), parentPath, kind, value: '' });
   }, [tree.expandTo]);
 
+  const handleRename = useCallback(async (item: DocTreeItem, nextName: string) => {
+    const trimmed = nextName.trim();
+    const currentName = item.type === 'folder'
+      ? item.name
+      : displayTitleFromFilename(item.name);
+    if (!trimmed || trimmed === currentName) return;
+
+    try {
+      if (item.type === 'folder') {
+        await files.renameFolder(item.fullPath, trimmed, notebookPath);
+      } else {
+        const resolved = await resolveMemoByPath(item.fullPath);
+        if (resolved?.memoId) {
+          // Indexed notes use the memo path so the index and active editor
+          // keep the same identity after the rename. Unindexed Markdown files
+          // still use the generic file rename API.
+          const result = await memos.renameMemoTitle({
+            id: resolved.memoId,
+            title: trimmed,
+            expectedFilename: item.name,
+          });
+          useMemoStore.getState().handleMemoUpdated(result.memo);
+          useDocumentStore.getState().replaceActiveMemoPath(result.memo.id, result.path);
+        } else {
+          const extension = item.name.match(/\.(md|markdown)$/i)?.[0] ?? '';
+          await files.rename(item.fullPath, `${trimmed}${extension}`, notebookPath);
+        }
+      }
+
+      const normalizedPath = canonicalPath(item.fullPath);
+      const parent = normalizedPath.slice(0, normalizedPath.lastIndexOf('/'));
+      await tree.refresh(parent || notebookPath);
+      toast.success(t('memo.fileTree.renamed', { name: trimmed }));
+    } catch (error) {
+      toast.error(t(String(error).includes('FILE_EXISTS')
+        ? 'memo.fileTree.nameConflict'
+        : 'memo.fileTree.renameFailed'));
+    }
+  }, [notebookPath, t, tree.refresh]);
+
   const renderDraft = (draftState: NotebookTreeDraftState, depth: number, key?: string) => (
     <NotebookTreeDraft
       key={key}
@@ -292,6 +334,7 @@ export function NotebookFileTree({
           dropTargetPath={item.type === 'folder' ? item.fullPath : isFolderParent(item, notebookPath)}
           onCreateNote={() => requestCreateDraft(isFolderParent(item, notebookPath), 'note')}
           onCreateFolder={() => requestCreateDraft(isFolderParent(item, notebookPath), 'folder')}
+          onRename={(nextName) => handleRename(item, nextName)}
           onDeleteFolder={item.type === 'folder' && onDeleteFolder
             ? () => onDeleteFolder(item.fullPath)
             : undefined}
@@ -537,7 +580,12 @@ function NotebookTreeDraft({
       <span
         aria-hidden="true"
         data-notebook-tree-draft-icon={draft.kind}
-        className="relative flex h-[15px] w-[15px] shrink-0 items-center justify-center text-[color-mix(in_oklch,var(--foreground)_90%,white_10%)]"
+        className={cn(
+          'relative flex h-[15px] w-[15px] shrink-0 items-center justify-center',
+          draft.kind === 'folder'
+            ? 'text-[var(--brand)]'
+            : 'text-[color-mix(in_oklch,var(--foreground)_90%,white_10%)]',
+        )}
       >
         {draft.kind === 'folder' ? (
           <span
@@ -584,6 +632,7 @@ function NotebookTreeRow({
   dropTargetPath,
   onCreateNote,
   onCreateFolder,
+  onRename,
   onDeleteFolder,
   onPointerDown,
 }: {
@@ -597,6 +646,7 @@ function NotebookTreeRow({
   dropTargetPath: string;
   onCreateNote: () => void;
   onCreateFolder: () => void;
+  onRename: (nextName: string) => Promise<void> | void;
   onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onDeleteFolder?: () => Promise<void>;
 }) {
@@ -613,13 +663,17 @@ function NotebookTreeRow({
       ?? (state.selectedMemo?.id === memo.id ? state.selectedMemo : null);
   });
   const displayedMemo = storeMemo ?? memo;
-  // `memo` is loaded from read_memo, which derives icon from the current
-  // Markdown frontmatter. Do not let a possibly stale list-store value
-  // override an explicit icon (or an explicit clear) from the file content.
-  const noteIcon = !isFolder && memo
-    ? getPropertyIconOption(memo.icon ?? '')
+  // `memo` is loaded from read_memo for the initial render. Once the memo
+  // store receives the write event, prefer that authoritative snapshot so
+  // property changes made in the document view appear without a tree refresh.
+  const noteIcon = !isFolder && displayedMemo
+    ? getPropertyIconOption(displayedMemo.icon ?? '')
     : null;
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(
+    isFolder ? item.name : displayTitleFromFilename(item.name),
+  );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -668,6 +722,18 @@ function NotebookTreeRow({
       setDeleting(false);
     }
   }, [deleting, onDeleteFolder]);
+
+  const submitRename = useCallback(() => {
+    if (!renaming) return;
+    setRenaming(false);
+    void onRename(renameValue);
+  }, [onRename, renameValue, renaming]);
+
+  const cancelRename = useCallback(() => {
+    setRenaming(false);
+    setRenameValue(isFolder ? item.name : displayTitleFromFilename(item.name));
+  }, [isFolder, item.name]);
+
   return (
     <>
       <ContextMenu onOpenChange={(open) => {
@@ -686,6 +752,10 @@ function NotebookTreeRow({
           onClick={isFolder ? onToggle : onOpen}
           onDoubleClick={!isFolder && onOpenInNewTab ? onOpenInNewTab : undefined}
           onPointerDown={(event) => {
+            if (renaming) {
+              event.stopPropagation();
+              return;
+            }
             if (isFolder || event.button !== 0) return;
             onPointerDown(event);
           }}
@@ -705,73 +775,117 @@ function NotebookTreeRow({
             width: `calc(100% - ${TREE_EDGE_GUTTER * 2 + depth * INDENT_PER_LEVEL}px)`,
           }}
         >
-      {isFolder ? (
-        <span aria-hidden="true" className="relative h-[15px] w-[15px] shrink-0 text-[color-mix(in_oklch,var(--foreground)_90%,white_10%)]">
+      {renaming ? (
+        <>
           <span
-            className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0"
-            dangerouslySetInnerHTML={{ __html: folderIcon }}
+            aria-hidden="true"
+            className={cn(
+              'relative flex h-[15px] w-[15px] shrink-0 items-center justify-center',
+              isFolder
+                ? 'text-[var(--brand)]'
+                : 'text-[color-mix(in_oklch,var(--foreground)_90%,white_10%)]',
+            )}
+          >
+            {isFolder ? (
+              <span
+                className="absolute inset-0 flex items-center justify-center"
+                dangerouslySetInnerHTML={{ __html: folderIcon }}
+              />
+            ) : (
+              <File aria-hidden="true" className="h-[15px] w-[15px]" strokeWidth={1.3} />
+            )}
+          </span>
+          <input
+            autoFocus
+            value={renameValue}
+            onChange={(event) => setRenameValue(event.target.value)}
+            onBlur={submitRename}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                submitRename();
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                cancelRename();
+              }
+            }}
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+            className="ml-1.5 h-5 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm outline-none"
           />
-          <ChevronRight className={cn(
-            'absolute inset-0 h-[15px] w-[15px] opacity-0 transition-[opacity,transform] duration-150 group-hover:opacity-100 group-focus-visible:opacity-100',
-            expanded && 'rotate-90',
-          )} />
-        </span>
+        </>
       ) : (
-        <span className="relative flex h-[15px] w-[15px] shrink-0 items-center justify-center text-[color-mix(in_oklch,var(--foreground)_90%,white_10%)]">
-          {noteIcon ? (
-            <img
-              src={noteIcon.src}
-              alt=""
-              aria-hidden="true"
-              className="h-[15px] w-[15px] object-contain"
-              draggable={false}
-            />
+        <>
+          {isFolder ? (
+            <span aria-hidden="true" className="relative h-[15px] w-[15px] shrink-0 text-[var(--brand)]">
+              <span
+                className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0"
+                dangerouslySetInnerHTML={{ __html: folderIcon }}
+              />
+              <ChevronRight className={cn(
+                'absolute inset-0 h-[15px] w-[15px] opacity-0 transition-[opacity,transform] duration-150 group-hover:opacity-100 group-focus-visible:opacity-100',
+                expanded && 'rotate-90',
+              )} />
+            </span>
           ) : (
-            <File aria-hidden="true" className="h-[15px] w-[15px]" strokeWidth={1.3} />
+            <span className="relative flex h-[15px] w-[15px] shrink-0 items-center justify-center text-[color-mix(in_oklch,var(--foreground)_90%,white_10%)]">
+              {noteIcon ? (
+                <img
+                  src={noteIcon.src}
+                  alt=""
+                  aria-hidden="true"
+                  className="h-[15px] w-[15px] object-contain"
+                  draggable={false}
+                />
+              ) : (
+                <File aria-hidden="true" className="h-[15px] w-[15px]" strokeWidth={1.3} />
+              )}
+            </span>
           )}
-        </span>
+          <span className={cn(
+            'min-w-0 flex-1 truncate',
+            'ml-1.5',
+            !isFolder && 'text-[color-mix(in_oklch,var(--foreground)_90%,transparent)]',
+          )}>
+            {isFolder ? item.name : displayTitleFromFilename(item.name)}
+          </span>
+          {isFolder && (
+            <span className={cn(
+              'pointer-events-none ml-1 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-visible:pointer-events-auto group-focus-visible:opacity-100',
+              contextMenuOpen && 'pointer-events-auto opacity-100',
+            )}>
+              <button
+                type="button"
+                aria-label={t('memo.fileTree.newNote')}
+                title={t('memo.fileTree.newNote')}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onCreateNote();
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+                className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand)]"
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                aria-label={t('memo.fileTree.newFolder')}
+                title={t('memo.fileTree.newFolder')}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onCreateFolder();
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+                className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand)]"
+              >
+                <FolderPlus className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </span>
+          )}
+        </>
       )}
-      <span className={cn(
-        'min-w-0 flex-1 truncate',
-        'ml-1.5',
-        !isFolder && 'text-[color-mix(in_oklch,var(--foreground)_90%,transparent)]',
-      )}>
-        {isFolder ? item.name : displayTitleFromFilename(item.name)}
-      </span>
-      {isFolder && (
-        <span className={cn(
-          'pointer-events-none ml-1 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-visible:pointer-events-auto group-focus-visible:opacity-100',
-          contextMenuOpen && 'pointer-events-auto opacity-100',
-        )}>
-          <button
-            type="button"
-            aria-label={t('memo.fileTree.newNote')}
-            title={t('memo.fileTree.newNote')}
-            onClick={(event) => {
-              event.stopPropagation();
-              onCreateNote();
-            }}
-            onKeyDown={(event) => event.stopPropagation()}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand)]"
-          >
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            aria-label={t('memo.fileTree.newFolder')}
-            title={t('memo.fileTree.newFolder')}
-            onClick={(event) => {
-              event.stopPropagation();
-              onCreateFolder();
-            }}
-            onKeyDown={(event) => event.stopPropagation()}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand)]"
-          >
-            <FolderPlus className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-        </span>
-      )}
-      {!isFolder && displayedMemo && displayedMemo.colors.length > 0 && (
+      {!renaming && !isFolder && displayedMemo && displayedMemo.colors.length > 0 && (
         <span
           aria-label="Note colors"
           className="ml-2 inline-flex h-6 shrink-0 items-center justify-center gap-0.5 px-2"
@@ -786,10 +900,12 @@ function NotebookTreeRow({
           ))}
         </span>
       )}
-      <NotebookTreeMoreButton
-        label={t('memo.fileTree.moreActions')}
-        active={contextMenuOpen}
-      />
+      {!renaming && (
+        <NotebookTreeMoreButton
+          label={t('memo.fileTree.moreActions')}
+          active={contextMenuOpen}
+        />
+      )}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className={TREE_MENU_CLASS}>
@@ -801,18 +917,16 @@ function NotebookTreeRow({
           <FolderPlusIcon className="mr-2 h-4 w-4" />
           {t('memo.fileTree.newFolder')}
         </ContextMenuItem>
-        {isFolder && onDeleteFolder && (
-          <>
-            <div role="separator" aria-hidden="true" className={TREE_MENU_DIVIDER_CLASS} />
-            <ContextMenuItem
-              onClick={() => setConfirmDelete(true)}
-              className={cn(TREE_MENU_ITEM_CLASS, 'text-[var(--destructive)]')}
-            >
-              <TrashIcon className="mr-2 h-4 w-4" />
-              {t('memo.fileTree.delete')}
-            </ContextMenuItem>
-          </>
-        )}
+        <ContextMenuItem
+          onClick={() => {
+            setRenameValue(isFolder ? item.name : displayTitleFromFilename(item.name));
+            setRenaming(true);
+          }}
+          className={TREE_MENU_ITEM_CLASS}
+        >
+          <PencilSimpleIcon className="mr-2 h-4 w-4" />
+          {t('memo.fileTree.rename')}
+        </ContextMenuItem>
         {isFolder && onDeleteFolder && (
           <ContextMenuItem
             onClick={async () => {
@@ -828,6 +942,18 @@ function NotebookTreeRow({
             <LinkIcon className="mr-2 h-4 w-4" />
             {t('memo.fileTree.copyLink')}
           </ContextMenuItem>
+        )}
+        {isFolder && onDeleteFolder && (
+          <>
+            <div role="separator" aria-hidden="true" className={TREE_MENU_DIVIDER_CLASS} />
+            <ContextMenuItem
+              onClick={() => setConfirmDelete(true)}
+              className={cn(TREE_MENU_ITEM_CLASS, 'hover:bg-transparent hover:text-[var(--destructive)]')}
+            >
+              <TrashSimpleIcon className="mr-2 h-4 w-4" />
+              {t('memo.fileTree.delete')}
+            </ContextMenuItem>
+          </>
         )}
         {!isFolder && (
           <div role="separator" aria-hidden="true" className={TREE_MENU_DIVIDER_CLASS} />
@@ -861,7 +987,7 @@ function NotebookTreeRow({
             <button type="button" disabled={deleting} onClick={() => setConfirmDelete(false)} className="h-8 rounded-lg px-3 text-sm hover:bg-[var(--muted)]">
               {t('dialog.cancel')}
             </button>
-            <button type="button" disabled={deleting} onClick={() => void confirmFolderDelete()} className="h-8 rounded-lg bg-[var(--destructive)] px-3 text-sm text-white hover:opacity-90 disabled:opacity-50">
+            <button type="button" disabled={deleting} onClick={() => void confirmFolderDelete()} className="h-8 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 text-sm text-[var(--foreground)] hover:border-[var(--destructive)] hover:bg-[var(--destructive)] hover:text-white disabled:opacity-50">
               {t('dialog.delete')}
             </button>
           </div>

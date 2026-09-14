@@ -860,7 +860,7 @@ export function MemoActions({
           )}
           <DropdownMenuItem
             onClick={onRequestDeleteMemo}
-            className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left text-[var(--destructive)] hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
+            className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-transparent hover:text-[var(--destructive)]"
           >
             <TrashSimpleIcon className="w-4 h-4 mr-2" /> {t("document.action.delete")}
           </DropdownMenuItem>

@@ -31,6 +31,13 @@ describe('notebook folder view filtering', () => {
     expect(isNotebookTreeItemVisible(item('attachments', 'folder'))).toBe(false);
     expect(isNotebookTreeItemVisible(item('ATTACHMENT', 'folder'))).toBe(false);
     expect(isNotebookTreeItemVisible(item('attachment.md', 'document'))).toBe(true);
+    expect(isNotebookTreeItemVisible(item('AGENTS.md', 'document'))).toBe(false);
+  });
+
+  it('hides hidden directories and their Markdown descendants by default', () => {
+    expect(isNotebookTreeItemVisible({ ...item('.codex', 'folder'), fullPath: '/notebook/.codex' }, '/notebook')).toBe(false);
+    expect(isNotebookTreeItemVisible({ ...item('SKILL.md', 'document'), fullPath: '/notebook/.codex/skills/SKILL.md' }, '/notebook')).toBe(false);
+    expect(isNotebookTreeItemVisible({ ...item('SKILL.md', 'document'), fullPath: '/notebook/.codex/skills/SKILL.md' }, '/notebook', true)).toBe(true);
   });
 });
 

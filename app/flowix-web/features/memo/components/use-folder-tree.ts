@@ -42,7 +42,13 @@ export interface FolderTreeState {
   error: string | null;
 }
 
-export function useFolderTree(folderPath: string) {
+export interface FolderTreeOptions {
+  /** Include dot-directories in the loaded tree (dot-files stay hidden). */
+  includeHiddenDirectories?: boolean;
+}
+
+export function useFolderTree(folderPath: string, options?: FolderTreeOptions) {
+  const includeHiddenDirectories = options?.includeHiddenDirectories === true;
   const [rootChildren, setRootChildren] = useState<DocTreeItem[]>([]);
   const [nodes, setNodes] = useState<Map<string, DocTreeItem>>(() => new Map());
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -70,7 +76,7 @@ export function useFolderTree(folderPath: string) {
     setLoading(true);
     setError(null);
     try {
-      const items = await files.getTree(folderPath);
+      const items = await files.getTree(folderPath, includeHiddenDirectories);
       if (!mountedRef.current || generation !== generationRef.current) return;
       if (items === null) {
         setRootChildren([]);
@@ -96,7 +102,7 @@ export function useFolderTree(folderPath: string) {
         setLoading(false);
       }
     }
-  }, [folderPath]);
+  }, [folderPath, includeHiddenDirectories]);
 
   const rootKey = canonicalDirectoryPath(folderPath);
 
@@ -114,7 +120,7 @@ export function useFolderTree(folderPath: string) {
     directoryRefreshSequenceRef.current.set(key, requestSequence);
 
     const generation = generationRef.current;
-    const request = files.getDirChildren(dirPath)
+    const request = files.getDirChildren(dirPath, includeHiddenDirectories)
       .then((children) => {
         if (
           !mountedRef.current
@@ -167,7 +173,7 @@ export function useFolderTree(folderPath: string) {
       },
     );
     return request;
-  }, []);
+  }, [includeHiddenDirectories]);
 
   /** 展开时惰性拉子级; 已有子级的 folder 只切展开态。 */
   const loadChildren = useCallback(async (dirPath: string) => {
@@ -233,7 +239,7 @@ export function useFolderTree(folderPath: string) {
     const requestSequence = rootRefreshSequenceRef.current + 1;
     rootRefreshSequenceRef.current = requestSequence;
     const generation = generationRef.current;
-    const request = files.getTree(folderPath)
+    const request = files.getTree(folderPath, includeHiddenDirectories)
       .then((items) => {
         if (
           !mountedRef.current
@@ -280,7 +286,7 @@ export function useFolderTree(folderPath: string) {
       },
     );
     return request;
-  }, [folderPath, rootKey]);
+  }, [folderPath, includeHiddenDirectories, rootKey]);
 
   /** 局部刷新某个目录的子级 (新建/删除/重命名后调用)。 */
   const refresh = useCallback(async (dirPath?: string) => {

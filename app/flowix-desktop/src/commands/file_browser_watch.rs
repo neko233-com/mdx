@@ -9,7 +9,7 @@
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -31,6 +31,7 @@ const DEBOUNCE_DELAY: Duration = Duration::from_millis(180);
 struct WatchLease {
     window_label: String,
     root_path: PathBuf,
+    ignore_hidden: bool,
 }
 
 #[derive(Debug, Default)]
@@ -86,7 +87,12 @@ impl FileBrowserWatchState {
         }
     }
 
-    fn watch(&self, window_label: &str, root_path: PathBuf) -> Result<String, String> {
+    fn watch(
+        &self,
+        window_label: &str,
+        root_path: PathBuf,
+        ignore_hidden: bool,
+    ) -> Result<String, String> {
         let lease_id = format!(
             "file-browser-watch:{}:{}",
             window_label,
@@ -119,6 +125,7 @@ impl FileBrowserWatchState {
             WatchLease {
                 window_label: window_label.to_string(),
                 root_path: root_path.clone(),
+                ignore_hidden,
             },
         );
         tracing::info!(
@@ -188,6 +195,9 @@ fn schedule_directory_changes(
         let directories = event
             .paths
             .iter()
+            // AGENTS.md is project-local Agent configuration. Its create,
+            // modify, and remove events must not refresh the visible tree.
+            .filter(|path| !should_ignore_path(path, lease))
             .filter_map(|path| affected_directory(path, &lease.root_path))
             .collect::<HashSet<_>>();
         if directories.is_empty() {
@@ -198,6 +208,28 @@ fn schedule_directory_changes(
             directories: directories.into_iter().collect(),
         });
     }
+}
+
+fn is_agents_file(path: &Path) -> bool {
+    path.file_name().and_then(|name| name.to_str()) == Some("AGENTS.md")
+}
+
+fn should_ignore_path(path: &Path, lease: &WatchLease) -> bool {
+    is_agents_file(path) || (lease.ignore_hidden && has_hidden_component(path, &lease.root_path))
+}
+
+/// Test hidden-directory membership relative to the watched root. Hidden
+/// files at the root are intentionally not part of this check; the notebook
+/// tree's hidden-file policy is about directories and their descendants.
+fn has_hidden_component(path: &Path, root_path: &Path) -> bool {
+    let canonical_path = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let canonical_root = dunce::canonicalize(root_path).unwrap_or_else(|_| root_path.to_path_buf());
+    let Ok(relative) = canonical_path.strip_prefix(&canonical_root) else {
+        return false;
+    };
+    relative.components().any(|component| {
+        matches!(component, Component::Normal(name) if name.to_string_lossy().starts_with('.'))
+    })
 }
 
 /// Return the directory whose direct children need to be reread.
@@ -321,6 +353,7 @@ pub fn watch_file_browser_root(
     watches: tauri::State<'_, FileBrowserWatchState>,
     app_state: tauri::State<'_, AppState>,
     root_path: String,
+    ignore_hidden: Option<bool>,
 ) -> Result<String, String> {
     let path = PathBuf::from(&root_path);
     start_security_bookmark_access(&app_state, &path);
@@ -333,7 +366,7 @@ pub fn watch_file_browser_root(
             path.display()
         ));
     }
-    watches.watch(window.label(), path)
+    watches.watch(window.label(), path, ignore_hidden.unwrap_or(false))
 }
 
 #[tauri::command]
@@ -417,5 +450,48 @@ mod tests {
         std::fs::create_dir_all(&new_directory).expect("create test directory");
 
         assert_eq!(affected_directory(&new_directory, &root), Some(root));
+    }
+
+    #[test]
+    fn agents_file_is_not_a_directory_change() {
+        let temp = tempdir().expect("create temp directory");
+        let agents = temp.path().join("AGENTS.md");
+        assert!(is_agents_file(&agents));
+        assert!(!is_agents_file(&temp.path().join("notes.md")));
+    }
+
+    #[test]
+    fn hidden_directory_membership_is_relative_to_the_watch_root() {
+        let temp = tempdir().expect("create temp directory");
+        let root = temp.path().join("notebook");
+        let hidden = root.join(".codex").join("skills").join("SKILL.md");
+        std::fs::create_dir_all(hidden.parent().expect("hidden parent"))
+            .expect("create hidden directory");
+        std::fs::write(&hidden, "skill").expect("create hidden file");
+        assert!(has_hidden_component(&hidden, &root));
+        assert!(!has_hidden_component(&root.join("visible.md"), &root));
+    }
+
+    #[test]
+    fn hidden_path_filter_is_enabled_per_lease() {
+        let temp = tempdir().expect("create temp directory");
+        let root = temp.path().join("notebook");
+        let hidden = root.join(".agent").join("skills").join("skill.md");
+        std::fs::create_dir_all(hidden.parent().expect("hidden parent"))
+            .expect("create hidden directory");
+        std::fs::write(&hidden, "skill").expect("create hidden file");
+        let notebook_lease = WatchLease {
+            window_label: "notebook".to_string(),
+            root_path: root.clone(),
+            ignore_hidden: true,
+        };
+        let browser_lease = WatchLease {
+            window_label: "browser".to_string(),
+            root_path: root,
+            ignore_hidden: false,
+        };
+
+        assert!(should_ignore_path(&hidden, &notebook_lease));
+        assert!(!should_ignore_path(&hidden, &browser_lease));
     }
 }

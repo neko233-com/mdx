@@ -108,7 +108,12 @@
  *   - 未来扩展: __delete 可能加二次确认 / loading 态 / 错误提示, __collapse 不会。
  *   - DevTools 可读性: 看 className 就能直接区分。 */
 .markdown-editor .agent-thread-card__delete {
-  /* 视觉由 __icon-btn 提供 ── 这里仅放独有扩展点 (当前无) */
+  /* 视觉由 __icon-btn 提供; 删除按钮 hover 只提示 error 色, 不改变背景。 */
+}
+
+.markdown-editor .agent-thread-card__delete:hover {
+  background: transparent;
+  color: var(--destructive);
 }
 
 /* 复用 __copy-icon 口径 ── 14×14, color 继承按钮文字色, 不缩小。

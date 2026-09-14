@@ -84,6 +84,17 @@ impl WhitelistConfig {
 
     /// �?���?��通过白名单�?查。返�?`Ok(())` 放�?, `Err(DropReason)` 拒绝�?
     pub fn allows(&self, path: &Path) -> Result<(), DropReason> {
+        // AGENTS.md is Flowix/Agent project configuration, never a memo.
+        // Keep this unconditional so a user-supplied watcher configuration
+        // cannot accidentally re-enable indexing it.
+        if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            == Some("AGENTS.md")
+        {
+            return Err(DropReason::PathBlacklisted);
+        }
+
         // `.flowix` is always a system directory. This check intentionally
         // precedes `watch_hidden`, so enabling hidden-file watching can never
         // expose internal versions or plugin artifacts as notes.
@@ -284,6 +295,17 @@ mod tests {
         let w = WhitelistConfig::default();
         assert_eq!(
             w.allows(Path::new("/x/.plugin-output/mindmap/output.md")),
+            Err(DropReason::PathBlacklisted)
+        );
+    }
+
+    #[test]
+    fn agents_file_is_always_skipped() {
+        let mut w = WhitelistConfig::default();
+        w.skip_files.clear();
+        w.watch_hidden = true;
+        assert_eq!(
+            w.allows(Path::new("/x/AGENTS.md")),
             Err(DropReason::PathBlacklisted)
         );
     }

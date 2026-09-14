@@ -482,7 +482,7 @@ export function NotebookDialogs({
                     new CustomEvent<Notebook>('flowix:request-delete-notebook', { detail: target })
                   );
                 }}
-                className="h-8 px-3 text-sm rounded-lg bg-[var(--card)] text-[var(--foreground)] border border-[var(--border)] hover:bg-[var(--muted)] hover:text-[var(--destructive)]"
+                className="h-8 px-3 text-sm rounded-lg bg-[var(--card)] text-[var(--foreground)] border border-[var(--border)] hover:bg-transparent hover:border-[var(--destructive)] hover:text-[var(--destructive)]"
               >
                 {t("notebook.edit.remove")}
               </button>
