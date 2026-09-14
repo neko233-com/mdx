@@ -1835,7 +1835,7 @@ function ConfiguredModelsList({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="size-7 text-[var(--muted-foreground)] hover:text-[var(--destructive)]"
+                    className="size-7 text-[var(--muted-foreground)] hover:bg-transparent hover:text-[var(--destructive)]"
                     aria-label={t('preferences.agent.provider.configuredModelDelete')}
                     title={t('preferences.agent.provider.configuredModelDelete')}
                     onClick={() => {
@@ -1988,6 +1988,7 @@ function CustomProviderInlineForm({
                     type="button"
                     variant="ghost"
                     size="icon"
+                    className="text-[var(--muted-foreground)] hover:bg-transparent hover:text-[var(--destructive)]"
                     aria-label={t('preferences.agent.provider.customDeleteModel')}
                     disabled={draft.models.length === 1}
                     onClick={() => onDraftChange({

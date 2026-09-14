@@ -40,7 +40,12 @@ pub(crate) async fn start_plugin_chat(
 ) -> Result<(), String> {
     let runtime = runtime_from_message(&message)?;
     if let Some(cwd) = message.cwd_for_runtime(runtime.key()) {
-        sync_native_agent_instructions(std::path::Path::new(cwd), runtime.key())?;
+        let workspace_paths = message.workspace_paths_for_runtime(runtime.key());
+        sync_native_agent_instructions(
+            std::path::Path::new(cwd),
+            runtime.key(),
+            &workspace_paths,
+        )?;
     }
     runtime_handle(state, runtime)
         .chat_stream(thread_id, message, app_handle)

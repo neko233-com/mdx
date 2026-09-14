@@ -305,7 +305,7 @@ export function GlobalSearchCommand({ open, onOpenChange }: GlobalSearchCommandP
                     <button
                       type="button"
                       onClick={() => removePropertyFilter(filter.id)}
-                      className="flex h-7 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--destructive)]"
+                      className="flex h-7 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-transparent hover:text-[var(--destructive)]"
                       aria-label={t('shell.commandPalette.removeFilter')}
                     >
                       <X className="h-3.5 w-3.5" />

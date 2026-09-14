@@ -852,7 +852,7 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
                               <DropdownMenuItem onClick={() => void removeConversation(instance, 'archive')} className="group h-7 items-center gap-2 rounded-lg px-2 py-0 hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]">
                                 <ArchiveIcon className="h-4 w-4" /> {t('document.agent.archiveConversation')}
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => void removeConversation(instance, 'delete')} className="group h-7 items-center gap-2 rounded-lg px-2 py-0 hover:text-[var(--destructive)]">
+                              <DropdownMenuItem onClick={() => void removeConversation(instance, 'delete')} className="group h-7 items-center gap-2 rounded-lg px-2 py-0 hover:bg-transparent hover:text-[var(--destructive)]">
                                 <TrashSimpleIcon className="h-4 w-4" /> {t('document.agent.deleteConversation')}
                               </DropdownMenuItem>
                             </DropdownMenuContent>

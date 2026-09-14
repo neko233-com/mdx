@@ -6,7 +6,7 @@ import {
   FolderPlusIcon,
   LinkIcon,
   PencilSimpleIcon,
-  TrashIcon,
+  TrashSimpleIcon,
 } from '@phosphor-icons/react';
 import { ChevronRight, File, FolderPlus, MoreHorizontal, Plus } from 'lucide-react';
 
@@ -928,18 +928,6 @@ function NotebookTreeRow({
           {t('memo.fileTree.rename')}
         </ContextMenuItem>
         {isFolder && onDeleteFolder && (
-          <>
-            <div role="separator" aria-hidden="true" className={TREE_MENU_DIVIDER_CLASS} />
-            <ContextMenuItem
-              onClick={() => setConfirmDelete(true)}
-              className={cn(TREE_MENU_ITEM_CLASS, 'hover:text-[var(--destructive)]')}
-            >
-              <TrashIcon className="mr-2 h-4 w-4" />
-              {t('memo.fileTree.delete')}
-            </ContextMenuItem>
-          </>
-        )}
-        {isFolder && onDeleteFolder && (
           <ContextMenuItem
             onClick={async () => {
               try {
@@ -954,6 +942,18 @@ function NotebookTreeRow({
             <LinkIcon className="mr-2 h-4 w-4" />
             {t('memo.fileTree.copyLink')}
           </ContextMenuItem>
+        )}
+        {isFolder && onDeleteFolder && (
+          <>
+            <div role="separator" aria-hidden="true" className={TREE_MENU_DIVIDER_CLASS} />
+            <ContextMenuItem
+              onClick={() => setConfirmDelete(true)}
+              className={cn(TREE_MENU_ITEM_CLASS, 'hover:bg-transparent hover:text-[var(--destructive)]')}
+            >
+              <TrashSimpleIcon className="mr-2 h-4 w-4" />
+              {t('memo.fileTree.delete')}
+            </ContextMenuItem>
+          </>
         )}
         {!isFolder && (
           <div role="separator" aria-hidden="true" className={TREE_MENU_DIVIDER_CLASS} />

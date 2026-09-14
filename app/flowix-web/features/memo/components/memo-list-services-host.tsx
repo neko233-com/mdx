@@ -432,9 +432,9 @@ export function MemoListServicesHost({
             <button type="button" onClick={() => setDeleteMemo(null)} className="h-8 rounded-lg px-3 text-sm hover:bg-[var(--muted)]">
               {t('memo.delete.cancel')}
             </button>
-            <button type="button" onClick={handleDeleteConfirm} className="group relative h-8 rounded-lg border border-[var(--border)] bg-[var(--card)] pl-3 pr-7 text-sm text-[var(--foreground)] hover:border-[var(--destructive)] hover:bg-[var(--destructive)] hover:text-white">
+            <button type="button" onClick={handleDeleteConfirm} className="relative h-8 rounded-lg border border-[var(--border)] bg-[var(--card)] pl-3 pr-7 text-sm text-[var(--foreground)] hover:border-[var(--destructive)] hover:bg-transparent hover:text-[var(--destructive)]">
               {t('memo.delete.confirm')}
-              <Kbd className="border-0 !text-[var(--foreground)] group-hover:!text-white">↵</Kbd>
+              <Kbd className="border-0 !text-[var(--foreground)]">↵</Kbd>
             </button>
           </div>
         </DialogContent>

@@ -102,7 +102,7 @@ pub async fn chat_with_agent_stream(
     }
 
     if let Some(path) = runtime_cwd.as_deref() {
-        sync_native_agent_instructions(Path::new(path), runtime.key())?;
+        sync_native_agent_instructions(Path::new(path), runtime.key(), &runtime_workspace_paths)?;
     }
 
     // runtime 的 `chat_stream` 内部已经 `tokio::spawn` ── IPC 立即返回,

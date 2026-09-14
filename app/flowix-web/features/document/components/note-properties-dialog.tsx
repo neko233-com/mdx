@@ -368,7 +368,7 @@ export function NotePropertiesDialog({
                     <button
                       type="button"
                       onClick={() => removeRow(row.id)}
-                      className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--destructive)]"
+                      className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-transparent hover:text-[var(--destructive)]"
                       aria-label={t('document.properties.deleteField')}
                     >
                       <Trash2 className="h-4 w-4" />

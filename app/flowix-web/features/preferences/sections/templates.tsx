@@ -87,7 +87,7 @@ export function TemplatesSection() {
                 aria-label={`${t('preferences.templates.delete')} ${template.name}`}
                 disabled={deletingId === template.id}
                 onClick={() => void handleDelete(template)}
-                className="rounded-md text-[var(--muted-foreground)] hover:text-[var(--destructive)]"
+                className="rounded-md text-[var(--muted-foreground)] hover:bg-transparent hover:text-[var(--destructive)]"
               >
                 <Trash2 />
               </Button>

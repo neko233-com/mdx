@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react';
 import { ChevronRight, FoldVertical, MoreHorizontal } from 'lucide-react';
-import { CaretRightIcon, FolderOpenIcon, FolderSimpleIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, FolderOpenIcon, FolderSimpleIcon, TrashSimpleIcon } from '@phosphor-icons/react';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { files, type DocTreeItem } from '@platform/tauri/client';
@@ -369,8 +369,9 @@ export function FolderFileTree({
                       <div role="separator" aria-hidden="true" className={FOLDER_MENU_DIVIDER_CLASS} />
                       <DropdownMenuItem
                         onClick={() => void handleDelete(item)}
-                        className={cn(FOLDER_MENU_ITEM_CLASS, 'hover:text-[var(--destructive)]')}
+                        className={cn(FOLDER_MENU_ITEM_CLASS, 'hover:bg-transparent hover:text-[var(--destructive)]')}
                       >
+                        <TrashSimpleIcon className="h-4 w-4" />
                         {t('memo.fileTree.delete')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -429,8 +430,9 @@ export function FolderFileTree({
             <div role="separator" aria-hidden="true" className={FOLDER_MENU_DIVIDER_CLASS} />
             <ContextMenuItem
               onClick={() => void handleDelete(item)}
-              className={cn(FOLDER_MENU_ITEM_CLASS, 'hover:text-[var(--destructive)]')}
+              className={cn(FOLDER_MENU_ITEM_CLASS, 'hover:bg-transparent hover:text-[var(--destructive)]')}
             >
+              <TrashSimpleIcon className="h-4 w-4" />
               {t('memo.fileTree.delete')}
             </ContextMenuItem>
           </ContextMenuContent>
