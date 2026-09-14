@@ -19,7 +19,7 @@ describe('resolveBrowserColumnLayout', () => {
     });
   });
 
-  it('keeps both panes side by side at their minimum widths when space is tight', () => {
+  it('keeps both panes at their minimum widths when space is tight', () => {
     expect(resolveBrowserColumnLayout({ ...base, viewportWidth: 1200 })).toMatchObject({
       canSplit: false,
       availableDocumentWidth: 657,

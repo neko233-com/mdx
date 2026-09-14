@@ -26,11 +26,11 @@ vi.mock('@platform/tauri/client', async (importOriginal) => {
 });
 
 function dir(path: string, name: string, children: DocTreeItem[] = []): DocTreeItem {
-  return { id: `file-${path}`, fullPath: path, name, type: 'folder', parentId: null, children, sizeBytes: null, modifiedMs: null, createdMs: null };
+  return { id: `file-${path}`, fullPath: path, name, type: 'folder', parentId: null, children, sizeBytes: null, modifiedMs: null, createdMs: null, memoCreatedMs: null };
 }
 
 function file(path: string, name: string): DocTreeItem {
-  return { id: `file-${path}`, fullPath: path, name, type: 'document', parentId: null, children: null, sizeBytes: 0, modifiedMs: null, createdMs: null };
+  return { id: `file-${path}`, fullPath: path, name, type: 'document', parentId: null, children: null, sizeBytes: 0, modifiedMs: null, createdMs: null, memoCreatedMs: null };
 }
 
 // 仓库测试惯例 (无 @testing-library): createRoot 挂一个 probe 组件,
@@ -98,6 +98,62 @@ describe('useFolderTree', () => {
     mount('/root');
     await vi.waitFor(() => expect(lastState?.error).toBe('unreadable'));
     expect(lastState?.rootChildren).toHaveLength(0);
+  });
+
+  it('根目录局部刷新保留已展开目录', async () => {
+    getTreeMock.mockResolvedValue([dir('/root/sub', 'sub')]);
+    getDirChildrenMock.mockResolvedValue([file('/root/sub/x.md', 'x.md')]);
+    mount('/root');
+    await vi.waitFor(() => expect(lastState?.loading).toBe(false));
+    act(() => lastState?.toggle('/root/sub'));
+    await vi.waitFor(() => expect(lastState?.expanded.has('/root/sub')).toBe(true));
+
+    getTreeMock.mockResolvedValue([
+      dir('/root/sub', 'sub'),
+      file('/root/new.md', 'new.md'),
+    ]);
+    await act(async () => { await lastState?.refresh('/root'); });
+
+    expect(lastState?.expanded.has('/root/sub')).toBe(true);
+    expect(lastState?.rootChildren.map((item) => item.name)).toContain('new.md');
+  });
+
+  it('刷新父目录时保留已加载的同级文件夹子树', async () => {
+    const parent = '/root/parent';
+    const left = `${parent}/left`;
+    const right = `${parent}/right`;
+    let parentReadCount = 0;
+    getTreeMock.mockResolvedValue([dir(parent, 'parent')]);
+    getDirChildrenMock.mockImplementation(async (path) => {
+      if (path === parent) {
+        parentReadCount += 1;
+        return [
+          dir(left, 'left'),
+          dir(right, 'right'),
+          ...(parentReadCount > 1 ? [file(`${parent}/moved.md`, 'moved.md')] : []),
+        ];
+      }
+      if (path === left) return [file(`${left}/left-note.md`, 'left-note.md')];
+      if (path === right) return [file(`${right}/right-note.md`, 'right-note.md')];
+      return [];
+    });
+    mount('/root');
+    await vi.waitFor(() => expect(lastState?.loading).toBe(false));
+
+    act(() => lastState?.toggle(parent));
+    await vi.waitFor(() => expect(lastState?.nodes.get(parent)?.children).toHaveLength(2));
+    act(() => lastState?.toggle(left));
+    act(() => lastState?.toggle(right));
+    await vi.waitFor(() => {
+      expect(lastState?.nodes.get(left)?.children).toHaveLength(1);
+      expect(lastState?.nodes.get(right)?.children).toHaveLength(1);
+    });
+
+    await act(async () => { await lastState?.refresh(parent); });
+
+    expect(lastState?.nodes.get(left)?.children?.map((item) => item.name)).toEqual(['left-note.md']);
+    expect(lastState?.nodes.get(right)?.children?.map((item) => item.name)).toEqual(['right-note.md']);
+    expect(lastState?.nodes.get(parent)?.children?.map((item) => item.name)).toContain('moved.md');
   });
 });
 

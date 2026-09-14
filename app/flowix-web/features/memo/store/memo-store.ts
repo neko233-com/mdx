@@ -15,6 +15,9 @@ export type ColorFilterValue = 'any' | 'none' | MemoColor;
 // 具体颜色通过 color 参数传递。
 export type ExtendedFilterType = FilterType | 'color';
 
+/** Which primary surface is shown in the middle column. */
+export type MiddleColumnView = 'notes' | 'conversations';
+
 export type MemoLibraryStartupPhase = 'idle' | 'loading' | 'ready' | 'error';
 
 interface MemoListPageQuery {
@@ -79,6 +82,13 @@ function compareMemoItems(sort: SortType) {
     // filter === 'favorited' 时所有可见 memo 都是 favorited, 此分支恒 false.
     if (a.favorited !== b.favorited) {
       return Number(b.favorited) - Number(a.favorited);
+    }
+
+    if (sort === 'filenameAsc' || sort === 'filenameDesc') {
+      const filenameOrder = a.filename.toLowerCase().localeCompare(b.filename.toLowerCase())
+        || a.filename.localeCompare(b.filename)
+        || a.id.localeCompare(b.id);
+      return sort === 'filenameDesc' ? -filenameOrder : filenameOrder;
     }
 
     if (sort === 'updatedAt') {
@@ -159,6 +169,7 @@ export interface MemoStore {
   /** Stable persisted identity; the full entity is hydrated from backend data. */
   selectedNotebookId: string | null;
   // UI filter/sort
+  middleColumnView: MiddleColumnView;
   activeFilter: ExtendedFilterType;
   activePluginId: string | null;
   activeSort: SortType;
@@ -176,7 +187,12 @@ export interface MemoStore {
 
   // Setters
   setMemos: (memos: MemoItem[]) => void;
-  setNotebooks: (notebooks: Notebook[]) => void;
+  /**
+   * Replace the notebook snapshot. When supplied, selectedNotebookId is
+   * applied in the same state update so deletion/reconciliation cannot expose
+   * a transient `null` selection to notebook synchronization effects.
+   */
+  setNotebooks: (notebooks: Notebook[], selectedNotebookId?: string | null) => void;
   setStartupPhase: (phase: MemoLibraryStartupPhase, error?: string | null) => void;
   setStartupReady: (initialMemoQueryKey: string) => void;
   setSelectedMemo: (memo: MemoItem | null) => void;
@@ -187,6 +203,7 @@ export interface MemoStore {
    * the local cache with the backend's response.
    */
   reorderNotebooks: (nextOrderIds: string[]) => Promise<void>;
+  setMiddleColumnView: (view: MiddleColumnView) => void;
   setActiveFilter: (filter: ExtendedFilterType) => void;
   setActivePluginId: (pluginId: string | null) => void;
   setActiveSort: (sort: SortType) => void;
@@ -263,6 +280,7 @@ export const useMemoStore = create<MemoStore>()(
       selectedMemoId: null,
       selectedNotebook: null,
       selectedNotebookId: null,
+      middleColumnView: 'notes',
       activeFilter: 'all',
       activePluginId: null,
       activeSort: 'createdAt',
@@ -285,13 +303,13 @@ export const useMemoStore = create<MemoStore>()(
           memoListLoadingMore: false,
         });
       },
-      setNotebooks: (notebooks) => set((state) => {
+      setNotebooks: (notebooks, selectedNotebookIdOverride) => set((state) => {
         // Prefer the persisted id. The object fallback keeps tests and
         // pre-migration in-memory callers compatible while the first backend
         // snapshot is being applied.
-        const selectedNotebookId = state.selectedNotebookId
-          ?? state.selectedNotebook?.id
-          ?? null;
+        const selectedNotebookId = selectedNotebookIdOverride === undefined
+          ? state.selectedNotebookId ?? state.selectedNotebook?.id ?? null
+          : selectedNotebookIdOverride;
         const selectedNotebook = selectedNotebookId
           ? notebooks.find((notebook) => notebook.id === selectedNotebookId) ?? null
           : null;
@@ -326,6 +344,7 @@ export const useMemoStore = create<MemoStore>()(
           set({
             selectedNotebook: notebook,
             selectedNotebookId: nextNotebookId,
+            middleColumnView: 'notes',
             activeFilter: 'all',
             activePluginId: null,
           });
@@ -336,19 +355,25 @@ export const useMemoStore = create<MemoStore>()(
       // 中间列五种入口互斥单选 ── 全集: 全部 / 对话 / 待办 / 标签 /
       // 文件夹浏览。每条 setter 都把其他状态归位, 避免点标签时文件树还
       // 霸着中间列。
+      setMiddleColumnView: (view) => {
+        get().setActiveFilter(view === 'conversations' ? 'agents' : 'all');
+      },
       setActiveFilter: (filter) => {
         const previous = get();
         const selectedTagId = useTagStore.getState().selectedTagId;
         const shouldClearTag = filter !== 'tagged';
+        const nextView: MiddleColumnView = filter === 'agents' ? 'conversations' : 'notes';
         // Artifact plugins use `activeFilter: 'all'` as their list fallback.
         // Clicking the notes entry must still leave that plugin view, even
         // when the filter value itself is already `all`.
         if (
           previous.activeFilter === filter
+          && previous.middleColumnView === nextView
           && previous.activePluginId === null
           && (!shouldClearTag || selectedTagId === null)
         ) return;
         set({
+          middleColumnView: nextView,
           activeFilter: filter,
           activePluginId: null,
         });
@@ -676,6 +701,7 @@ export const useMemoStore = create<MemoStore>()(
         selectedMemoId: state.selectedMemoId ?? state.selectedMemo?.id ?? null,
         // 侧边栏入口要和中间列一起恢复。中间列的颜色 / 时间筛选不属于
         // 侧边栏导航，因此恢复时归位到“全部”。
+        middleColumnView: state.middleColumnView,
         activeFilter: isSidebarNavigationFilter(state.activeFilter)
           ? state.activeFilter
           : 'all',
@@ -690,6 +716,8 @@ export const useMemoStore = create<MemoStore>()(
         return {
           ...current,
           ...legacy,
+          middleColumnView: legacy.middleColumnView
+            ?? (legacy.activeFilter === 'agents' ? 'conversations' : 'notes'),
           selectedNotebook: null,
           selectedMemo: null,
           selectedNotebookId: legacy.selectedNotebookId

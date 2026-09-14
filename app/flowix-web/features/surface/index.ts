@@ -1,20 +1,30 @@
 export {
+  WorkColumnContentHost,
   WorkColumnSurfaceHost,
   getWorkColumnSurfaceDefinition,
   surfaceSupports,
   type WorkColumnSurfaceDefinition,
 } from './registry';
-export { resolveWorkColumnSurface } from './resolver';
+export { resolveWorkColumnContent } from './resolver';
+export { resolveWorkColumnPresentation } from './presentation';
 export type {
   DocumentSurfaceContext,
   DocumentSurfaceIdentity,
   PluginWorkbenchContext,
-  ResolveWorkColumnSurfaceInput,
+  ResolveWorkColumnContentInput,
+  WorkColumnContentPresentation,
+  WorkColumnEmptyReason,
+  WorkColumnEmptyStateTone,
   WorkColumnSurface,
   WorkColumnSurfaceCapability,
   WorkColumnSurfaceChrome,
   WorkColumnSurfaceKind,
 } from './types';
+export type {
+  WorkColumnDocumentHeaderPresentation,
+  WorkColumnHeaderPresentation,
+  WorkColumnPresentation,
+} from './presentation';
 
 export {
   BrowserColumnSurfaceHost,

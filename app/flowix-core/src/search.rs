@@ -16,7 +16,7 @@
 //!   候选会被丢弃.
 //!
 //! # 局限性 (v1)
-//! 索引只跟踪 IPC 写命令 (`update_memo_db` / `write_document` / `add_document` /
+//! 索引只跟踪 IPC 写命令 (`rename_memo_title` / `write_document` / `add_document` /
 //! `import_external_document_to_memo` / `clear_memos` / `delete_memo`). 若用户用
 //! 外部编辑器直接改 `.md` 文件, 索引会过期, 需要切换 notebook 触发 rebuild
 //! 才能恢复一致性. 后续可挂 `notify` 监听.
@@ -32,7 +32,8 @@ use serde::Serialize;
 
 use crate::memo_file::frontmatter::extract_body_content;
 use crate::memo_file::{
-    normalize_search_tag_filter, tag_path_matches_filter, MemoFile, MemoIndexEntry, NotebookConfig,
+    normalize_search_tag_filter, notebook_path_from_relative, tag_path_matches_filter, MemoFile,
+    MemoIndexEntry, NotebookConfig,
 };
 
 // ============================================================
@@ -465,7 +466,13 @@ pub fn upsert_index_from_store(index: &mut MemoIndex, memo_file: &MemoFile, id: 
     if index.current_notebook() != Some(location.notebook.id.as_str()) {
         return false;
     }
-    let path = std::path::PathBuf::from(location.notebook.path).join(&location.memo.filename);
+    let path = notebook_path_from_relative(
+        std::path::Path::new(&location.notebook.path),
+        &location.memo.relative_path,
+    )
+    .unwrap_or_else(|_| {
+        std::path::PathBuf::from(&location.notebook.path).join(&location.memo.filename)
+    });
     let Ok(full_md) = std::fs::read_to_string(path) else {
         return false;
     };
@@ -636,6 +643,7 @@ mod tests {
         let entry = MemoIndexEntry {
             id: id.to_string(),
             filename: filename.to_string(),
+            relative_path: filename.to_string(),
             preview: "preview".to_string(),
             thumbnail: None,
             tags: tags.into_iter().map(String::from).collect(),
@@ -869,6 +877,7 @@ mod tests {
             MemoIndexEntry {
                 id: "m_new".to_string(),
                 filename: "新增".to_string(),
+                relative_path: "新增".to_string(),
                 preview: String::new(),
                 thumbnail: None,
                 tags: vec![],
@@ -901,6 +910,7 @@ mod tests {
             MemoIndexEntry {
                 id: "m_z".to_string(),
                 filename: "z".to_string(),
+                relative_path: "z".to_string(),
                 preview: String::new(),
                 thumbnail: None,
                 tags: vec![],
@@ -944,6 +954,7 @@ mod tests {
             MemoIndexEntry {
                 id: "m_x".to_string(),
                 filename: "x".to_string(),
+                relative_path: "x".to_string(),
                 preview: String::new(),
                 thumbnail: None,
                 tags: vec![],

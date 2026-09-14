@@ -1,0 +1,73 @@
+import type { MemoItem } from '@/types/memo-item';
+import { getWorkColumnSurfaceDefinition } from './registry';
+import { resolveWorkColumnContent } from './resolver';
+import type {
+  WorkColumnContentPresentation,
+  ResolveWorkColumnContentInput,
+  WorkColumnSurfaceCapability,
+} from './types';
+
+export interface WorkColumnDocumentHeaderPresentation {
+  currentMemo: MemoItem | null;
+  externalFilePath: string | null;
+}
+
+export type WorkColumnHeaderPresentation =
+  | {
+      kind: 'document';
+      document: WorkColumnDocumentHeaderPresentation;
+    }
+  | {
+      kind: 'agent';
+      instanceId: string;
+    };
+
+export interface WorkColumnPresentation {
+  header: WorkColumnHeaderPresentation;
+  capabilities: readonly WorkColumnSurfaceCapability[];
+  content: WorkColumnContentPresentation;
+}
+
+function documentHeaderPresentation(
+  surface: Extract<WorkColumnContentPresentation, { status: 'surface' }>['surface'],
+  input: ResolveWorkColumnContentInput,
+): WorkColumnDocumentHeaderPresentation {
+  if (surface.kind !== 'markdown') {
+    return { currentMemo: null, externalFilePath: null };
+  }
+
+  return {
+    currentMemo: input.document?.memo ?? null,
+    externalFilePath: surface.props.isExternalDocument ? surface.props.filePath : null,
+  };
+}
+
+/** Derive all host-facing presentation data from one resolved Work Column content. */
+export function resolveWorkColumnPresentation(
+  input: ResolveWorkColumnContentInput,
+): WorkColumnPresentation {
+  const content = resolveWorkColumnContent(input);
+  const definition = content.status === 'surface'
+    ? getWorkColumnSurfaceDefinition(content.surface)
+    : null;
+
+  const header: WorkColumnHeaderPresentation = content.status === 'surface'
+    && definition?.chrome === 'agent'
+    ? content.surface.kind === 'agent-conversation'
+      ? { kind: 'agent', instanceId: content.surface.instanceId }
+      : (() => {
+          throw new Error(`Agent chrome is incompatible with '${content.surface.kind}' surface`);
+        })()
+    : {
+        kind: 'document',
+        document: content.status === 'surface'
+          ? documentHeaderPresentation(content.surface, input)
+          : { currentMemo: null, externalFilePath: null },
+      };
+
+  return {
+    header,
+    capabilities: definition?.capabilities ?? [],
+    content,
+  };
+}

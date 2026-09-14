@@ -1,11 +1,9 @@
 //! Cross-command helpers for notebook switching, path scope, and markdown parsing.
 
-use std::ffi::OsStr;
 use std::path::Path;
 
 use tauri::{AppHandle, State};
 
-use crate::app::search_index::rebuild_index_in_background;
 use crate::config::path_is_inside;
 use crate::lock_utils::{read_lock, write_lock};
 use crate::watcher::runtime::current_watcher;
@@ -31,34 +29,18 @@ pub(crate) fn refresh_watcher_roots(state: &AppState, app: &AppHandle) {
     }
 }
 
-pub(crate) fn switch_notebook_importing_disk_as_new(
-    state: &AppState,
-    app: &AppHandle,
-    notebook_id: Option<String>,
-) -> Result<(), String> {
-    switch_notebook(state, app, notebook_id, ReconcileMode::ImportAsNew, true)
-}
-
 pub(crate) fn switch_notebook_trusting_index(
     state: &AppState,
     app: &AppHandle,
     notebook_id: Option<String>,
 ) -> Result<(), String> {
-    switch_notebook(state, app, notebook_id, ReconcileMode::Skip, false)
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ReconcileMode {
-    Skip,
-    ImportAsNew,
+    switch_notebook(state, app, notebook_id)
 }
 
 fn switch_notebook(
     state: &AppState,
     app: &AppHandle,
     notebook_id: Option<String>,
-    reconcile_mode: ReconcileMode,
-    rebuild_search_now: bool,
 ) -> Result<(), String> {
     let prev = read_lock(&state.memo_file, "memo_file").current_notebook_id_value();
     let idx_nb = state
@@ -88,9 +70,29 @@ fn switch_notebook(
 
     if prev == notebook_id && idx_nb == notebook_id && idx_loaded {
         if let Some(notebook_id) = notebook_id.as_deref() {
-            read_lock(&state.memo_file, "memo_file")
-                .ensure_tag_union_index_for_notebook_id(notebook_id)
-                .map_err(|error| format!("tag union index upgrade failed: {error}"))?;
+            let notebook_path = {
+                let memo_file = read_lock(&state.memo_file, "memo_file");
+                let report = memo_file
+                    .ensure_notebook_migrations(notebook_id)
+                    .map_err(|error| format!("notebook migration failed: {error}"))?;
+                tracing::debug!(
+                    notebook = %notebook_id,
+                    moved_files = report.moved_files,
+                    rebuilt_tags = report.rebuilt_tags,
+                    "notebook migrations checked"
+                );
+                memo_file
+                    .get_notebook_config_by_id(notebook_id)
+                    .map(|notebook| notebook.path)
+            };
+            if let Some(notebook_path) = notebook_path {
+                crate::plugin::migrate_notebook_data(
+                    notebook_id,
+                    Path::new(&notebook_path),
+                    &state.memo_file,
+                    Some(app),
+                )?;
+            }
         }
         return Ok(());
     }
@@ -105,66 +107,50 @@ fn switch_notebook(
         .set_current_notebook(notebook_id.clone());
 
     if let Some(notebook_id) = notebook_id.as_deref() {
+        let moved_files = {
+            let memo_file = read_lock(&state.memo_file, "memo_file");
+            memo_file
+                .ensure_notebook_structure_migration(notebook_id)
+                .map_err(|error| format!("notebook structure migration failed: {error}"))?
+        };
+        if moved_files > 0 {
+            tracing::info!(
+                notebook = %notebook_id,
+                moved_files,
+                "notebook structure migrations completed"
+            );
+        }
+    }
+
+    if let Some(notebook_id) = notebook_id.as_deref() {
         let notebook_path = {
             let memo_file = read_lock(&state.memo_file, "memo_file");
-            match memo_file.migrate_notebook_internal_data(notebook_id) {
-                Ok(report) if report.moved_files > 0 || !report.warnings.is_empty() => {
-                    tracing::info!(
-                        notebook = %notebook_id,
-                        moved_files = report.moved_files,
-                        completed = report.completed,
-                        "notebook internal data migration finished"
-                    );
-                    for warning in report.warnings {
-                        tracing::warn!(notebook = %notebook_id, "notebook internal migration: {warning}");
-                    }
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    tracing::warn!(notebook = %notebook_id, "notebook internal migration failed: {error}")
-                }
+            let report = memo_file
+                .ensure_notebook_migrations(notebook_id)
+                .map_err(|error| format!("notebook migration failed: {error}"))?;
+            if report.moved_files > 0 || report.rebuilt_tags > 0 {
+                tracing::info!(
+                    notebook = %notebook_id,
+                    moved_files = report.moved_files,
+                    rebuilt_tags = report.rebuilt_tags,
+                    "notebook migrations completed"
+                );
             }
             memo_file
                 .get_notebook_config_by_id(notebook_id)
                 .map(|notebook| notebook.path)
         };
         if let Some(notebook_path) = notebook_path {
-            if let Err(error) = crate::plugin::repair_notebook_artifact_pointers(
+            crate::plugin::migrate_notebook_data(
                 notebook_id,
                 Path::new(&notebook_path),
                 &state.memo_file,
-            ) {
-                tracing::warn!(notebook = %notebook_id, "plugin pointer repair failed: {error}");
-            }
+                Some(app),
+            )?;
         }
     }
 
-    match reconcile_mode {
-        ReconcileMode::Skip => {}
-        ReconcileMode::ImportAsNew => {
-            let _ = state
-                .memo_file
-                .read()
-                .unwrap_or_else(|poisoned| {
-                    tracing::error!("memo_file read lock poisoned, recovering");
-                    poisoned.into_inner()
-                })
-                .reconcile_with_disk_bidirectional_as_new()
-                .map_err(|e| format!("reconcile_with_disk_bidirectional_as_new failed: {e}"))?;
-        }
-    }
-
-    if let Some(notebook_id) = notebook_id.as_deref() {
-        read_lock(&state.memo_file, "memo_file")
-            .ensure_tag_union_index_for_notebook_id(notebook_id)
-            .map_err(|error| format!("tag union index upgrade failed: {error}"))?;
-    }
-
-    if rebuild_search_now {
-        rebuild_index_in_background(state, app);
-    } else {
-        write_lock(&state.search, "search").mark_unloaded();
-    }
+    write_lock(&state.search, "search").mark_unloaded();
     Ok(())
 }
 
@@ -193,6 +179,14 @@ pub(crate) fn is_registered_notebook_path(path: &Path, state: &State<AppState>) 
     is_registered_notebook_path_with_state(path, state.inner())
 }
 
+pub(crate) fn is_registered_notebook_root(path: &Path, state: &State<AppState>) -> bool {
+    let memo_file = read_lock(&state.memo_file, "memo_file");
+    memo_file
+        .registered_notebook_paths()
+        .iter()
+        .any(|root| path_is_inside(path, root) && path_is_inside(root, path))
+}
+
 pub(crate) fn is_registered_notebook_path_with_state(path: &Path, state: &AppState) -> bool {
     let memo_file = read_lock(&state.memo_file, "memo_file");
     memo_file
@@ -201,15 +195,10 @@ pub(crate) fn is_registered_notebook_path_with_state(path: &Path, state: &AppSta
         .any(|root| path_is_inside(path, root))
 }
 
-fn is_markdown_like(path: &Path) -> bool {
-    path.extension()
-        .and_then(OsStr::to_str)
-        .map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "md" | "markdown"))
-        .unwrap_or(false)
-}
-
-pub(crate) fn can_access_document_path(path: &Path, state: &State<AppState>) -> bool {
-    is_registered_notebook_path(path, state) || is_markdown_like(path)
+pub(crate) fn can_access_document_path(path: &Path, window: &str, state: &State<AppState>) -> bool {
+    is_registered_notebook_path(path, state)
+        || is_agent_access_folder(path, state)
+        || state.document_access.contains(window, path)
 }
 
 pub(crate) fn can_access_scoped_file(
@@ -255,6 +244,7 @@ pub(crate) fn synthesize_minimal_memo(id: &str) -> flowix_core::memo_file::Memo 
     flowix_core::memo_file::Memo {
         id: id.to_string(),
         filename: String::new(),
+        relative_path: String::new(),
         preview: String::new(),
         thumbnail: None,
         tags: vec![],

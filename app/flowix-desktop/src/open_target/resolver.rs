@@ -12,13 +12,15 @@ use thiserror::Error;
 
 use crate::lock_utils::read_lock;
 use crate::watcher::path::normalize_for_compare;
-use flowix_core::memo_file::{MemoFile, NotebookConfig};
+use flowix_core::memo_file::{notebook_relative_path, MemoFile, NotebookConfig};
 
 use super::parser::OpenTarget;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedOpenTarget {
+    /// 完整的 memo index 数据，打开目标时直接复用，避免前端再次读取 memo。
+    pub memo: flowix_core::memo_file::Memo,
     pub memo_id: String,
     pub notebook_id: String,
     pub notebook_name: String,
@@ -59,9 +61,16 @@ pub fn resolve_open_target(
             if let Some((cfg, memo)) =
                 find_memo_by_path_in_notebooks(memo_file, &configs, &abs_path, filename)
             {
-                let canonical_abs = build_abs_path(&cfg, &memo.filename);
+                let canonical_abs = build_abs_path(&cfg, &memo.relative_path);
                 return Ok(build_resolved(memo, &cfg, canonical_abs));
             }
+        }
+        // The tree reads disk directly while indexing is asynchronous. Register
+        // an exact in-notebook Markdown path on demand so a visible nested note
+        // cannot fall through to the generic file/CodeMirror editor.
+        if let Some((cfg, memo)) = register_in_notebook_markdown(memo_file, &configs, &abs_path) {
+            let canonical_abs = build_abs_path(&cfg, &memo.relative_path);
+            return Ok(build_resolved(memo, &cfg, canonical_abs));
         }
         // 物理 filename 找不�?memo index entry (�?��不是 memo 文件 / �?��拼错)
         return Err(ResolveError::NotFound(abs_path));
@@ -73,12 +82,39 @@ pub fn resolve_open_target(
         .resolve_memo_location(&memo_id)
         .map_err(|_| ResolveError::NotFound(memo_id.clone()))?
         .ok_or_else(|| ResolveError::NotFound(memo_id.clone()))?;
-    let abs = build_abs_path(&location.notebook, &location.memo.filename);
+    let abs = build_abs_path(&location.notebook, &location.memo.relative_path);
     Ok(build_resolved(
         flowix_core::memo_file::MemoFile::index_entry_to_memo(&location.memo),
         &location.notebook,
         abs,
     ))
+}
+
+fn register_in_notebook_markdown(
+    memo_file: &RwLock<MemoFile>,
+    configs: &[NotebookConfig],
+    abs_path: &str,
+) -> Option<(NotebookConfig, flowix_core::memo_file::Memo)> {
+    let target = Path::new(abs_path);
+    if !target.is_file()
+        || !target
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+    {
+        return None;
+    }
+
+    let target_norm = normalize_for_compare(target);
+    let cfg = configs
+        .iter()
+        .filter(|cfg| target_norm.starts_with(normalize_for_compare(Path::new(&cfg.path))))
+        .max_by_key(|cfg| Path::new(&cfg.path).components().count())?
+        .clone();
+    let memo = read_lock(memo_file, "memo_file")
+        .register_existing_file_for_notebook_id(&cfg.id, target)
+        .ok()?;
+    Some((cfg, memo))
 }
 
 /// Build the response using the notebook resolved from the target.
@@ -88,6 +124,7 @@ fn build_resolved(
     abs_path: String,
 ) -> ResolvedOpenTarget {
     ResolvedOpenTarget {
+        memo: memo.clone(),
         memo_id: memo.id,
         notebook_id: cfg.id.clone(),
         notebook_name: cfg.name.clone(),
@@ -97,9 +134,9 @@ fn build_resolved(
     }
 }
 
-fn build_abs_path(cfg: &NotebookConfig, filename: &str) -> String {
+fn build_abs_path(cfg: &NotebookConfig, relative_path: &str) -> String {
     PathBuf::from(&cfg.path)
-        .join(filename)
+        .join(relative_path)
         .display()
         .to_string()
 }
@@ -126,10 +163,13 @@ fn find_memo_by_path_in_notebooks(
             continue;
         };
         if let Some(entry) = list.memos.into_iter().find(|entry| {
-            if entry.filename != filename {
+            let Ok(relative_path) = notebook_relative_path(Path::new(&cfg.path), target) else {
+                return false;
+            };
+            if entry.relative_path != relative_path && entry.filename != filename {
                 return false;
             }
-            let expected = PathBuf::from(&cfg.path).join(&entry.filename);
+            let expected = PathBuf::from(&cfg.path).join(&entry.relative_path);
             normalize_for_compare(&expected) == target_norm
         }) {
             return Some((
@@ -271,24 +311,33 @@ mod tests {
     }
 
     #[test]
-    fn physical_path_in_subdir_with_same_filename_does_not_match_root_memo() {
+    fn physical_path_in_subdir_registers_and_resolves_the_exact_note() {
         let (memo_file, nb_one, _nb_two) = fresh_memo_file();
-        let (_id, _root_path) = seed_memo(&memo_file, "nb_one", &nb_one, "SameName");
+        let (root_id, _root_path) = seed_memo(&memo_file, "nb_one", &nb_one, "SameName");
 
         let subdir = nb_one.join("subdir");
         fs::create_dir_all(&subdir).unwrap();
         let nested_path = subdir.join("SameName.md");
         fs::write(&nested_path, "# SameName in subdir\n").unwrap();
 
-        let err = resolve_open_target(
+        let resolved = resolve_open_target(
             OpenTarget::PhysicalPath {
                 path: nested_path.display().to_string(),
                 memo_id: None,
             },
             &memo_file,
         )
-        .unwrap_err();
+        .unwrap();
 
-        assert!(matches!(err, ResolveError::NotFound(_)));
+        assert_ne!(resolved.memo_id, root_id);
+        assert_eq!(resolved.notebook_id, "nb_one");
+        assert_eq!(
+            normalize_for_compare(Path::new(&resolved.absolute_path)),
+            normalize_for_compare(&nested_path)
+        );
+        let nested = read_lock(&memo_file, "memo_file")
+            .find_memo_by_relative_path_for_notebook_id("nb_one", "subdir/SameName.md")
+            .unwrap();
+        assert_eq!(nested.id, resolved.memo_id);
     }
 }

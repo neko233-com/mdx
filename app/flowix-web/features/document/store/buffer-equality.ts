@@ -3,13 +3,15 @@ import type { DocumentIdentity } from '@features/document/store/document-identit
 
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---(?:\n|$)/;
 
-function sortMappingKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortMappingKeys);
+function normalizeYamlValue(value: unknown, preserveMappingOrder = false): unknown {
+  if (Array.isArray(value)) return value.map((item) => normalizeYamlValue(item));
   if (!value || typeof value !== 'object') return value;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (!preserveMappingOrder) {
+    entries.sort(([left], [right]) => left.localeCompare(right));
+  }
   return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, child]) => [key, sortMappingKeys(child)]),
+    entries.map(([key, child]) => [key, normalizeYamlValue(child)]),
   );
 }
 
@@ -26,15 +28,19 @@ function normalizeYaml(yamlContent: string): string {
     // for an unchanged document and silently discarded.
     return `invalid:${yamlContent.trim()}`;
   }
-  return `valid:${JSON.stringify(sortMappingKeys(document.toJS()))}`;
+  // Preserve top-level frontmatter order because it is user-visible and is
+  // intentionally changed by the property move actions. Nested mappings keep
+  // their previous order-insensitive comparison semantics.
+  return `valid:${JSON.stringify(normalizeYamlValue(document.toJS(), true))}`;
 }
 
 /**
  * Normalize Markdown for editor dirty-state comparisons.
  *
- * Line endings and harmless YAML formatting/key-order changes are ignored,
- * while YAML values remain part of the comparison. In particular, changing
- * frontmatter `tags` is a real document edit and must trigger autosave/CAS.
+ * Line endings and harmless YAML formatting changes are ignored, while YAML
+ * values and top-level frontmatter field order remain part of the comparison.
+ * In particular, changing frontmatter `tags` or moving a property is a real
+ * document edit and must trigger autosave/CAS.
  */
 export function normalizeForEquality(content: string): string {
   const normalized = content.replace(/\r\n?/g, '\n');

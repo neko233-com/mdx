@@ -33,6 +33,7 @@ import { useI18n, type I18nKey } from '@/lib/i18n';
 import { getCurrentWindow } from '@platform/tauri/window';
 import { useExperimentalMode } from '@platform/tauri/use-experimental-mode';
 import { AgentIcon } from '@features/agent/components/agent-icon';
+import { useAgentRuntimeStore } from '@features/agent/store/agent-runtime-store';
 
 function isWindowsPlatform(): boolean {
 	return /Windows/i.test(navigator.userAgent) || /Win/i.test(navigator.platform);
@@ -59,7 +60,7 @@ const TAB_GROUPS: { labelKey: I18nKey; tabs: PreferencesTabItem[] }[] = [
 			{
 				id: 'dsh',
 				labelKey: 'preferences.tabs.dsh',
-					icon: <AgentIcon typeKey="deepseek-harness" alt="" className="h-4 w-4 object-contain" />,
+				icon: <AgentIcon typeKey="deepseek-harness" alt="" className="h-4 w-4 object-contain" />,
 			},
 			// 模型配置整段塞到 aiAgent 的 Flowix 卡片里, 不再独立成 tab。
 			{ id: 'aiAgent', labelKey: 'preferences.tabs.aiAgent', icon: <StarFourIcon className="w-4 h-4" weight="regular" /> },
@@ -95,14 +96,12 @@ function GeneralSettingsSection() {
 	const personalize = useUserSettings((settings) => settings.personalize);
 	const language = useUserSettings((settings) => settings.language);
 	const region = useUserSettings((settings) => settings.region);
-	const memoCardVariant = useUserSettings((settings) => settings.memoCardVariant);
 	const { updateSettings } = useUserSettingsActions();
 	return (
 		<GeneralSection
 			settings={personalize}
 			language={language}
 			region={region}
-			memoCardVariant={memoCardVariant}
 			updateSettings={updateSettings}
 		/>
 	);
@@ -127,8 +126,14 @@ interface PreferencesViewProps {
 export function PreferencesView({ initialTab }: PreferencesViewProps) {
 	const { t } = useI18n();
 	const experimental = useExperimentalMode();
+	const refreshRuntimeStatus = useAgentRuntimeStore((state) => state.refreshIfStale);
 	const [activeTab, setActiveTab] = useState<SettingsTab>('general');
 	const title = t('preferences.title');
+
+	useEffect(() => {
+		void refreshRuntimeStatus();
+	}, [refreshRuntimeStatus]);
+
 	const visibleTabGroups = useMemo(
 		() => TAB_GROUPS.map((group) => ({
 			...group,
@@ -138,6 +143,7 @@ export function PreferencesView({ initialTab }: PreferencesViewProps) {
 		})),
 		[experimental],
 	);
+	const tabsWithRuntimeAvailability = visibleTabGroups;
 
 	useEffect(() => {
 		if (initialTab) {
@@ -163,12 +169,12 @@ export function PreferencesView({ initialTab }: PreferencesViewProps) {
 
 	return (
 		<div className="flex h-screen w-screen select-none flex-col overflow-hidden bg-[var(--background)]">
-			<WindowsTitlebarControls />
+			<WindowsTitlebarControls showBottomBorder />
 			{isWindowsPlatform() ? <PreferencesTitlebarWin /> : <PreferencesTitlebarMac />}
 			<div className="flex-1 flex min-h-0">
 				{/* Left sidebar */}
 				<div className="w-[204px] min-h-0 overflow-y-auto [scrollbar-gutter:stable] border-r border-solid border-[var(--divider)] bg-[var(--card)] shrink-0 px-2 pt-5 pb-2 flex flex-col gap-4">
-					{visibleTabGroups.map((group) => (
+					{tabsWithRuntimeAvailability.map((group) => (
 						<div key={group.labelKey} className="space-y-1">
 							<div className="px-2 pb-1 text-xs font-medium text-[var(--muted-foreground)]">
 								{t(group.labelKey)}
@@ -201,7 +207,7 @@ export function PreferencesView({ initialTab }: PreferencesViewProps) {
 
 						    底部间距放在这个子元素上 (mb), 不放在外层滚动容器的 pb ──
 						    WKWebView 会忽略 flex 滚动容器的 padding-bottom, margin 则正常生效 */}
-						<div className={cn('mb-10 w-full', activeTab === 'dsh' ? 'max-w-[680px]' : 'max-w-[500px]')}>
+						<div className={cn('mb-10 w-full', ['dsh', 'codex'].includes(activeTab) ? 'max-w-[760px]' : 'max-w-[500px]')}>
 							{activeTab === 'general' && (
 								<GeneralSettingsSection />
 							)}

@@ -18,7 +18,6 @@ import {
   updateVisibleFrontmatterProperty,
 } from '@features/document/properties/frontmatter-model';
 import { generatePropertyKey } from '@features/document/properties/property-key';
-import { useTagStore } from '@features/memo/store/tag-store';
 
 describe('frontmatter property helpers', () => {
   it('skips the system key and returns every property from the first group', () => {
@@ -84,6 +83,12 @@ describe('frontmatter property helpers', () => {
     expect(formatFrontmatterPropertyValue(['推广', '归类'])).toBe('[ 推广, 归类 ]');
   });
 
+  it('keeps long property text intact for the display layer', () => {
+    const value = 'A relentless interview to sharpen a plan or design.'.repeat(3);
+
+    expect(formatFrontmatterPropertyValue(value, Number.POSITIVE_INFINITY)).toBe(value);
+  });
+
   it('keeps text-looking values as strings and validates numeric properties', () => {
     const text = updateVisibleFrontmatterProperty(
       'key: ra61em97\ncode: old',
@@ -124,6 +129,165 @@ describe('frontmatter property helpers', () => {
       '---\nkey: ra61em97\n---\nBody',
       [{ key: 'tags', value: 'not-an-array' }],
     )).toThrow(/Tags must be a list/);
+  });
+
+  it('uses the Flowix product palette for internal note colors', () => {
+    const next = updateVisibleFrontmatterProperty(
+      'key: ra61em97',
+      null,
+      'flowix_colors',
+      'blue, red',
+      'MultiSelect',
+    );
+    expect(parseVisibleFrontmatter(next).userData.flowix_colors)
+      .toEqual(['red', 'blue']);
+
+    expect(() => updateVisibleFrontmatterProperty(
+      'key: ra61em97',
+      null,
+      'flowix_colors',
+      'purple',
+      'MultiSelect',
+    )).toThrow(/product color palette/);
+  });
+
+  it('renders the Flowix color palette for flowix_colors values', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nkey: ra61em97\nflowix_colors: [blue]\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    const colorValue = host.querySelector<HTMLElement>(
+      '[data-property-key="flowix_colors"] .frontmatter-property__display-value',
+    );
+    expect(colorValue?.querySelectorAll('.frontmatter-property__value-color-dot')).toHaveLength(1);
+    expect(colorValue?.querySelector('.frontmatter-property__value-color-dot')?.getAttribute('data-value'))
+      .toBe('blue');
+    expect(colorValue?.querySelector('.frontmatter-property__value-chip')).toBeNull();
+    expect(colorValue?.querySelector('.frontmatter-property__value-color-dot')?.getAttribute('role'))
+      .toBe('img');
+    host.querySelector<HTMLElement>(
+      '[data-property-key="flowix_colors"] .frontmatter-property__display-value',
+    )?.click();
+    const popover = document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
+    const colors = popover?.querySelectorAll<HTMLButtonElement>(
+      '.frontmatter-property__edit-color-option',
+    ) ?? [];
+    expect(colors).toHaveLength(7);
+    expect(colors[0]?.dataset.value).toBe('red');
+    expect(colors[5]?.getAttribute('aria-pressed')).toBe('true');
+
+    colors[0]?.click();
+    popover?.querySelector<HTMLElement>('.frontmatter-property__edit-colors')?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, ctrlKey: true }),
+    );
+    expect(parseVisibleFrontmatter(
+      String(editor.state.doc.firstChild?.attrs.yamlContent ?? ''),
+    ).userData.flowix_colors).toEqual(['red', 'blue']);
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('localizes built-in property keys without changing their stored keys', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nkey: ra61em97\nflowix_colors: [blue]\ntags: [work]\nflowix_icon: smile\nname: Demo\ndescription: Note\nflowix_favorited: true\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    expect([...host.querySelectorAll('.frontmatter-property__key')]
+      .map((element) => element.textContent)).toEqual(['颜色', '标签', '图标', '名称', '描述', '置顶']);
+    expect(host.querySelector('[data-property-key="flowix_colors"]')).not.toBeNull();
+    expect(host.querySelector('[data-property-key="tags"]')).not.toBeNull();
+    expect(host.querySelector('[data-property-key="flowix_icon"]')).not.toBeNull();
+    expect(host.querySelector('[data-property-key="name"]')).not.toBeNull();
+    expect(host.querySelector('[data-property-key="description"]')).not.toBeNull();
+    expect(host.querySelector('[data-property-key="flowix_favorited"]')).not.toBeNull();
+    expect(editor.getMarkdown()).toContain('flowix_colors: [blue]');
+    expect(editor.getMarkdown()).toContain('tags: [work]');
+    expect(editor.getMarkdown()).toContain('flowix_icon: smile');
+    expect(editor.getMarkdown()).toContain('name: Demo');
+    expect(editor.getMarkdown()).toContain('description: Note');
+    expect(editor.getMarkdown()).toContain('flowix_favorited: true');
+
+    const fixedPropertyKinds = [
+      ['name', '文本'],
+      ['description', '文本'],
+      ['tags', '标签'],
+      ['flowix_colors', '标签'],
+      ['flowix_icon', '图标'],
+    ] as const;
+    fixedPropertyKinds.forEach(([key, label]) => {
+      host.querySelector<HTMLElement>(
+        `[data-property-key="${key}"] .frontmatter-property__display-value`,
+      )?.click();
+      const popover = document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
+      const typeTrigger = popover?.querySelector<HTMLButtonElement>('.frontmatter-property__edit-type-trigger');
+      expect(typeTrigger?.disabled).toBe(true);
+      expect(typeTrigger?.querySelector('.frontmatter-property__edit-type-label')?.textContent)
+        .toBe(label);
+      if (key === 'flowix_icon') {
+        expect(popover?.querySelector('.frontmatter-property__edit-icon-chevron')).toBeNull();
+        expect(popover?.querySelector('.frontmatter-property__edit-icon-box')).not.toBeNull();
+        expect(popover?.querySelector('.frontmatter-property__edit-icon-box--empty')).not.toBeNull();
+        expect(popover?.querySelector('.frontmatter-property__edit-icon-placeholder')).not.toBeNull();
+        const clear = popover?.querySelector<HTMLElement>('.frontmatter-property__edit-icon-clear');
+        expect(clear?.getAttribute('aria-label')).toBe('清空图标');
+        clear?.click();
+        expect(popover?.querySelector('.frontmatter-property__edit-icon-menu')?.getAttribute('hidden'))
+          .not.toBeNull();
+      }
+    });
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('renders Select values as directly togglable checkboxes', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nkey: ra61em97\nenabled: false\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    const getCheckbox = () => host.querySelector<HTMLInputElement>(
+      '[data-property-key="enabled"] .frontmatter-property__value-checkbox',
+    );
+    let checkbox = getCheckbox();
+    expect(checkbox?.type).toBe('checkbox');
+    expect(checkbox?.checked).toBe(false);
+    expect(checkbox?.getAttribute('data-property-type')).toBe('Select');
+
+    checkbox?.click();
+    expect(parseVisibleFrontmatter(
+      String(editor.state.doc.firstChild?.attrs.yamlContent ?? ''),
+    ).userData.enabled).toBe(true);
+
+    checkbox = getCheckbox();
+    checkbox?.click();
+    expect(parseVisibleFrontmatter(
+      String(editor.state.doc.firstChild?.attrs.yamlContent ?? ''),
+    ).userData.enabled).toBe(false);
+    expect(document.body.querySelector('.frontmatter-property__edit-popover')).toBeNull();
+
+    editor.destroy();
+    host.remove();
   });
 
   it('canonicalizes the singular tag key to tags', async () => {
@@ -183,6 +347,15 @@ describe('frontmatter property helpers', () => {
     expect(tags.querySelectorAll('.frontmatter-property__value-chip')).toHaveLength(2);
     expect(tags.textContent).toBe('推广归类');
 
+    const list = createFrontmatterValueDisplay({
+      value: ['JavaScript', 'TypeScript', 'Rust'],
+      text: '[ JavaScript, TypeScript, Rust ]',
+      kind: 'List',
+      t,
+    });
+    expect(list.querySelectorAll('.frontmatter-property__value-list-item')).toHaveLength(3);
+    expect(list.textContent).toBe('JavaScriptTypeScriptRust');
+
     expect(inferFrontmatterPropertyKind(42)).toBe('Number');
     expect(inferFrontmatterPropertyKind('2026-07-21')).toBe('Date');
     expect(inferFrontmatterPropertyKind('https://example.com')).toBe('URL');
@@ -230,7 +403,7 @@ describe('frontmatter property helpers', () => {
     tagPicker.dom.remove();
   });
 
-  it('shows only tag controls while preserving other YAML properties', async () => {
+  it('renders every visible frontmatter property while preserving YAML properties', async () => {
     const host = document.createElement('div');
     document.body.append(host);
     const editor = new Editor({
@@ -261,13 +434,23 @@ describe('frontmatter property helpers', () => {
     await new Promise((resolve) => window.setTimeout(resolve, 0));
 
     expect(editor.state.doc.firstChild?.type.name).toBe('frontmatter');
-    expect([...host.querySelectorAll('.frontmatter-property__tag-label')]
+    expect(host.querySelector('.frontmatter-property__heading-label')).toBeNull();
+    expect(host.querySelector('.frontmatter-property__heading-icon')).toBeNull();
+    expect([...host.querySelectorAll('.frontmatter-property__key')]
+      .map((element) => element.textContent)).toEqual([
+        '标签',
+        'type',
+        'status',
+        'keywords',
+        'priority',
+      ]);
+    expect([...host.querySelectorAll('[data-property-key="tags"] .frontmatter-property__value-chip')]
       .map((element) => element.textContent)).toEqual(['#alpha', '#beta']);
-    expect([...host.querySelectorAll('.frontmatter-property__tag-chip')]
+    expect([...host.querySelectorAll('[data-property-key="tags"] .frontmatter-property__value-chip')]
       .every((element) => element.classList.contains('tag-node'))).toBe(true);
-    expect(host.querySelector('.frontmatter-property__tag-add')).not.toBeNull();
+    expect(host.querySelector('.frontmatter-property__tag-add')).toBeNull();
     expect(host.querySelector('.frontmatter-property__add-property')).toBeNull();
-    expect(host.querySelector('.frontmatter-property__display')).toBeNull();
+    expect(host.querySelectorAll('.frontmatter-property__display')).toHaveLength(5);
     expect(host.querySelector('.frontmatter-property__editor')).toBeNull();
 
     const markdown = editor.getMarkdown();
@@ -280,15 +463,424 @@ describe('frontmatter property helpers', () => {
     host.remove();
   });
 
-  it('renders tags as a standalone wrapping strip and appends from its trailing control', async () => {
-    useTagStore.setState({
-      tags: [
-        { id: 'alpha', name: 'alpha' },
-        { id: 'beta', name: 'beta' },
-        { id: 'gammaLongTag', name: 'gammaLongTag' },
-        { id: 'work/path', name: 'work/path' },
-      ],
+  it('opens an aligned overlay editor and saves the changed property value', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nkey: 8c7dxu0l\ndescription: Before\n---\nBody',
+      contentType: 'markdown',
     });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    const row = host.querySelector<HTMLElement>('[data-property-key="description"]');
+    expect(row).not.toBeNull();
+    row?.querySelector<HTMLElement>('.frontmatter-property__display-value')?.click();
+
+    const popover = document.body.querySelector<HTMLElement>(
+      '.frontmatter-property__edit-popover',
+    );
+    const input = popover?.querySelector<HTMLTextAreaElement>(
+      '.frontmatter-property__edit-input',
+    );
+    const typeTrigger = popover?.querySelector<HTMLButtonElement>(
+      '.frontmatter-property__edit-type-trigger',
+    );
+    expect(popover?.style.position).toBe('fixed');
+    expect(popover?.style.left).toBe('0px');
+    expect(popover?.style.top).toBe('0px');
+    expect(input?.value).toBe('Before');
+    expect(typeTrigger?.querySelector('.frontmatter-property__edit-type-label')?.textContent)
+      .toBe('文本');
+    expect([...popover?.querySelectorAll<HTMLElement>(
+      '.frontmatter-property__edit-type-option',
+    ) ?? []].map((option) => option.textContent)).toEqual([
+      '文本',
+      '数字',
+      '标签',
+      '日期',
+      '单选',
+      '列表',
+    ]);
+    typeTrigger?.focus();
+    await Promise.resolve();
+    expect(document.body.contains(popover ?? null)).toBe(true);
+    input?.focus();
+
+    if (input) {
+      input.value = 'After';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        ctrlKey: true,
+      }));
+    }
+
+    expect(editor.getMarkdown()).toContain('description: After');
+    expect(document.body.querySelector('.frontmatter-property__edit-popover')).toBeNull();
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('renders YAML lists as bullet points and saves list input as a block list', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nkey: 8c7dxu0l\nlanguages:\n  - JavaScript\n  - TypeScript\n  - Rust\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    const row = host.querySelector<HTMLElement>('[data-property-key="languages"]');
+    expect(row?.querySelectorAll('.frontmatter-property__value-list-item')).toHaveLength(3);
+    expect([...row?.querySelectorAll('.frontmatter-property__value-list-item') ?? []]
+      .map((item) => item.textContent)).toEqual(['JavaScript', 'TypeScript', 'Rust']);
+
+    row?.querySelector<HTMLElement>('.frontmatter-property__display-value')?.click();
+    const popover = document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
+    expect(popover?.querySelector('.frontmatter-property__edit-type-label')?.textContent)
+      .toBe('列表');
+    const input = popover?.querySelector<HTMLTextAreaElement>('.frontmatter-property__edit-list-input');
+    expect(input?.value).toBe('JavaScript\nTypeScript\nRust');
+    if (input) {
+      input.value = 'JavaScript\nTypeScript\nRust\nGo';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        ctrlKey: true,
+      }));
+    }
+
+    const yamlContent = String(editor.state.doc.firstChild?.attrs.yamlContent ?? '');
+    expect(parseVisibleFrontmatter(yamlContent).userData.languages)
+      .toEqual(['JavaScript', 'TypeScript', 'Rust', 'Go']);
+    expect(yamlContent).toContain('languages:\n  - JavaScript\n  - TypeScript\n  - Rust\n  - Go');
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('opens a separate key editor and preserves the property value', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nkey: 8c7dxu0l\ndescription: Before\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    const row = host.querySelector<HTMLElement>('[data-property-key="description"]');
+    const keyCell = row?.querySelector<HTMLElement>('.frontmatter-property__display-key');
+    expect(keyCell).not.toBeNull();
+    keyCell?.click();
+
+    const popover = document.body.querySelector<HTMLElement>(
+      '.frontmatter-property__edit-popover',
+    );
+    const input = popover?.querySelector<HTMLInputElement>(
+      '.frontmatter-property__edit-input',
+    );
+    expect(input?.tagName).toBe('INPUT');
+    expect(input?.value).toBe('description');
+    expect(popover?.querySelector('.frontmatter-property__edit-type-trigger')).toBeNull();
+
+    const keyTrigger = popover?.querySelector<HTMLButtonElement>(
+      '.frontmatter-property__edit-key-trigger',
+    );
+    const keyControl = popover?.querySelector('.frontmatter-property__edit-key-control');
+    expect(keyControl?.firstElementChild).toBe(keyTrigger);
+    expect(keyControl?.children[1]).toBe(input);
+    keyTrigger?.click();
+    const keyOptions = popover?.querySelectorAll<HTMLButtonElement>(
+      '.frontmatter-property__edit-key-option',
+    ) ?? [];
+    expect([...keyOptions].map((option) => option.textContent)).toEqual([
+      '名称',
+      '描述',
+      '标签',
+      '颜色',
+      '图标',
+    ]);
+    expect(keyOptions[0]?.dataset.value).toBe('name');
+    expect(keyOptions[3]?.dataset.value).toBe('flowix_colors');
+    expect(keyOptions[4]?.dataset.value).toBe('flowix_icon');
+    keyOptions[0]?.click();
+    expect(input?.value).toBe('name');
+
+    if (input) {
+      input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      input.value = '名称';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }));
+      expect(editor.getMarkdown()).toContain('description: Before');
+      expect(document.body.querySelector('.frontmatter-property__edit-popover')).not.toBeNull();
+      input.dispatchEvent(new CompositionEvent('compositionend', {
+        bubbles: true,
+        data: '名称',
+      }));
+
+      input.value = 'summary';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+      }));
+    }
+
+    expect(editor.getMarkdown()).toContain('summary: Before');
+    expect(editor.getMarkdown()).not.toContain('description:');
+    expect(document.body.querySelector('.frontmatter-property__edit-popover')).toBeNull();
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('opens property actions from the type icon and moves or deletes the whole row', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nkey: 8c7dxu0l\nstatus: todo\npriority: high\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    const statusIcon = host.querySelector<HTMLElement>(
+      '[data-property-key="status"] .frontmatter-property__type-icon',
+    );
+    statusIcon?.click();
+    const menu = document.body.querySelector<HTMLElement>('.frontmatter-property__item-menu');
+    expect(menu).not.toBeNull();
+    expect([...menu?.querySelectorAll<HTMLButtonElement>('.frontmatter-property__item-menu-button') ?? []]
+      .map((button) => button.textContent)).toEqual(['上移', '下移', '删除属性']);
+    expect(menu?.querySelector<HTMLButtonElement>('.frontmatter-property__item-menu-button')?.disabled)
+      .toBe(true);
+
+    menu?.querySelectorAll<HTMLButtonElement>('.frontmatter-property__item-menu-button')[1]?.click();
+    expect([...host.querySelectorAll('.frontmatter-property__key')]
+      .map((element) => element.textContent)).toEqual(['priority', 'status']);
+    const movedMarkdown = editor.getMarkdown();
+    expect(movedMarkdown.indexOf('priority: high'))
+      .toBeLessThan(movedMarkdown.indexOf('status: todo'));
+
+    host.querySelector<HTMLElement>(
+      '[data-property-key="status"] .frontmatter-property__type-icon',
+    )?.click();
+    const movedMenu = document.body.querySelector<HTMLElement>('.frontmatter-property__item-menu');
+    expect(movedMenu?.querySelectorAll<HTMLButtonElement>('.frontmatter-property__item-menu-button')[1]?.disabled)
+      .toBe(true);
+    movedMenu?.querySelector<HTMLButtonElement>('.frontmatter-property__item-menu-button:last-child')?.click();
+
+    expect([...host.querySelectorAll('.frontmatter-property__key')]
+      .map((element) => element.textContent)).toEqual(['priority']);
+    expect(editor.getMarkdown()).toContain('priority: high');
+    expect(editor.getMarkdown()).not.toContain('status: todo');
+    expect(editor.getMarkdown()).toContain('Body');
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('converts a value when its editor type changes', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nkey: 8c7dxu0l\nscore: "42"\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    host.querySelector<HTMLElement>(
+      '[data-property-key="score"] .frontmatter-property__display-value',
+    )?.click();
+    const popover = document.body.querySelector<HTMLElement>(
+      '.frontmatter-property__edit-popover',
+    );
+    const typeTrigger = popover?.querySelector<HTMLButtonElement>(
+      '.frontmatter-property__edit-type-trigger',
+    );
+    expect(typeTrigger?.querySelector('.frontmatter-property__edit-type-label')?.textContent)
+      .toBe('文本');
+
+    if (typeTrigger) {
+      typeTrigger.click();
+      popover?.querySelector<HTMLButtonElement>(
+        '.frontmatter-property__edit-type-option[data-value="Number"]',
+      )?.click();
+      const numberInput = popover?.querySelector<HTMLInputElement>(
+        '.frontmatter-property__edit-input',
+      );
+      expect(numberInput?.type).toBe('number');
+      expect(popover?.querySelectorAll('.frontmatter-property__edit-number-step'))
+        .toHaveLength(2);
+      if (numberInput) {
+        numberInput.value = '-42';
+        numberInput.dispatchEvent(new Event('input', { bubbles: true }));
+        numberInput.dispatchEvent(new KeyboardEvent('keydown', {
+          key: '.',
+          bubbles: true,
+        }));
+        expect(numberInput.value).toBe('-42');
+        popover?.querySelector<HTMLButtonElement>(
+          '.frontmatter-property__edit-number-step:first-child',
+        )?.click();
+        expect(numberInput.value).toBe('-41');
+        popover?.querySelector<HTMLButtonElement>(
+          '.frontmatter-property__edit-number-step:last-child',
+        )?.click();
+        expect(numberInput.value).toBe('-42');
+        numberInput.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter',
+          bubbles: true,
+          ctrlKey: true,
+        }));
+      }
+    }
+
+    const yamlContent = String(editor.state.doc.firstChild?.attrs.yamlContent ?? '');
+    expect(parseVisibleFrontmatter(yamlContent).userData.score).toBe(-42);
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('renders tag, date, and checkbox controls for their selected value types', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nkey: 8c7dxu0l\nlabels:\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    const openValueEditor = () => {
+      host.querySelector<HTMLElement>(
+        '[data-property-key="labels"] .frontmatter-property__display-value',
+      )?.click();
+      return document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
+    };
+    const selectType = (
+      popover: HTMLElement,
+      type: 'MultiSelect' | 'Date' | 'Select',
+    ) => {
+      popover.querySelector<HTMLButtonElement>('.frontmatter-property__edit-type-trigger')?.click();
+      popover.querySelector<HTMLButtonElement>(
+        `.frontmatter-property__edit-type-option[data-value="${type}"]`,
+      )?.click();
+    };
+
+    let popover = openValueEditor();
+    expect(popover?.querySelector<HTMLTextAreaElement>('.frontmatter-property__edit-input'))
+      .not.toBeNull();
+    if (popover) selectType(popover, 'MultiSelect');
+    const tagInput = popover?.querySelector<HTMLInputElement>('.frontmatter-property__edit-tags-input');
+    expect(tagInput).not.toBeNull();
+    if (tagInput) {
+      tagInput.value = 'alpha';
+      tagInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      expect(popover?.querySelector('.frontmatter-property__edit-tag-chip')?.textContent)
+        .toContain('alpha');
+      expect(popover?.querySelector('.frontmatter-property__edit-tag-chip')?.textContent)
+        .not.toContain('#');
+      tagInput.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        ctrlKey: true,
+      }));
+    }
+    let yamlContent = String(editor.state.doc.firstChild?.attrs.yamlContent ?? '');
+    expect(parseVisibleFrontmatter(yamlContent).userData.labels).toEqual(['alpha']);
+
+    popover = openValueEditor();
+    if (popover) selectType(popover, 'Date');
+    await Promise.resolve();
+    const dateButton = popover?.querySelector<HTMLButtonElement>(
+      '.frontmatter-property__date-picker-trigger',
+    );
+    expect(dateButton).not.toBeNull();
+    dateButton?.click();
+    await Promise.resolve();
+    const datePicker = document.body.querySelector<HTMLElement>(
+      '.frontmatter-property__date-picker-popover',
+    );
+    expect(datePicker).not.toBeNull();
+    expect(datePicker?.textContent).not.toContain('{year}');
+    expect(datePicker?.textContent).not.toContain('{month}');
+    expect(datePicker?.textContent).toMatch(/\d{4}/);
+    datePicker?.querySelector<HTMLButtonElement>('[data-date="2026-09-13"]')?.click();
+    dateButton?.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      ctrlKey: true,
+    }));
+    yamlContent = String(editor.state.doc.firstChild?.attrs.yamlContent ?? '');
+    expect(parseVisibleFrontmatter(yamlContent).userData.labels).toBe('2026-09-13');
+
+    popover = openValueEditor();
+    if (popover) selectType(popover, 'Select');
+    const checkbox = popover?.querySelector<HTMLInputElement>('.frontmatter-property__edit-checkbox');
+    expect(checkbox?.type).toBe('checkbox');
+    if (checkbox) {
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+      checkbox.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        ctrlKey: true,
+      }));
+    }
+    yamlContent = String(editor.state.doc.firstChild?.attrs.yamlContent ?? '');
+    expect(parseVisibleFrontmatter(yamlContent).userData.labels).toBe(true);
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('uses the not-set fallback for an empty tag array', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nkey: 8c7dxu0l\ntags: []\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    const value = host.querySelector<HTMLElement>(
+      '[data-property-key="tags"] .frontmatter-property__display-value',
+    );
+    expect(value?.textContent).toBe('未设置');
+    expect(value?.textContent).not.toContain('[]');
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('edits the tags key through the same multi-select editor as a tag property', async () => {
     const host = document.createElement('div');
     document.body.append(host);
     const editor = new Editor({
@@ -301,148 +893,107 @@ describe('frontmatter property helpers', () => {
     await new Promise((resolve) => window.setTimeout(resolve, 0));
 
     expect([...host.querySelectorAll('.frontmatter-property__key')]
-      .map((element) => element.textContent)).toEqual([]);
+      .map((element) => element.textContent)).toEqual(['标签', 'status']);
     expect(host.querySelector('.frontmatter-property__add-property')).toBeNull();
-    expect([...host.querySelectorAll('.frontmatter-property__tag-label')]
-      .map((element) => element.textContent)).toEqual(['#alpha', '#beta']);
-    const addButton = host.querySelector<HTMLButtonElement>('.frontmatter-property__tag-add');
-    expect(addButton).not.toBeNull();
-    expect(addButton?.textContent).toBe('添加标签');
-    if (addButton) {
-      addButton.getBoundingClientRect = () => ({
-        x: 0,
-        y: 0,
-        width: 88,
-        height: 24,
-        top: 0,
-        right: 88,
-        bottom: 24,
-        left: 0,
-        toJSON: () => ({}),
-      });
-    }
-    addButton?.click();
-    await Promise.resolve();
+    expect(host.querySelector('.frontmatter-property__tag-add')).toBeNull();
+    expect(host.querySelector('.frontmatter-property__display-value')?.textContent)
+      .toContain('alpha');
 
-    const input = host.querySelector<HTMLInputElement>('.frontmatter-property__tag-input');
+    const valueCell = host.querySelector<HTMLElement>(
+      '[data-property-key="tags"] .frontmatter-property__display-value',
+    );
+    valueCell?.click();
+    const popover = document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
+    expect(popover?.querySelector('.frontmatter-property__edit-type-label')?.textContent)
+      .toBe('标签');
+    const input = popover?.querySelector<HTMLInputElement>('.frontmatter-property__edit-tags-input');
     expect(input).not.toBeNull();
     if (input) {
-      expect(input.hasAttribute('placeholder')).toBe(false);
-      expect(input.getAttribute('aria-label')).toBe('输入标签后回车');
-      expect(input.style.width).toBe('88px');
-      expect(host.querySelector<HTMLElement>(
-        '.frontmatter-property__tag-suggestions',
-      )?.hidden).toBe(false);
-      expect([...host.querySelectorAll('.mention-tag-name')]
-        .map((element) => element.textContent)).toEqual(['gammaLongTag', 'work/path']);
-      const hierarchicalTag = [...host.querySelectorAll<HTMLElement>('.mention-tag-name')]
-        .find((element) => element.textContent === 'work/path');
-      expect([...hierarchicalTag?.querySelectorAll('.mention-tag-segment') ?? []]
-        .map((element) => element.textContent)).toEqual(['work', 'path']);
-      expect(hierarchicalTag?.querySelector('.mention-tag-name-content')?.textContent)
-        .toBe('work/path');
-      expect(hierarchicalTag?.querySelector('.mention-tag-separator')?.textContent).toBe('/');
-      expect(host.querySelector('.frontmatter-property__tag-suggestions .mention-tag-icon')
-        ?.textContent).toBe('');
-      expect(host.querySelector(
-        '.frontmatter-property__tag-suggestions .overlay-scrollbar-frame',
-      )).not.toBeNull();
-      expect(host.querySelector(
-        '.frontmatter-property__tag-suggestions .overlay-scrollbar-thumb',
-      )).not.toBeNull();
-      const suggestionItems = host.querySelector<HTMLElement>(
-        '.frontmatter-property__tag-suggestion-items',
-      );
-      const initialOptions = host.querySelectorAll<HTMLButtonElement>(
-        '.mention-note-item',
-      );
-      if (suggestionItems && initialOptions[1]) {
-        Object.defineProperties(suggestionItems, {
-          clientHeight: { configurable: true, value: 40 },
-          scrollHeight: { configurable: true, value: 100 },
-        });
-        suggestionItems.getBoundingClientRect = () => ({
-          x: 0,
-          y: 0,
-          width: 172,
-          height: 40,
-          top: 0,
-          right: 172,
-          bottom: 40,
-          left: 0,
-          toJSON: () => ({}),
-        });
-        initialOptions[1].getBoundingClientRect = () => ({
-          x: 0,
-          y: 50,
-          width: 172,
-          height: 20,
-          top: 50,
-          right: 172,
-          bottom: 70,
-          left: 0,
-          toJSON: () => ({}),
-        });
-        input.dispatchEvent(new KeyboardEvent('keydown', {
-          key: 'ArrowDown',
-          bubbles: true,
-        }));
-        expect(suggestionItems.scrollTop).toBe(30);
-      }
-      Object.defineProperty(input, 'scrollWidth', {
-        configurable: true,
-        value: 140,
-      });
-      input.value = 'gamma';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      expect(input.style.width).toBe('141px');
-      expect([...host.querySelectorAll('.mention-tag-name')]
-        .map((element) => element.textContent)).toEqual(['gamma', 'gammaLongTag']);
-      host.querySelectorAll<HTMLButtonElement>('.mention-note-item')[1]?.dispatchEvent(
-        new MouseEvent('pointerdown', { bubbles: true, cancelable: true }),
-      );
+      input.value = 'gammaLongTag';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      const chips = popover?.querySelectorAll('.frontmatter-property__edit-tag-chip') ?? [];
+      expect(chips[chips.length - 1]?.textContent)
+        .toContain('gammaLongTag');
+      expect(chips[chips.length - 1]?.textContent)
+        .not.toContain('#');
+      input.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        ctrlKey: true,
+      }));
     }
 
-    expect([...host.querySelectorAll('.frontmatter-property__tag-label')]
-      .map((element) => element.textContent)).toEqual(['#alpha', '#beta', '#gammaLongTag']);
-    expect(editor.getMarkdown()).toContain('tags:');
-    expect(editor.getMarkdown()).toContain('- gammaLongTag');
-    expect(editor.getMarkdown()).toContain('status: todo');
+    let yamlContent = String(editor.state.doc.firstChild?.attrs.yamlContent ?? '');
+    expect(parseVisibleFrontmatter(yamlContent).userData.tags)
+      .toEqual(['alpha', 'beta', 'gammaLongTag']);
 
-    useTagStore.setState({ tags: [] });
+    host.querySelector<HTMLElement>(
+      '[data-property-key="tags"] .frontmatter-property__display-value',
+    )?.click();
+    const reopenedPopover = document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
+    reopenedPopover?.querySelectorAll<HTMLButtonElement>('.frontmatter-property__edit-tag-remove')[1]?.click();
+    reopenedPopover?.querySelector<HTMLInputElement>('.frontmatter-property__edit-tags-input')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, ctrlKey: true }));
+    yamlContent = String(editor.state.doc.firstChild?.attrs.yamlContent ?? '');
+    expect(parseVisibleFrontmatter(yamlContent).userData.tags).toEqual(['alpha', 'gammaLongTag']);
+
     editor.destroy();
     host.remove();
   });
 
-  it('shows the tag add control and creates tags when the property is absent', async () => {
+  it('adds an empty text property at the end of the property list', async () => {
     const host = document.createElement('div');
     document.body.append(host);
     const editor = new Editor({
       element: host,
-      extensions: [StarterKit, Markdown, Frontmatter],
+      extensions: [StarterKit, Markdown, Frontmatter.configure({ memoId: '8c7dxu0l' })],
       content: '---\nkey: 8c7dxu0l\nstatus: todo\n---\nBody',
       contentType: 'markdown',
     });
 
     await new Promise((resolve) => window.setTimeout(resolve, 0));
 
-    const addButton = host.querySelector<HTMLButtonElement>('.frontmatter-property__tag-add');
-    expect(addButton).not.toBeNull();
-    expect(addButton?.textContent).toBe('添加标签');
-    addButton?.click();
+    expect(host.querySelector('.frontmatter-property__tag-add')).toBeNull();
+    expect(host.querySelector('.frontmatter-property__tag-input')).toBeNull();
+    expect([...host.querySelectorAll('.frontmatter-property__key')]
+      .map((element) => element.textContent)).toEqual(['status']);
 
-    const input = host.querySelector<HTMLInputElement>('.frontmatter-property__tag-input');
-    expect(input).not.toBeNull();
-    if (input) {
-      input.value = 'newtag';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    }
+    host.querySelector<HTMLButtonElement>('.frontmatter-property__add-property')?.click();
+    expect([...host.querySelectorAll('.frontmatter-property__key')]
+      .map((element) => element.textContent)).toEqual(['status', 'key1']);
+    expect(host.querySelector('[data-property-key="key1"] .frontmatter-property__value-text')?.textContent)
+      .toBe('未设置');
+    expect(parseVisibleFrontmatter(
+      String(editor.state.doc.firstChild?.attrs.yamlContent ?? ''),
+    ).userData.key1).toBe('');
 
-    expect(editor.getMarkdown()).toContain('tags:');
-    expect(editor.getMarkdown()).toContain('- newtag');
-    expect([...host.querySelectorAll('.frontmatter-property__tag-label')]
-      .map((element) => element.textContent)).toEqual(['#newtag']);
+    host.querySelector<HTMLButtonElement>('.frontmatter-property__add-property')?.click();
+    expect([...host.querySelectorAll('.frontmatter-property__key')]
+      .map((element) => element.textContent)).toEqual(['status', 'key1', 'key2']);
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('hides the empty property list until a property is added', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter.configure({ memoId: '8c7dxu0l' })],
+      content: '---\nkey: 8c7dxu0l\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    expect(host.querySelector('.frontmatter-property__list')).toBeNull();
+    expect(host.querySelector('.frontmatter-property__add-property')).not.toBeNull();
+
+    host.querySelector<HTMLButtonElement>('.frontmatter-property__add-property')?.click();
+
+    expect(host.querySelector('.frontmatter-property__list')).not.toBeNull();
+    expect(host.querySelector('[data-property-key="key1"]')).not.toBeNull();
 
     editor.destroy();
     host.remove();

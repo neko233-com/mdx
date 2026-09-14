@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::OptionalExtension;
 
 use super::derivation::{apply_derived_memo_fields, extract_title_and_preview};
+pub(super) use super::file_io::{atomic_create_bytes, atomic_write_bytes, rename_file_noclobber};
 use super::frontmatter::{
     build_md_content, extract_document_metadata,
     extract_document_metadata_preserving_invalid_tag_paths, merge_frontmatter,
@@ -102,6 +103,39 @@ pub fn resolve_filename_conflict(
     }
 }
 
+/// Resolve a generated filename in a notebook subdirectory.
+/// `occupied_relative_paths` contains notebook-relative paths, while the
+/// filesystem check must happen in the memo's actual parent directory.
+pub fn resolve_relative_filename_conflict(
+    base: &Path,
+    parent_relative: &str,
+    candidate_base: &str,
+    occupied_relative_paths: &[String],
+) -> String {
+    let parent = if parent_relative.is_empty() {
+        base.to_path_buf()
+    } else {
+        notebook_path_from_relative(base, parent_relative).unwrap_or_else(|_| base.to_path_buf())
+    };
+    let occupied_filenames = occupied_relative_paths
+        .iter()
+        .filter_map(|relative| {
+            let path = Path::new(relative);
+            let parent = path
+                .parent()
+                .map(|value| value.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_default();
+            if parent == parent_relative {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    resolve_filename_conflict(&parent, candidate_base, &occupied_filenames)
+}
+
 /// `.md` / `.markdown` 后缀判定 (大小写不敏感)。
 pub trait IsMd {
     fn is_md(&self) -> bool;
@@ -119,52 +153,73 @@ impl IsMd for Path {
     }
 }
 
-/// 原子写: temp file + fsync + rename ── 中途崩溃看到的永远是完整旧文件或
-/// 完整新文件。跟 `index_store::atomic_write_json` 同源, 推广到任意路径 + bytes
-/// 供 `.md` 写路径复用。
+/// Return a stable notebook-relative path for a Markdown file.
 ///
-/// Windows 上 `MoveFileExW + MOVEFILE_REPLACE_EXISTING` 跨同一目录是原子;
-/// `dunce::canonicalize` 去除 `\\?\` UNC 前缀, 确保 tmp 与 final 落在同一
-/// canonical 根下, 否则跨盘符 rename 会失败。`canonicalize` 失败时 (文件
-/// 还没创建 ── e.g. 全新 register_existing_file 场景) 退回原路径, 这时
-/// rename 在同一目录下仍然原子。
-pub fn atomic_write_bytes(final_path: &Path, content: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let final_path = dunce::canonicalize(final_path).unwrap_or_else(|_| final_path.to_path_buf());
-    if let Some(parent) = final_path.parent() {
-        std::fs::create_dir_all(parent)?;
+/// The value persisted in the memo index always uses `/`, regardless of the
+/// host platform.  Rejecting `..` and absolute paths here keeps every caller
+/// from accidentally registering a file outside its notebook root.
+pub fn notebook_relative_path(base: &Path, absolute: &Path) -> Result<String, String> {
+    let relative = absolute
+        .strip_prefix(base)
+        .map_err(|_| format!("path is outside notebook root: {}", absolute.display()))?;
+    let mut parts = Vec::new();
+    for component in relative.components() {
+        match component {
+            std::path::Component::Normal(value) => parts.push(value.to_string_lossy().into_owned()),
+            _ => {
+                return Err(format!(
+                    "invalid notebook-relative path: {}",
+                    relative.display()
+                ));
+            }
+        }
     }
-    let tmp = final_path.with_extension(format!(
-        "tmp.{}.{}",
-        std::process::id(),
-        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
-    ));
-    {
-        let mut f = fs::File::create(&tmp)?;
-        f.write_all(content)?;
-        f.sync_all()?;
+    if parts.is_empty() {
+        return Err("notebook-relative path is empty".to_string());
     }
-    if let Err(e) = fs::rename(&tmp, &final_path) {
-        let _ = fs::remove_file(&tmp);
-        return Err(e);
-    }
-    Ok(())
+    Ok(parts.join("/"))
 }
 
-/// Atomically create a new file without replacing an entry created by another process.
-fn atomic_create_bytes(final_path: &Path, content: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
+/// Validate and materialize a persisted notebook-relative path.
+pub fn notebook_path_from_relative(base: &Path, relative: &str) -> Result<PathBuf, String> {
+    let normalized = relative.replace('\\', "/");
+    if normalized.is_empty() || normalized.starts_with('/') {
+        return Err(format!("invalid notebook-relative path: {relative}"));
+    }
+    let mut path = base.to_path_buf();
+    for component in std::path::Path::new(&normalized).components() {
+        match component {
+            std::path::Component::Normal(value) => path.push(value),
+            _ => return Err(format!("invalid notebook-relative path: {relative}")),
+        }
+    }
+    Ok(path)
+}
 
-    let parent = final_path.parent().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "file path has no parent")
-    })?;
-    fs::create_dir_all(parent)?;
-    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
-    temp.write_all(content)?;
-    temp.as_file().sync_all()?;
-    temp.persist_noclobber(final_path)
-        .map(|_| ())
-        .map_err(|error| error.error)
+pub fn filename_from_notebook_relative_path(relative: &str) -> String {
+    relative
+        .rsplit_once('/')
+        .map(|(_, filename)| filename)
+        .unwrap_or(relative)
+        .to_string()
+}
+
+/// Returns true when a notebook-relative path belongs to an internal,
+/// generated, or hidden location that must never be indexed as a note.
+/// Keep this rule in core so startup reconciliation and the desktop watcher
+/// classify the same path identically.
+pub fn is_ignored_notebook_relative_path(path: &Path) -> bool {
+    path.components().any(|component| {
+        let std::path::Component::Normal(name) = component else {
+            return true;
+        };
+        let name = name.to_string_lossy();
+        name.starts_with('.')
+            || matches!(
+                name.as_ref(),
+                "attachments" | "attachments-cache" | "node_modules"
+            )
+    })
 }
 
 /// 跟 `flowix-desktop::fs_watcher::normalize_for_compare` 同口径的路径归一。
@@ -200,7 +255,10 @@ impl MemoFile {
         }
     }
 
-    fn memo_base_for_notebook_id_result(&self, notebook_id: &str) -> Result<PathBuf, String> {
+    pub(crate) fn memo_base_for_notebook_id_result(
+        &self,
+        notebook_id: &str,
+    ) -> Result<PathBuf, String> {
         self.get_notebook_config_by_id(notebook_id)
             .map(|config| PathBuf::from(config.path))
             .ok_or_else(|| format!("notebook {notebook_id} not found"))

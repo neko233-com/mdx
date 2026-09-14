@@ -5,6 +5,7 @@ import Paragraph from "@tiptap/extension-paragraph";
 import Text from "@tiptap/extension-text";
 import { UndoRedo } from "@tiptap/extensions/undo-redo";
 import { Markdown } from "@tiptap/markdown";
+import { pushHandler } from "@/lib/shortcuts/handler-registry";
 
 import { selectAgentThreadCardSendButtonState } from "@features/agent/thread-card/agent-thread-card-selectors";
 import { getPersistableInputDraft } from "@features/agent/thread-card/composer/composer-draft";
@@ -15,6 +16,10 @@ import {
   ComposerSlashToken,
   composerSlashMarkdownToPrompt,
 } from "@features/agent/thread-card/composer/composer-slash-token";
+import {
+  ComposerSkillToken,
+  composerSkillMarkdownToPrompt,
+} from "@features/agent/thread-card/composer/composer-skill-token";
 import type {
   ComposerSlashCommand,
   ComposerSlashSkill,
@@ -23,6 +28,17 @@ import type { AgentTypeKey } from "@/types/agent";
 import { NoteReference } from "@features/editor/extensions/note-link";
 import type { MemoRef } from "@features/agent/thread-card/role/agent-role-picker-controller";
 import type { Root } from "react-dom/client";
+
+// Chromium/WebKit can expose modified cursor-navigation keys as a text input
+// containing an ASCII control character (for example Ctrl+Right may arrive as
+// U+001C in a Tauri WebView). These characters are never useful in an agent
+// prompt and otherwise become real ProseMirror text nodes.
+const composerControlCharacterPattern = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+const composerControlCharacterGlobalPattern = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+
+function removeComposerControlCharacters(value: string): string {
+  return value.replace(composerControlCharacterGlobalPattern, "");
+}
 
 export interface ComposerControllerOptions {
   input: HTMLDivElement;
@@ -40,7 +56,8 @@ export interface ComposerControllerOptions {
   getHasPendingAttachments: () => boolean;
   agentType?: AgentTypeKey;
   listDshSkills?: () => Promise<readonly ComposerSlashSkill[]>;
-  onDshModelSelect?: () => void;
+  listCodexSkills?: () => Promise<readonly ComposerSlashSkill[]>;
+  onModelSelect?: () => void;
   onPermissionSelect?: () => void;
   onDirectCommand?: (command: ComposerSlashCommand) => void;
   submit: () => void;
@@ -65,6 +82,7 @@ export class ComposerController {
   private readonly submit: () => void;
   private readonly stop: () => void;
   private readonly slashCommands: ComposerSlashCommandController;
+  private readonly removeSelectAllHandler: () => void;
 
   private isComposing = false;
   private historyCursor: number | null = null;
@@ -105,6 +123,7 @@ export class ComposerController {
           markedOptions: { gfm: true, breaks: true },
         }),
         NoteReference,
+        ComposerSkillToken,
         ComposerSlashToken.configure({
           onRemove: () => removeSlashToken?.(),
         }),
@@ -120,6 +139,11 @@ export class ComposerController {
         clipboardTextSerializer(content) {
           return content.content.textBetween(0, content.content.size, "\n", "");
         },
+        transformPastedText: (text) => removeComposerControlCharacters(text),
+        // Fallback for WebViews that skip beforeinput but still forward the
+        // resulting text through ProseMirror's text-input hook.
+        handleTextInput: (_view, _from, _to, text) =>
+          composerControlCharacterPattern.test(text),
       },
       onUpdate: () => this.handleEditorUpdate(),
     });
@@ -139,7 +163,8 @@ export class ComposerController {
       composer: this.composer,
       agentType: options.agentType,
       listDshSkills: options.listDshSkills,
-      onDshModelSelect: options.onDshModelSelect,
+      listCodexSkills: options.listCodexSkills,
+      onModelSelect: options.onModelSelect,
       onPermissionSelect: options.onPermissionSelect,
       onDirectCommand: options.onDirectCommand,
       onCommandChange: () => this.handleEditorUpdate(),
@@ -147,9 +172,18 @@ export class ComposerController {
     });
     removeSlashToken = () => this.slashCommands.removeSelectedToken();
 
+    // macOS routes Cmd+A through the native menu, bypassing the DOM keymap.
+    // Share its action while keeping selection scoped to the focused composer.
+    this.removeSelectAllHandler = pushHandler(
+      "editor.selectAll",
+      () => this.editor.commands.selectAll(),
+      { isActive: () => !this.disposed && !this.editor.isDestroyed && this.editor.view.hasFocus() },
+    );
+
     // Capture before ProseMirror's own keymap so plain Enter submits without
     // first inserting an empty paragraph into the composer document.
     this.input.addEventListener("keydown", this.handleKeydown, true);
+    this.input.addEventListener("beforeinput", this.handleBeforeInput, true);
     this.input.addEventListener("compositionstart", this.handleCompositionStart);
     this.input.addEventListener("compositionend", this.handleCompositionEnd);
     this.input.addEventListener("blur", this.handleBlur);
@@ -169,7 +203,7 @@ export class ComposerController {
     // hardBreak. Markdown serializes that node as `  \n`; the agent protocol
     // should receive the same newline the user entered, without Markdown's
     // visual line-break marker becoming part of the prompt.
-    return composerSlashMarkdownToPrompt(this.getDraftMarkdown())
+    return composerSkillMarkdownToPrompt(composerSlashMarkdownToPrompt(this.getDraftMarkdown()))
       .replace(/ {2}\n/g, "\n");
   }
 
@@ -309,7 +343,9 @@ export class ComposerController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.removeSelectAllHandler();
     this.input.removeEventListener("keydown", this.handleKeydown, true);
+    this.input.removeEventListener("beforeinput", this.handleBeforeInput, true);
     this.input.removeEventListener("compositionstart", this.handleCompositionStart);
     this.input.removeEventListener("compositionend", this.handleCompositionEnd);
     this.input.removeEventListener("blur", this.handleBlur);
@@ -395,6 +431,17 @@ export class ComposerController {
   private readonly handleKeydown = (event: KeyboardEvent): void => {
     if (this.isComposing || event.isComposing || event.keyCode === 229) return;
 
+    // The composer is a nested contenteditable inside the document editor.
+    // Horizontal cursor events belong to the nested composer, never to the
+    // document editor around the card. At either text boundary WebKit may let
+    // a repeated key escape the nested contenteditable and move focus to the
+    // parent editor. The key cannot move the composer cursor any further at
+    // that point, so cancelling its default action is intentional.
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      if (this.isAtComposerBoundary(event)) event.preventDefault();
+      event.stopPropagation();
+    }
+
     if (event.key === "ArrowUp" || event.key === "ArrowDown") {
       if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
       if (!this.shouldHandleHistoryKey(event.key)) return;
@@ -406,6 +453,33 @@ export class ComposerController {
     if (event.key !== "Enter" || event.shiftKey) return;
     event.preventDefault();
     this.submit();
+  };
+
+  private isAtComposerBoundary(event: KeyboardEvent): boolean {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return false;
+    const { selection, doc } = this.editor.state;
+    if (!selection.empty) return false;
+    return event.key === "ArrowLeft"
+      ? selection.from <= 1
+      : selection.to >= doc.content.size - 1;
+  }
+
+  private readonly handleBeforeInput = (event: InputEvent): void => {
+    if (this.isComposing || event.isComposing) return;
+    if (
+      event.inputType !== "insertText" &&
+      event.inputType !== "insertReplacementText"
+    ) {
+      return;
+    }
+
+    const data = event.data;
+    if (!data || !composerControlCharacterPattern.test(data)) return;
+
+    // The event is cancelled even when data contains other characters:
+    // browsers do not provide a portable way to replace beforeinput data without duplicating the
+    // editor transaction, and control-character input is always accidental.
+    event.preventDefault();
   };
 
   private readonly handleCompositionStart = (): void => {

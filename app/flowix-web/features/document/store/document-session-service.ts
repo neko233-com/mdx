@@ -1,5 +1,6 @@
 import {
   applyLoadedContent,
+  discardUnsavedLocalChanges,
   flushDocument,
   getBuffer,
   getCurrentIdentity,
@@ -7,6 +8,7 @@ import {
   getOrCreateBuffer,
   hasUnsavedLocalChanges,
   notifyDocumentBufferChanged,
+  rebaseCurrentDocumentPath,
   setCurrentDocument,
   type FlushCallbacks,
 } from '@features/document/store/buffer-registry';
@@ -186,6 +188,10 @@ export function hasDocumentUnsavedChanges(identity?: DocumentIdentity): boolean 
   return hasUnsavedLocalChanges(identity);
 }
 
+export function discardDocumentDraft(identity: DocumentIdentity): void {
+  discardUnsavedLocalChanges(identity);
+}
+
 export function applyLoadedDocumentContent(
   identity: DocumentIdentity,
   path: string,
@@ -197,4 +203,8 @@ export function applyLoadedDocumentContent(
 
 export function setActiveDocumentPath(identity: DocumentIdentity | null, path: string | null): void {
   setCurrentDocument(identity, path);
+}
+
+export function rebaseActiveDocumentPath(identity: DocumentIdentity, path: string): void {
+  rebaseCurrentDocumentPath(identity, path);
 }

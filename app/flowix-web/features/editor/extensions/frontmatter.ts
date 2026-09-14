@@ -16,6 +16,12 @@ const Frontmatter = Node.create({
   draggable: false,
   content: '',
 
+  addOptions() {
+    return {
+      memoId: undefined as string | undefined,
+    };
+  },
+
   addAttributes() {
     return {
       yamlContent: {
@@ -26,12 +32,17 @@ const Frontmatter = Node.create({
   },
 
   addNodeView() {
-    return ({ node, view, getPos }) => new FrontmatterPropertyNodeView(node, view, getPos);
+    return ({ node, view, getPos }) => new FrontmatterPropertyNodeView(
+      node,
+      view,
+      getPos,
+      this.options.memoId,
+    );
   },
 
   addKeyboardShortcuts() {
     return {
-      'Mod-a': () => selectBodyContent(this.editor, this.name),
+      'Mod-a': () => selectEditableDocumentContent(this.editor),
     };
   },
 
@@ -105,15 +116,21 @@ const Frontmatter = Node.create({
   },
 });
 
-function selectBodyContent(editor: Editor, frontmatterNodeName: string) {
+/**
+ * Select the user-editable document body while keeping the protected YAML
+ * frontmatter outside the selection. Documents without frontmatter use the
+ * editor's regular select-all command.
+ */
+export function selectEditableDocumentContent(editor: Editor): boolean {
   const { state, view } = editor;
   const firstNode = state.doc.firstChild;
-  if (firstNode?.type.name !== frontmatterNodeName) return false;
+  if (firstNode?.type.name !== Frontmatter.name) {
+    return editor.commands.selectAll();
+  }
 
   view.dispatch(
     state.tr
-      .setSelection(createSelectionAfterFrontmatter(state.doc, firstNode.nodeSize))
-      .scrollIntoView(),
+      .setSelection(createSelectionAfterFrontmatter(state.doc, firstNode.nodeSize)),
   );
   return true;
 }

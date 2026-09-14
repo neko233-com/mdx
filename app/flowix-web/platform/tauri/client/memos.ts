@@ -2,9 +2,11 @@ import { invoke } from '@tauri-apps/api/core';
 import type { MemoColor, MemoItem } from '@/types/memo-item';
 import type { MemoContentCommit } from '@/types/memo';
 import type { AgentRoleMemoItem } from './general';
+import type { NotebookImportStatus } from './agent';
+import type { ResolvedOpenTarget } from '@platform/open-target/types';
 
 export type FilterType = 'all' | 'todos' | 'agents' | 'favorited' | 'tagged' | 'thisWeek' | 'thisMonth';
-export type SortType = 'createdAt' | 'updatedAt';
+export type SortType = 'createdAt' | 'updatedAt' | 'filenameAsc' | 'filenameDesc';
 export type MemoColorFilter = 'any' | 'none' | MemoColor;
 
 export interface MemoListPage {
@@ -118,7 +120,20 @@ export const memos = {
     expectedContent: params.expectedContent,
   }),
   getLaunchOpenFiles: () => invoke<string[]>('get_launch_open_files'),
-  addDocument: (tag?: string, notebookId?: string) => invoke<MemoItem>('add_document', { tag, notebookId }),
+  addDocument: (tag?: string, notebookId?: string, parentRelativePath?: string) =>
+    invoke<MemoItem>('add_document', { tag, notebookId, parentRelativePath }),
+  moveMemoToDirectory: (id: string, notebookId: string, parentRelativePath: string) =>
+    invoke<{
+      memo: MemoItem;
+      oldPath: string;
+      path: string;
+    }>('move_memo_to_directory', { id, notebookId, parentRelativePath }),
+  renameMemoTitle: (params: { id: string; title: string; expectedFilename?: string }) =>
+    invoke<{ memo: MemoItem; oldPath: string; path: string }>('rename_memo_title', {
+      id: params.id,
+      title: params.title,
+      expectedFilename: params.expectedFilename,
+    }),
   listTemplates: () => invoke<MemoTemplate[]>('list_memo_templates'),
   saveTemplate: (title: string, content: string) =>
     invoke<MemoTemplate>('save_memo_template', { title, content }),
@@ -154,14 +169,10 @@ export const memos = {
   // `lib/openByTarget/listener.ts` 鐩戝惉 `flowix:open-target` 浜嬩欢 鈹€鈹€ 涓诲姩
   // 璋冪敤 (noteReference 鍙屽嚮 / Agent 宸ュ叿) 璧?await, 琚姩娲惧彂 (澶栭儴娣遍摼 /
   // single-instance 浜屾鍚姩) 璧颁簨浠躲€?涓ゆ潯璺緞姹囧悎鍒板悓涓€ `openNoteByTarget`銆?
-  openMemoByTarget: (raw: string, options?: { emitEvent?: boolean }) => invoke<{
-    memoId: string;
-    notebookId: string;
-    notebookName: string;
-    notebookPath: string;
-    absolutePath: string;
-    memoTitle: string;
-  } | null>('open_memo_by_target', { raw, emitEvent: options?.emitEvent ?? true }),
+  openMemoByTarget: (raw: string, options?: { emitEvent?: boolean }) => invoke<ResolvedOpenTarget | null>(
+    'open_memo_by_target',
+    { raw, emitEvent: options?.emitEvent ?? true },
+  ),
 };
 
 export type ExternalDocumentWriteOutcome =
@@ -249,6 +260,10 @@ export const notebooks = {
     invoke<NotebookRecord>('create_notebook', { name, path, icon }),
   createFromCloud: (id: string, name: string, path: string, icon?: string | null) =>
     invoke<NotebookRecord>('create_notebook_from_cloud', { id, name, path, icon }),
+  startImport: (notebookId: string) =>
+    invoke<void>('start_notebook_import', { notebookId }),
+  getImportStatus: (notebookId: string) =>
+    invoke<NotebookImportStatus | null>('get_notebook_import_status', { notebookId }),
   update: (id: string, name?: string, icon?: string | null) =>
     invoke<NotebookRecord | null>('update_notebook', { id, name, icon }),
   delete: (id: string) => invoke<boolean>('delete_notebook', { id }),

@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChatTeardropTextIcon, NoteIcon, type Icon } from '@phosphor-icons/react';
 import { Tooltip } from '@shared/ui/tooltip';
 import { useI18n, type I18nKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import messagesIcon from '@/assets/messages2-outline.svg?raw';
-import noteTextIcon from '@/assets/note-text-outline.svg?raw';
 
 export type MemoListViewTab = 'conversations' | 'notes';
 
@@ -27,26 +26,35 @@ interface MemoListViewTabsProps {
 const TABS: ReadonlyArray<{
   value: MemoListViewTab;
   labelKey: I18nKey;
-  icon: string;
+  icon: Icon;
 }> = [
   {
     value: 'notes',
     labelKey: 'memo.navigation.allNotes',
-    icon: noteTextIcon,
+    icon: NoteIcon,
   },
   {
     value: 'conversations',
     labelKey: 'memo.navigation.conversations',
-    icon: messagesIcon,
+    icon: ChatTeardropTextIcon,
   },
 ];
 
-function TabIcon({ src, className }: { src: string; className?: string }) {
+function TabIcon({
+  icon: IconComponent,
+  className,
+  weight,
+}: {
+  icon: Icon;
+  className?: string;
+  weight: 'regular' | 'fill';
+}) {
   return (
-    <span
+    <IconComponent
       aria-hidden="true"
-      className={cn('memo-list-view-tab-icon block h-4 w-4 object-contain opacity-50', className)}
-      dangerouslySetInnerHTML={{ __html: src }}
+      className={cn('memo-list-view-tab-icon h-4 w-4 opacity-50', className)}
+      size={16}
+      weight={weight}
     />
   );
 }
@@ -96,7 +104,7 @@ export function MemoListViewTabs({
             : 'translateX(0) translateY(-50%)',
         }}
       />
-      {TABS.map(({ value, labelKey, icon }) => {
+      {TABS.map(({ value, labelKey, icon: IconComponent }) => {
         const active = activeTab === value;
         const label = t(labelKey);
         const opensNavigation =
@@ -109,6 +117,13 @@ export function MemoListViewTabs({
             ? t('memo.navigation.closeDrawer')
             : t('memo.navigation.menuTitle')
           : label;
+        const activate = () => {
+          if (opensNavigation) {
+            onToggleNavigationDrawer?.();
+            return;
+          }
+          handleChange(value);
+        };
         return (
           <Tooltip key={value} content={buttonLabel} side="bottom" sideOffset={4}>
             <button
@@ -119,12 +134,18 @@ export function MemoListViewTabs({
               aria-label={buttonLabel}
               aria-expanded={opensNavigation ? navigationDrawerOpen : undefined}
               title={buttonLabel}
-              onClick={() => {
-                if (opensNavigation) {
-                  onToggleNavigationDrawer?.();
-                  return;
-                }
-                handleChange(value);
+              onPointerDown={(event) => {
+                // Leaving an edited BrowserColumn synchronously blurs and
+                // serializes its editor during the ancestor pointerdown. Run
+                // the tab intent before that focus transition can rerender the
+                // trigger and swallow the later click event.
+                if (event.isPrimary === false || event.button !== 0) return;
+                activate();
+              }}
+              onClick={(event) => {
+                // Pointer activation already ran on pointerdown. A detail of 0
+                // is the keyboard/assistive-technology click path.
+                if (event.detail === 0) activate();
               }}
               className={cn(
                 'group relative z-[1] flex h-6 w-6 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]',
@@ -143,7 +164,8 @@ export function MemoListViewTabs({
                   ) : (
                     <>
                       <TabIcon
-                        src={icon}
+                        icon={IconComponent}
+                        weight={active ? 'fill' : 'regular'}
                         className="absolute inset-0 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0"
                       />
                       <ChevronRight
@@ -154,7 +176,7 @@ export function MemoListViewTabs({
                   )}
                 </span>
               ) : (
-                <TabIcon src={icon} />
+                <TabIcon icon={IconComponent} weight={active ? 'fill' : 'regular'} />
               )}
             </button>
           </Tooltip>

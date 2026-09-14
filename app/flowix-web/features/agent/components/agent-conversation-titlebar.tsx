@@ -2,7 +2,12 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
-import { ArchiveIcon, FileTextIcon, TrashSimpleIcon } from '@phosphor-icons/react';
+import {
+  ArchiveIcon,
+  FileTextIcon,
+  LinkBreakIcon,
+  TrashSimpleIcon,
+} from '@phosphor-icons/react';
 
 import { useI18n } from '@/lib/i18n';
 import { isWindowsPlatform } from '@features/shortcuts';
@@ -160,17 +165,21 @@ function AgentConversationHeader({ instanceId }: { instanceId: string }) {
         </span>
       </span>
       {isEditingTitle ? (
-        <div className="min-w-0 flex-1 truncate text-sm font-semibold leading-none text-[var(--foreground)] [-webkit-app-region:no-drag]">
+        <div className="min-w-0 flex-[0_1_auto] truncate rounded px-0.5 py-1 text-sm font-semibold leading-none text-[var(--foreground)] transition-colors hover:bg-[var(--muted)] focus-within:bg-[var(--muted)] [-webkit-app-region:no-drag]">
           <input autoFocus value={titleDraft}
-            className="agent-thread-card__title-input h-[1em] w-full min-w-0 border-0 bg-transparent p-0 font-inherit leading-none text-[var(--foreground)] shadow-none outline-none ring-0 focus:border-0 focus:bg-transparent focus:outline-none focus:ring-0 [-webkit-app-region:no-drag]"
+            className="agent-thread-card__title-input h-auto max-w-full min-w-0 border-0 bg-transparent p-0 font-inherit leading-none text-[var(--foreground)] shadow-none outline-none ring-0 focus:border-0 focus:bg-transparent focus:outline-none focus:ring-0 [-webkit-app-region:no-drag]"
             onChange={(event) => setTitleDraft(event.target.value)} onBlur={commitTitle}
             onKeyDown={(event) => {
+              // Enter is also emitted while an IME is confirming its current
+              // candidate. Let the composition finish before allowing the
+              // title editor to commit and blur.
+              if (event.key === 'Enter' && (event.nativeEvent.isComposing || event.keyCode === 229)) return;
               if (event.key === 'Enter') { event.preventDefault(); commitTitle(); }
               if (event.key === 'Escape') setIsEditingTitle(false);
             }} />
         </div>
       ) : (
-        <div className="min-w-0 flex-[0_1_auto] truncate text-sm font-semibold leading-none text-[var(--foreground)]" onDoubleClick={() => {
+        <div className="min-w-0 flex-[0_1_auto] truncate rounded px-0.5 py-1 text-sm font-semibold leading-none text-[var(--foreground)] transition-colors hover:bg-[var(--muted)]" onDoubleClick={() => {
           setTitleDraft(instance.title?.trim() || '');
           setIsEditingTitle(true);
         }}>{presentation.title}</div>
@@ -182,8 +191,13 @@ function AgentConversationHeader({ instanceId }: { instanceId: string }) {
               <FileTextIcon className="h-4 w-4" />
             </button>
           </> : (
-            <span className="agent-thread-card__no-source text-[0.8125rem] leading-none text-[var(--muted-foreground)]" aria-label={t('document.agent.noSourceNote')}>
-              {t('document.agent.noSourceNote')}
+            <span
+              className="agent-thread-card__no-source"
+              role="img"
+              aria-label={t('document.agent.noSourceNote')}
+              title={t('document.agent.noSourceNote')}
+            >
+              <LinkBreakIcon className="agent-thread-card__fullscreen-icon" aria-hidden="true" />
             </span>
           )}
         <DropdownMenu>
@@ -214,6 +228,7 @@ function AgentConversationHeader({ instanceId }: { instanceId: string }) {
 }
 
 export function AgentConversationTitlebar({
+  reserveWindowsControls = true,
   instanceId,
   isMiddleColumnCollapsed,
   isSidebarVisible,
@@ -226,6 +241,7 @@ export function AgentConversationTitlebar({
   onNavigateForward,
 }: {
   instanceId: string;
+  reserveWindowsControls?: boolean;
   isMiddleColumnCollapsed: boolean;
   isSidebarVisible: boolean;
   onExpandSidebar: () => void;
@@ -245,27 +261,30 @@ export function AgentConversationTitlebar({
   return (
     <WorkColumnTitlebarShell
       isWindows={isWindows}
+      reserveWindowsControls={reserveWindowsControls}
       showTrafficLightSpacer={isMiddleColumnCollapsed && !isSidebarVisible}
       className="agent-conversation-titlebar"
     >
       <div className="flex shrink-0 items-center gap-1">
         {isMiddleColumnCollapsed && (
-          <button
-            type="button"
-            onClick={onExpandSidebar}
-            onMouseEnter={onSidebarPreviewEnter}
-            onMouseLeave={onSidebarPreviewLeave}
-            aria-label={t('document.titlebar.showSidebar')}
-            title={t('document.titlebar.showSidebarTooltip')}
-            className={`flex h-5 w-5 shrink-0 items-center justify-center text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] [-webkit-app-region:no-drag] ${
-              isWindows ? 'rounded-lg' : 'rounded-xl'
-            }`}
-          >
-            <SidebarToggleIcon
-              className={isWindows ? 'h-4 w-4' : 'h-5 w-5'}
-              variant="collapsed"
-            />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={onExpandSidebar}
+              onMouseEnter={onSidebarPreviewEnter}
+              onMouseLeave={onSidebarPreviewLeave}
+              aria-label={t('document.titlebar.showSidebar')}
+              title={t('document.titlebar.showSidebarTooltip')}
+              className={`flex h-5 w-5 shrink-0 items-center justify-center text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] [-webkit-app-region:no-drag] ${
+                isWindows ? 'rounded-lg' : 'rounded-xl'
+              }`}
+            >
+              <SidebarToggleIcon
+                className={isWindows ? 'h-4 w-4' : 'h-5 w-5'}
+                variant="collapsed"
+              />
+            </button>
+          </>
         )}
         <Tooltip content={t('document.titlebar.backTooltip')} shortcut="history.back">
           <button

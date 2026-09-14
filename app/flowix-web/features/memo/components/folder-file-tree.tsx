@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react';
 import { ChevronRight, FoldVertical, MoreHorizontal } from 'lucide-react';
 import { CaretRightIcon, FolderOpenIcon, FolderSimpleIcon } from '@phosphor-icons/react';
 import { toast } from '@/lib/toast';
@@ -35,6 +35,9 @@ const FOLDER_MENU_ITEM_CLASS =
   'h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]';
 const FOLDER_MENU_DIVIDER_CLASS = 'mx-1 my-1 h-px bg-[var(--border-popup)] opacity-60';
 
+type FileTreeFileIcon = ComponentType<{ path: string; className?: string }>;
+type FileTreeFolderIcon = ComponentType<{ expanded: boolean; className?: string }>;
+
 /** Unix epoch 毫秒 → "YYYY-MM-DD HH:mm" (本地时区)；null → "—"。 */
 function formatTimestamp(ms: number | null): string {
   if (ms === null) return '—';
@@ -68,7 +71,10 @@ export function FolderFileTree({
   layout = 'fill',
   treeViewportClassName,
   onFileSelect,
+  onFileOpenInNewTab,
   tree,
+  fileIcon: FileIcon = FileTypeIcon,
+  folderIcon: FolderIcon,
 }: {
   folderPath: string;
   folderName: string;
@@ -82,7 +88,11 @@ export function FolderFileTree({
   layout?: 'fill' | 'content';
   treeViewportClassName?: string;
   onFileSelect?: (filePath: string, scopePath: string) => void;
+  onFileOpenInNewTab?: (filePath: string) => void;
   tree: FolderTreeController;
+  /** Optional icon renderers let the resource tree use its own visual language. */
+  fileIcon?: FileTreeFileIcon;
+  folderIcon?: FileTreeFolderIcon;
 }) {
   const { t } = useI18n();
   const [showScrollTopHint, setShowScrollTopHint] = useState(false);
@@ -134,27 +144,20 @@ export function FolderFileTree({
     const trimmed = nextName.trim();
     setRenaming(null);
     if (!trimmed || trimmed === item.name) return;
-    // 后端没有 rename_file IPC; 走 read → write 新名 → delete 旧名。
-    // 文件树场景文件普遍不大, 全量读写可接受。
-    const targetPath = item.fullPath.slice(0, item.fullPath.lastIndexOf('/')) + '/' + trimmed;
     if (item.type === 'document') {
-      const content = await files.read(item.fullPath, folderPath);
-      if (content === null) {
-        toast.error(t('memo.fileTree.renameFailed'));
+      try {
+        await files.rename(item.fullPath, trimmed, folderPath);
+      } catch (error) {
+        toast.error(t(String(error).includes('FILE_EXISTS') ? 'memo.fileTree.nameConflict' : 'memo.fileTree.renameFailed'));
         return;
       }
-      const written = await files.write(targetPath, content, undefined, folderPath);
-      if (!written) {
-        toast.error(t('memo.fileTree.renameFailed'));
-        return;
-      }
-      await files.delete(item.fullPath, folderPath);
     } else {
       // folder 重命名需要递归拷贝, 首版不支持 ── 提示走 Finder。
       toast.info(t('memo.fileTree.renameFolderUnsupported'));
       return;
     }
-    const parent = item.fullPath.slice(0, item.fullPath.lastIndexOf('/'));
+    const normalizedPath = canonicalPath(item.fullPath);
+    const parent = normalizedPath.slice(0, normalizedPath.lastIndexOf('/'));
     await tree.refresh(parent || folderPath);
     toast.success(t('memo.fileTree.renamed', { name: trimmed }));
   }, [folderPath, t, tree]);
@@ -163,11 +166,16 @@ export function FolderFileTree({
     const trimmed = name.trim();
     setDraftRow(null);
     if (!trimmed) return;
-    const ok = kind === 'file'
-      ? await files.createDocument(parentPath, trimmed) !== null
-      : await files.createFolder(parentPath, trimmed) !== null;
-    if (!ok) {
-      toast.error(t('memo.fileTree.createFailed'));
+    try {
+      const created = kind === 'file'
+        ? await files.createDocument(parentPath, trimmed)
+        : await files.createFolder(parentPath, trimmed);
+      if (!created) {
+        toast.error(t('memo.fileTree.createFailed'));
+        return;
+      }
+    } catch (error) {
+      toast.error(t(String(error).includes('FILE_EXISTS') ? 'memo.fileTree.nameConflict' : 'memo.fileTree.createFailed'));
       return;
     }
     await tree.refresh(parentPath);
@@ -199,7 +207,7 @@ export function FolderFileTree({
     const openable = !isFolder;
     const isActive = !isFolder && !!activeFilePath
       && canonicalPath(activeFilePath) === canonicalPath(item.fullPath);
-    const FolderIcon = isExpanded ? FolderOpenIcon : FolderSimpleIcon;
+    const DefaultFolderIcon = isExpanded ? FolderOpenIcon : FolderSimpleIcon;
     const isRenamingRow = renaming?.item.id === item.id;
     const creationParentPath = isFolder
       ? item.fullPath
@@ -237,9 +245,16 @@ export function FolderFileTree({
               {isRenamingRow ? (
                 <>
                   {isFolder ? (
-                    <FolderIcon className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
+                    FolderIcon ? (
+                      <FolderIcon
+                        expanded={isExpanded}
+                        className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]"
+                      />
+                    ) : (
+                      <DefaultFolderIcon className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
+                    )
                   ) : (
-                    <FileTypeIcon
+                    <FileIcon
                       path={item.name}
                       className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]"
                     />
@@ -268,10 +283,17 @@ export function FolderFileTree({
                           isExpanded && 'rotate-90',
                         )}
                       />
-                      <FolderIcon className="absolute inset-0 h-4 w-4 text-[var(--muted-foreground)] transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0" />
+                      {FolderIcon ? (
+                        <FolderIcon
+                          expanded={isExpanded}
+                          className="absolute inset-0 h-4 w-4 text-[var(--muted-foreground)] transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0"
+                        />
+                      ) : (
+                        <DefaultFolderIcon className="absolute inset-0 h-4 w-4 text-[var(--muted-foreground)] transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0" />
+                      )}
                     </span>
                   ) : (
-                    <FileTypeIcon
+                    <FileIcon
                       path={item.name}
                       className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]"
                     />
@@ -358,6 +380,11 @@ export function FolderFileTree({
             </div>
           </ContextMenuTrigger>
           <ContextMenuContent className={FOLDER_MENU_CLASS}>
+            {!isFolder && onFileOpenInNewTab && (
+              <ContextMenuItem onClick={() => onFileOpenInNewTab(item.fullPath)} className={FOLDER_MENU_ITEM_CLASS}>
+                {t('memo.fileTree.openInNewTab')}
+              </ContextMenuItem>
+            )}
             <div className="select-text rounded-lg px-2 py-1 text-[11px] leading-[1.6] text-[var(--muted-foreground)]">
               <div className="flex items-center gap-0.5">
                 <span className="opacity-70">{t('memo.fileTree.createdAt')}</span>
@@ -408,7 +435,7 @@ export function FolderFileTree({
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
-        {isFolder && (
+        {isFolder && children.length > 0 && (
           <div
             className="folder-file-tree__subtree"
             data-expanded={isExpanded}
@@ -419,7 +446,7 @@ export function FolderFileTree({
           >
             <div className="folder-file-tree__subtree-inner">
               <div className="folder-file-tree__subtree-items">
-                {renderTreeItems(children, depth + 1)}
+                {isExpanded ? renderTreeItems(children, depth + 1) : null}
               </div>
             </div>
           </div>
@@ -436,7 +463,7 @@ export function FolderFileTree({
       embedded && 'border-l-0',
     )}>
       {/* 标题行 ── 标题右侧下拉菜单用于在访达中显示当前资料文件夹。 */}
-      <div className="flex items-center justify-between pl-3 pr-2 py-1.5 gap-2">
+      <div className="flex items-center justify-between px-2 py-1.5 gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-0">
           {embedded && onRequestClose && (
             <button
@@ -506,9 +533,16 @@ export function FolderFileTree({
                 }}
               >
                 {draftRow.kind === 'folder' ? (
-                  <FolderSimpleIcon className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
+                  FolderIcon ? (
+                    <FolderIcon
+                      expanded={false}
+                      className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]"
+                    />
+                  ) : (
+                    <FolderSimpleIcon className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
+                  )
                 ) : (
-                  <FileTypeIcon
+                  <FileIcon
                     path={draftRow.value}
                     className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]"
                   />

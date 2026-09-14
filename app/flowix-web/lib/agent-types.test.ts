@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { pickFirstAvailableAgent } from './agent-types';
+import {
+  isAlwaysVisibleNewConversationAgent,
+  pickFirstAvailableAgent,
+} from './agent-types';
 
 describe('pickFirstAvailableAgent', () => {
   it('uses the requested priority when several runtimes are available', () => {
@@ -32,4 +35,13 @@ describe('pickFirstAvailableAgent', () => {
       opencode: { available: false },
     })).toBeNull();
   });
+});
+
+describe('new conversation agent menu visibility', () => {
+  it.each(['deepseek-harness', 'codex', 'claude'] as const)(
+    'always shows %s even when its runtime is unavailable or unchecked',
+    (typeKey) => {
+      expect(isAlwaysVisibleNewConversationAgent(typeKey)).toBe(true);
+    },
+  );
 });

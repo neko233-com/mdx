@@ -217,7 +217,7 @@ describe("agent user and assistant Markdown rendering", () => {
 
     const firstBlockSelector =
       ".markdown-editor .ProseMirror:not(.agent-thread-card__composer-editor) " +
-      "> *:not(.editor-datetime-widget, .agent-thread-card):first-of-type";
+      "> *:not(.agent-thread-card, .frontmatter-property-node):first-of-type";
 
     expect(card.matches(firstBlockSelector)).toBe(false);
     expect(paragraph.matches(firstBlockSelector)).toBe(true);
@@ -345,6 +345,42 @@ describe("DSH goal control message rendering", () => {
     expect(result?.element.querySelector(
       ".agent-thread-card__message-goal-control",
     )?.textContent).toBe("目标执行中：在吗（第 1/256 轮）");
+  });
+});
+
+describe("Codex command rendering", () => {
+  it("shows native compact and goal commands on the user side", () => {
+    const elements = ["/compact", "/goal set ship it"].map((command) => {
+      const result = createAgentThreadCardMessageElement({
+        message: {
+          id: `codex-${command}`,
+          role: "user",
+          messageType: "codex-command",
+          content: command,
+          timestamp: new Date().toISOString(),
+          isLoading: command === "/compact",
+        },
+        language: "zh-CN",
+        getReasoningCollapsed: () => true,
+        setReasoningCollapsed: () => undefined,
+        getDisplayExpanded: () => false,
+        setDisplayExpanded: () => undefined,
+      });
+      if (!result) throw new Error(`Expected ${command} to render`);
+      return result.element;
+    });
+
+    expect(elements.map((element) => element.className)).toEqual([
+      "agent-thread-card__message agent-thread-card__message--user agent-thread-card__message--codex-command agent-thread-card__message--codex-command-loading",
+      "agent-thread-card__message agent-thread-card__message--user agent-thread-card__message--codex-command",
+    ]);
+    expect(elements.map((element) => element.querySelector(
+      ".agent-thread-card__message-codex-badge",
+    )?.textContent)).toEqual(["Codex", "Codex"]);
+    expect(elements.map((element) => element.textContent?.includes("/"))).toEqual([
+      true,
+      true,
+    ]);
   });
 });
 
@@ -519,5 +555,50 @@ describe("unified tool message rendering", () => {
     expect(result?.element.querySelector(
       ".agent-thread-card__message-tool-toggle",
     )).toBeNull();
+  });
+
+  it("renders one attachment chip per user-message image below the bubble", () => {
+    const result = createAgentThreadCardMessageElement({
+      message: {
+        id: "user-images",
+        role: "user",
+        content: "Inspect these images",
+        timestamp: new Date().toISOString(),
+        attachments: [
+          {
+            type: "input_image",
+            path: "/tmp/first.png",
+            name: "first.png",
+            mimeType: "image/png",
+            detail: "high",
+          },
+          {
+            type: "input_image",
+            path: "/tmp/second.jpg",
+            name: "second.jpg",
+            mimeType: "image/jpeg",
+            detail: "high",
+          },
+        ],
+      },
+      language: "zh-CN",
+      getReasoningCollapsed: () => true,
+      setReasoningCollapsed: () => undefined,
+      getDisplayExpanded: () => false,
+      setDisplayExpanded: () => undefined,
+    });
+
+    const element = result?.element;
+    const bubble = element?.querySelector(".agent-thread-card__message-user-bubble");
+    const attachments = element?.querySelector(".agent-thread-card__message-attachments");
+    expect(bubble?.textContent).toContain("Inspect these images");
+    expect(bubble?.contains(attachments ?? null)).toBe(false);
+    expect(attachments?.children).toHaveLength(2);
+    expect(attachments?.textContent).not.toContain("图片 1");
+    expect(attachments?.textContent).toBe("");
+    expect(attachments?.children[0].querySelector("img")).toBeNull();
+    expect(attachments?.children[0].getAttribute("aria-label")).toContain(
+      "/tmp/first.png",
+    );
   });
 });

@@ -98,6 +98,40 @@ fn notebook_json_is_migrated_to_index_db() {
 }
 
 #[test]
+fn notebook_registry_writes_portable_identity_manifest() {
+    let (_mf, root) = fresh_memo_file();
+    let manifest = MemoFile::read_notebook_manifest(&root)
+        .unwrap()
+        .expect("manifest should exist");
+    assert_eq!(manifest.notebook_id, "nb_test");
+    assert_eq!(manifest.format_version, MemoFile::NOTEBOOK_MANIFEST_VERSION);
+}
+
+#[test]
+fn notebook_manifest_refuses_a_conflicting_registry_identity() {
+    let (mf, root) = fresh_memo_file();
+    let conflicting = super::types::NotebookConfig {
+        id: "nb_other_identity".to_string(),
+        name: "Conflict".to_string(),
+        icon: None,
+        path: format!("{}/", root.display()),
+        is_default: false,
+        sort: 10,
+        created_at: 1,
+        updated_at: 1,
+    };
+    let error = mf.write_notebook_configs(&[conflicting]).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(
+        MemoFile::read_notebook_manifest(&root)
+            .unwrap()
+            .unwrap()
+            .notebook_id,
+        "nb_test"
+    );
+}
+
+#[test]
 fn selected_notebook_state_is_shared_and_rejects_unknown_ids() {
     let (mf, tmp) = fresh_memo_file();
     assert_eq!(mf.read_selected_notebook_id().unwrap(), None);
@@ -193,6 +227,182 @@ fn opening_legacy_index_creates_content_revision_table() {
         )
         .unwrap();
     assert_eq!(exists, 1);
+}
+
+#[test]
+fn pending_data_migrations_run_once_and_persist_version() {
+    let (mf, base) = fresh_memo_file();
+    fs::create_dir_all(base.join(".metadata/versions/note1")).unwrap();
+    fs::write(
+        base.join(".metadata/versions/note1/v_1.md"),
+        "legacy version",
+    )
+    .unwrap();
+
+    let first = mf.run_pending_data_migrations().unwrap();
+    assert_eq!(first.from_version, 0);
+    assert_eq!(first.to_version, super::LATEST_DATA_MIGRATION_VERSION);
+    assert_eq!(first.applied, super::LATEST_DATA_MIGRATION_VERSION as usize);
+    assert!(base.join(".flowix/versions/note1/v_1.md").is_file());
+    assert!(base.join(".flowix/notebook.json").is_file());
+
+    let second = mf.run_pending_data_migrations().unwrap();
+    assert_eq!(second.from_version, super::LATEST_DATA_MIGRATION_VERSION);
+    assert_eq!(second.to_version, super::LATEST_DATA_MIGRATION_VERSION);
+    assert_eq!(second.applied, 0);
+    assert_eq!(
+        mf.data_migration_version().unwrap(),
+        super::LATEST_DATA_MIGRATION_VERSION
+    );
+}
+
+#[test]
+fn pending_data_migrations_skip_unavailable_notebooks() {
+    let (mf, base) = fresh_memo_file();
+    let mut configs = mf.read_notebook_configs().unwrap();
+    configs.push(super::types::NotebookConfig {
+        id: "nb_offline".to_string(),
+        name: "Offline".to_string(),
+        icon: None,
+        path: base.join("missing-notebook").display().to_string(),
+        is_default: false,
+        sort: 10,
+        created_at: 1,
+        updated_at: 1,
+    });
+    mf.write_notebook_configs(&configs).unwrap();
+
+    let report = mf.run_pending_data_migrations().unwrap();
+    assert_eq!(report.to_version, super::LATEST_DATA_MIGRATION_VERSION);
+    assert!(base.join(".flowix/notebook.json").is_file());
+    assert!(!base.join("missing-notebook/.flowix").exists());
+}
+
+#[test]
+fn relative_path_migration_recovers_populated_replacement_table() {
+    let (mf, _tmp) = fresh_memo_file();
+    let memo = mf.create_memo("Recovered", "body", None).unwrap();
+
+    let conn = rusqlite::Connection::open(mf.get_index_db_path()).unwrap();
+    let state_before: i64 = conn
+        .query_row(
+            "SELECT last_updated FROM memo_index_state WHERE notebook_id = 'nb_test'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    conn.execute_batch(
+        r#"
+        PRAGMA foreign_keys = OFF;
+        DELETE FROM schema_migrations WHERE migration_key = 'memo_relative_paths_v1';
+        CREATE TABLE memos_relative_paths_v1 (
+            id TEXT PRIMARY KEY,
+            notebook_id TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            preview TEXT NOT NULL,
+            thumbnail TEXT,
+            thumbnail_checked INTEGER NOT NULL DEFAULT 0,
+            agents_checked INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            favorited INTEGER NOT NULL,
+            icon TEXT,
+            properties TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY(notebook_id) REFERENCES notebooks(id) ON DELETE CASCADE,
+            UNIQUE(notebook_id, relative_path)
+        );
+        INSERT INTO memos_relative_paths_v1 SELECT * FROM memos;
+        DELETE FROM memos;
+        PRAGMA foreign_keys = ON;
+        "#,
+    )
+    .unwrap();
+    drop(conn);
+
+    mf.invalidate_caches();
+    let recovered = mf.read_index().expect("half-migrated index should recover");
+    assert_eq!(recovered.memos.len(), 1);
+    assert_eq!(recovered.memos[0].id, memo.id);
+
+    let conn = rusqlite::Connection::open(mf.get_index_db_path()).unwrap();
+    let replacement_exists: i64 = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'memos_relative_paths_v1')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(replacement_exists, 0);
+    let marker_exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM schema_migrations WHERE migration_key = 'memo_relative_paths_v1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(marker_exists, 1);
+    let state_after: i64 = conn
+        .query_row(
+            "SELECT last_updated FROM memo_index_state WHERE notebook_id = 'nb_test'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(
+        state_after > state_before,
+        "recovery must invalidate caches"
+    );
+}
+
+#[test]
+fn late_revision_observation_cannot_overwrite_a_newer_commit() {
+    let (store, root) = fresh_memo_file();
+    let other = MemoFile::new(root.join("config"));
+    let first = store
+        .commit_memo_content_revision("memo", "nb_test", "old", "first")
+        .unwrap();
+    let newer = other
+        .commit_memo_content_revision("memo", "nb_test", "new", "second")
+        .unwrap();
+    assert!(store
+        .commit_memo_content_revision_if_current(
+            "memo",
+            "nb_test",
+            "old",
+            "late",
+            Some(&first.state)
+        )
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        store.read_memo_content_revision("memo").unwrap(),
+        Some(newer.state)
+    );
+}
+
+#[test]
+fn missing_revision_observation_cannot_replace_a_first_commit() {
+    let (store, _) = fresh_memo_file();
+    let first = store
+        .commit_memo_content_revision_if_current("memo", "nb_test", "first", "first", None)
+        .unwrap()
+        .unwrap();
+    assert!(store
+        .commit_memo_content_revision_if_current("memo", "nb_test", "stale", "late", None)
+        .unwrap()
+        .is_none());
+    let next = store
+        .commit_memo_content_revision_if_current(
+            "memo",
+            "nb_test",
+            "next",
+            "next",
+            Some(&first.state),
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(next.state.revision, first.state.revision + 1);
 }
 
 #[test]
@@ -320,6 +530,79 @@ fn register_existing_file_for_other_notebook_does_not_switch_current_notebook() 
         )
         .unwrap();
     assert_eq!(notebook_id, "nb_other");
+}
+
+#[test]
+fn importing_a_copy_with_a_cross_notebook_key_rekeys_the_file() {
+    let (mf, tmp) = fresh_memo_file();
+    let original = mf
+        .create_memo("Original", "# Original\nbody\n", None)
+        .unwrap();
+
+    let other_dir = tmp.join("other-import");
+    fs::create_dir_all(&other_dir).unwrap();
+    let mut configs = mf.read_notebook_configs().unwrap();
+    configs.push(super::types::NotebookConfig {
+        id: "nb_other".to_string(),
+        name: "Other".to_string(),
+        icon: None,
+        path: format!("{}/", other_dir.display()),
+        is_default: false,
+        sort: 1,
+        created_at: 1,
+        updated_at: 1,
+    });
+    mf.write_notebook_configs(&configs).unwrap();
+
+    let original_path = tmp.join(&original.filename);
+    let imported_path = other_dir.join("Imported.md");
+    fs::copy(&original_path, &imported_path).unwrap();
+    let imported = mf
+        .register_existing_file_for_notebook_id("nb_other", &imported_path)
+        .unwrap();
+
+    assert_ne!(imported.id, original.id);
+    assert_eq!(
+        crate::memo_file::extract_frontmatter_key(&fs::read_to_string(&imported_path).unwrap()),
+        Some(imported.id.clone())
+    );
+    assert!(mf
+        .read_memo_for_notebook_id("nb_test", &original.id)
+        .is_some());
+    assert!(mf
+        .read_memo_for_notebook_id("nb_other", &imported.id)
+        .is_some());
+}
+
+#[test]
+fn startup_reconcile_treats_a_copy_as_new_memo_when_original_still_exists() {
+    let (mf, base) = fresh_memo_file();
+    let original = mf
+        .create_memo("Original", "# Original\nbody\n", None)
+        .unwrap();
+    fs::copy(
+        base.join(&original.filename),
+        base.join("Copied from original.md"),
+    )
+    .unwrap();
+
+    let report = mf
+        .reconcile_notebook_with_disk_bidirectional("nb_test")
+        .unwrap();
+    assert_eq!(report.added, 1);
+    assert_eq!(report.removed, 0);
+
+    let copied = mf
+        .find_memo_by_relative_path("Copied from original.md")
+        .unwrap();
+    assert_ne!(copied.id, original.id);
+    assert_eq!(
+        crate::memo_file::extract_frontmatter_key(
+            &fs::read_to_string(base.join("Copied from original.md")).unwrap()
+        ),
+        Some(copied.id.clone())
+    );
+    assert!(base.join(&original.filename).exists());
 }
 
 #[test]
@@ -538,6 +821,39 @@ fn create_memo_writes_memo_row_to_index_db() {
 }
 
 #[test]
+fn reloading_a_memo_preserves_todo_metadata() {
+    let (mf, base) = fresh_memo_file();
+    let memo = mf
+        .create_memo("Todo metadata", "- [ ] keep this task\n", None)
+        .unwrap();
+    let conn = rusqlite::Connection::open(mf.get_index_db_path()).unwrap();
+    conn.execute(
+        "UPDATE memo_todos SET priority = 'high', time_range = 'tomorrow', owner = 'me', assignee = 'you', created_at = 11, updated_at = 12 WHERE memo_id = ?1 AND content = ?2",
+        rusqlite::params![memo.id, "keep this task"],
+    )
+    .unwrap();
+
+    let path = base.join(&memo.filename);
+    let content = fs::read_to_string(&path).unwrap();
+    fs::write(&path, format!("{content}\nextra\n")).unwrap();
+    mf.reload_memo_from_disk(&memo.id).unwrap();
+
+    let todos = mf
+        .read_todo_metadata_entries_for_notebook_id(Some("nb_test"), "createdAt")
+        .unwrap();
+    let todo = todos
+        .into_iter()
+        .find(|todo| todo.memo_id == memo.id)
+        .unwrap();
+    assert_eq!(todo.priority, "high");
+    assert_eq!(todo.time_range, "tomorrow");
+    assert_eq!(todo.owner, "me");
+    assert_eq!(todo.assignee, "you");
+    assert_eq!(todo.created_at, 11);
+    assert_eq!(todo.updated_at, 12);
+}
+
+#[test]
 fn write_index_persists_to_memos_table() {
     let (mf, _tmp) = fresh_memo_file();
     let list = MemoIndexFile {
@@ -546,10 +862,12 @@ fn write_index_persists_to_memos_table() {
         memos: vec![super::types::MemoIndexEntry {
             id: "abc123".to_string(),
             filename: "Legacy.md".to_string(),
+            relative_path: "Legacy.md".to_string(),
             preview: "Legacy".to_string(),
             thumbnail: Some("https://example.com/legacy.png".to_string()),
             tags: vec!["legacy".to_string()],
             todos: vec![super::types::TodoItem {
+                id: "todo-legacy".to_string(),
                 content: "todo".to_string(),
                 status: "pending".to_string(),
             }],
@@ -831,6 +1149,20 @@ fn rename_memo_renames_file_and_updates_list() {
     assert!(base.join("New.md").exists());
     let queried = mf.read_memo(&memo.id).expect("still in list");
     assert_eq!(queried.filename, "New.md");
+}
+
+#[test]
+fn rename_memo_preserves_nested_directory() {
+    let (mf, base) = fresh_memo_file();
+    let nested = base.join("projects/backend");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("Old.md"), "# Old\n").unwrap();
+    let memo = mf.register_existing_file(&nested.join("Old.md")).unwrap();
+
+    let updated = mf.rename_memo(&memo.id, "New").unwrap();
+    assert_eq!(updated.relative_path, "projects/backend/New.md");
+    assert!(!nested.join("Old.md").exists());
+    assert!(nested.join("New.md").exists());
 }
 
 #[test]
@@ -1117,6 +1449,26 @@ fn delete_memo_removes_file_and_index_entry() {
 }
 
 #[test]
+fn delete_memo_removes_version_history() {
+    let (mf, base) = fresh_memo_file();
+    let memo = mf.create_memo("Versioned delete", "x", None).unwrap();
+    let version = mf
+        .create_memo_version(&memo.id, "old body", super::MemoVersionSource::Manual)
+        .unwrap()
+        .unwrap();
+    let version_dir = base.join(".flowix/versions").join(&memo.id);
+    assert!(version_dir.join(format!("{}.md", version.id)).exists());
+    let legacy_dir = base.join(".metadata/versions").join(&memo.id);
+    fs::create_dir_all(&legacy_dir).unwrap();
+    fs::write(legacy_dir.join("legacy.md"), "legacy snapshot").unwrap();
+
+    assert!(mf.delete_memo_result(&memo.id).unwrap());
+    assert!(!version_dir.exists());
+    assert!(!legacy_dir.exists());
+    assert!(mf.read_memo(&memo.id).is_none());
+}
+
+#[test]
 fn delete_memo_handles_orphan_index_entry() {
     let (mf, base) = fresh_memo_file();
     let memo = mf.create_memo("Orphan", "x", None).unwrap();
@@ -1131,6 +1483,37 @@ fn delete_memo_handles_orphan_index_entry() {
 fn delete_memo_returns_false_when_unknown() {
     let (mf, _base) = fresh_memo_file();
     assert!(!mf.delete_memo("zzzzzz"));
+}
+
+#[test]
+fn version_cleanup_retains_recent_unknown_history() {
+    let (mf, base) = fresh_memo_file();
+    let orphan = base.join(".flowix/versions/abcdefgh");
+    fs::create_dir_all(&orphan).unwrap();
+    fs::write(
+        orphan.join("manifest.json"),
+        r#"{"version":1,"memoId":"abcdefgh","versions":[]}"#,
+    )
+    .unwrap();
+
+    let report = mf
+        .cleanup_orphan_memo_versions("nb_test", std::time::SystemTime::now())
+        .unwrap();
+    assert_eq!(report.retained_recent, 1);
+    assert!(orphan.exists());
+}
+
+#[test]
+fn deleting_last_version_removes_empty_history_directory_and_rejects_traversal() {
+    let (mf, base) = fresh_memo_file();
+    let memo = mf.create_memo("Version delete", "x", None).unwrap();
+    let version = mf
+        .create_memo_version(&memo.id, "old body", super::MemoVersionSource::Manual)
+        .unwrap()
+        .unwrap();
+    assert!(!mf.delete_memo_version(&memo.id, "../../outside"));
+    assert!(mf.delete_memo_version(&memo.id, &version.id));
+    assert!(!base.join(".flowix/versions").join(&memo.id).exists());
 }
 
 #[test]
@@ -1261,6 +1644,87 @@ fn reconcile_skips_metadata_dir() {
     fs::write(metadata.join("todo metadata"), "{}").unwrap();
     let added = mf.reconcile_with_disk().expect("reconcile ok");
     assert_eq!(added, 0, ".metadata/ should be skipped");
+}
+
+#[test]
+fn reconcile_registers_root_and_nested_markdown_files() {
+    let (mf, base) = fresh_memo_file();
+    fs::create_dir_all(base.join("projects/backend")).unwrap();
+    fs::create_dir_all(base.join("attachments/nested")).unwrap();
+    fs::write(base.join("Root.md"), "# Root\n").unwrap();
+    fs::write(base.join("projects/Same.md"), "# Frontend\n").unwrap();
+    fs::write(base.join("projects/backend/Same.md"), "# Backend\n").unwrap();
+    fs::write(base.join("attachments/nested/Ignored.md"), "# Ignored\n").unwrap();
+
+    let report = mf.reconcile_with_disk_bidirectional().unwrap();
+    assert_eq!(report.added, 3);
+
+    let mut paths = mf
+        .read_all_memos()
+        .into_iter()
+        .map(|memo| memo.relative_path)
+        .collect::<Vec<_>>();
+    paths.sort();
+    assert_eq!(
+        paths,
+        ["Root.md", "projects/Same.md", "projects/backend/Same.md"]
+    );
+    assert_eq!(
+        mf.read_all_memos()
+            .iter()
+            .filter(|memo| memo.filename == "Same.md")
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn reconcile_skips_hidden_paths_and_generated_directories() {
+    let (mf, base) = fresh_memo_file();
+    for directory in [
+        ".hidden",
+        "docs/.drafts",
+        "node_modules/pkg",
+        "attachments-cache",
+    ] {
+        fs::create_dir_all(base.join(directory)).unwrap();
+        fs::write(base.join(directory).join("Ignored.md"), "# Ignored\n").unwrap();
+    }
+    fs::write(base.join(".hidden-note.md"), "# Hidden\n").unwrap();
+    fs::create_dir_all(base.join("docs/public")).unwrap();
+    fs::write(base.join("docs/public/Visible.md"), "# Visible\n").unwrap();
+
+    let report = mf.reconcile_with_disk_bidirectional().unwrap();
+    assert_eq!(report.added, 1);
+    assert_eq!(
+        mf.read_all_memos()[0].relative_path,
+        "docs/public/Visible.md"
+    );
+}
+
+#[test]
+fn directory_reconcile_preserves_ids_after_nested_folder_rename() {
+    let (mf, base) = fresh_memo_file();
+    fs::create_dir_all(base.join("docs/guide")).unwrap();
+    fs::write(base.join("docs/guide/One.md"), "# One\n").unwrap();
+    fs::write(base.join("docs/guide/Two.md"), "# Two\n").unwrap();
+    mf.reconcile_with_disk_bidirectional().unwrap();
+    let ids = mf
+        .read_all_memos()
+        .into_iter()
+        .map(|memo| (memo.filename, memo.id))
+        .collect::<std::collections::HashMap<_, _>>();
+
+    fs::rename(base.join("docs/guide"), base.join("docs/manual")).unwrap();
+    let report = mf
+        .reconcile_notebook_with_disk_bidirectional("nb_test")
+        .unwrap();
+    assert_eq!(report.added, 2);
+    assert_eq!(report.removed, 0);
+    for memo in mf.read_all_memos() {
+        assert!(memo.relative_path.starts_with("docs/manual/"));
+        assert_eq!(ids.get(&memo.filename), Some(&memo.id));
+    }
 }
 
 #[test]
@@ -1520,11 +1984,9 @@ fn unregister_unknown_path_returns_false() {
 // =====================================================================
 
 #[test]
-fn sync_metadata_only_updates_list_without_disk_write() {
+fn sync_metadata_only_persists_markdown_and_rebuilds_index() {
     let (mf, base) = fresh_memo_file();
     let memo = mf.create_memo("Meta", "body\n", None).unwrap();
-    let before = fs::read_to_string(base.join("Meta.md")).unwrap();
-
     let mut updated = memo.clone();
     updated.favorited = true;
     updated.colors = vec![super::types::MemoColor::Red];
@@ -1534,9 +1996,16 @@ fn sync_metadata_only_updates_list_without_disk_write() {
     let queried = mf.read_memo(&memo.id).unwrap();
     assert!(queried.favorited);
     assert_eq!(queried.colors, vec![super::types::MemoColor::Red]);
-    // 物理文件没动
+    // Markdown is the source of truth for user-visible metadata.
     let after = fs::read_to_string(base.join("Meta.md")).unwrap();
-    assert_eq!(before, after);
+    assert!(after.contains("flowix_favorited: true"));
+    assert!(after.contains("flowix_colors: [\"red\"]"));
+
+    let path = base.join("Meta.md");
+    assert!(mf.unregister_memo_by_path(&path));
+    let rebuilt = mf.register_existing_file(&path).unwrap();
+    assert!(rebuilt.favorited);
+    assert_eq!(rebuilt.colors, vec![super::types::MemoColor::Red]);
 }
 
 // =====================================================================
@@ -3156,16 +3625,18 @@ fn tag_union_index_upgrade_rebuilds_index_without_touching_markdown() {
 
     memo.tags = vec!["yamltag".to_string()];
     mf.sync_metadata_only(&memo).unwrap();
+    let before_upgrade = fs::read_to_string(&path).unwrap();
     let updated = mf
         .ensure_tag_union_index_for_notebook_id("nb_test")
         .unwrap();
 
-    assert_eq!(updated, 1);
+    assert_eq!(updated, 0);
     assert_eq!(
         read_memo_tags(&mf, &memo.id),
         vec!["yamltag".to_string(), "bodytag".to_string()]
     );
-    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+    assert_ne!(before_upgrade, original);
+    assert_eq!(fs::read_to_string(&path).unwrap(), before_upgrade);
     assert_eq!(
         mf.ensure_tag_union_index_for_notebook_id("nb_test")
             .unwrap(),

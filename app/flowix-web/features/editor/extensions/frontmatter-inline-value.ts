@@ -126,6 +126,18 @@ export function createFrontmatterValueDisplay({
     return container;
   }
 
+  if (kind === 'List') {
+    const values = Array.isArray(value)
+      ? value.map(String)
+      : String(value ?? '').split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+    const list = createElement('ul', 'frontmatter-property__value-list');
+    values.forEach((item) => {
+      list.append(createElement('li', 'frontmatter-property__value-list-item', item));
+    });
+    container.append(list);
+    return container;
+  }
+
   const displayText = kind === 'Select' ? formatOptionLabel(text, t) : text;
   const label = createElement('span', 'frontmatter-property__value-text', displayText);
   if (kind === 'URL') label.classList.add('frontmatter-property__value-text--url');
@@ -149,6 +161,23 @@ function createTextControl({
   input.addEventListener('input', () => onChange(input.value));
   input.addEventListener('keydown', onKeyDown);
   return { dom: input, focus: () => input.focus() };
+}
+
+function createListControl({
+  value,
+  onChange,
+  onKeyDown,
+}: ValueControlOptions): FrontmatterValueControl {
+  const textarea = createElement(
+    'textarea',
+    'frontmatter-property__input frontmatter-property__value-input frontmatter-property__value-focus',
+  );
+  textarea.value = value;
+  textarea.rows = 3;
+  textarea.spellcheck = false;
+  textarea.addEventListener('input', () => onChange(textarea.value));
+  textarea.addEventListener('keydown', onKeyDown);
+  return { dom: textarea, focus: () => textarea.focus() };
 }
 
 function createDateControl({
@@ -430,6 +459,8 @@ export function createFrontmatterValueControl(
       return createSelectControl(config);
     case 'MultiSelect':
       return createMultiSelectControl(config);
+    case 'List':
+      return createListControl(config);
     case 'Number':
     case 'URL':
     case 'Text':

@@ -132,7 +132,8 @@ pub struct V2RemoteAttachment {
     pub content: Vec<u8>,
 }
 
-/// Collects only files referenced by this document's `asset://` links.
+/// Collects files referenced by legacy asset URLs, relative Markdown links,
+/// and Obsidian wiki embeds.
 /// `attachments/` is notebook-scoped storage, while cloud manifests must be
 /// document-scoped to avoid unrelated files causing sync churn.
 pub fn collect_v2_attachments(
@@ -152,10 +153,11 @@ pub fn collect_v2_attachments(
     let mut attachments = Vec::new();
     for path in referenced_attachment_paths(&directory, markdown) {
         let filename = path
-            .file_name()
+            .strip_prefix(&directory)
+            .ok()
             .and_then(|value| value.to_str())
             .unwrap_or_default()
-            .to_string();
+            .replace('\\', "/");
         if filename.is_empty() || filename.contains(['/', '\\']) {
             continue;
         }
@@ -182,7 +184,7 @@ pub fn collect_v2_attachments(
     Ok(attachments)
 }
 
-fn referenced_attachment_paths(directory: &Path, markdown: &[u8]) -> BTreeSet<PathBuf> {
+pub fn referenced_attachment_paths(directory: &Path, markdown: &[u8]) -> BTreeSet<PathBuf> {
     const PREFIXES: [&str; 3] = [
         "asset://localhost/",
         "http://asset.localhost/",
@@ -209,6 +211,38 @@ fn referenced_attachment_paths(directory: &Path, markdown: &[u8]) -> BTreeSet<Pa
             remaining = &encoded[end..];
             if remaining.is_empty() {
                 break;
+            }
+        }
+    }
+    let notebook_root = directory.parent().unwrap_or(directory);
+    let mut candidates = Vec::new();
+    let mut rest = source.as_ref();
+    while let Some(start) = rest.find("![[") {
+        let tail = &rest[start + 3..];
+        if let Some(end) = tail.find("]]") {
+            candidates.push(
+                tail[..end]
+                    .split('|')
+                    .next()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string(),
+            );
+            rest = &tail[end + 2..];
+        } else {
+            break;
+        }
+    }
+    for token in source.split_whitespace() {
+        let token = token.trim_matches(|c: char| matches!(c, '(' | ')' | '"' | '\'' | '<' | '>'));
+        if token.starts_with("./attachments/") || token.starts_with("attachments/") {
+            candidates.push(token.trim_start_matches("./").to_string());
+        }
+    }
+    for candidate in candidates {
+        if let Ok(path) = std::fs::canonicalize(notebook_root.join(candidate)) {
+            if path.starts_with(directory) && path.is_file() {
+                paths.insert(path);
             }
         }
     }
@@ -291,6 +325,7 @@ pub enum V2RemoteApply {
 
 #[derive(Debug, Clone, Default)]
 pub struct V2AccountSyncReport {
+    pub(crate) auth_generation: Option<u64>,
     pub started_at: i64,
     pub cursor: i64,
     pub head_cursor: i64,

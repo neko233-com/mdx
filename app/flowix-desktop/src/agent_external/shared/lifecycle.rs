@@ -226,8 +226,9 @@ pub async fn persist_external_chunk_for_thread_with_metadata(
     metadata: &AgentChunkMetadata,
 ) {
     // Provider-owned histories are read from their external data source. The
-    // local journal is retained only for Claude, whose product history still
-    // depends on it.
+    // local journal is retained only for Claude. Codex and DSH messages must
+    // come from their provider history APIs; their live chunks are runtime
+    // state only and must never become a second local transcript.
     if agent_type != "claude" {
         return;
     }
@@ -338,10 +339,14 @@ pub(crate) fn chunk_payload_value(
     Ok(payload)
 }
 
-/// Product-owned identity shared by Codex, Claude, Hermes and OpenCode.
-/// Provider ids remain in `source_message_id`; frontend and history only use
-/// this run-scoped canonical id. The function is intentionally idempotent so
-/// old and newly-normalized rows can pass through the same materializer.
+/// Product-owned identity shared by external runtimes.
+///
+/// Codex is intentionally different: its app-server `itemId` is already
+/// unique within a thread and is also the id returned by
+/// `thread/turns/list`. Keep that provider id unchanged so live notifications
+/// and history snapshots address the same rendered row. Other runtimes still
+/// need a run-scoped canonical id because their provider ids are not
+/// necessarily unique across a session.
 pub fn canonical_message_id(
     agent_type: &str,
     run_id: &str,
@@ -349,6 +354,9 @@ pub fn canonical_message_id(
     source_message_id: &str,
 ) -> String {
     if source_message_id.starts_with("msg:") {
+        return source_message_id.to_string();
+    }
+    if agent_type == "codex" && role != "error" {
         return source_message_id.to_string();
     }
     format!("msg:{agent_type}:{run_id}:{role}:{source_message_id}")
@@ -366,6 +374,7 @@ fn canonical_chunk_metadata(
         AgentChunk::Reasoning { .. } => ("reasoning", "stream".to_string()),
         AgentChunk::ToolCall { id, .. } | AgentChunk::ToolResult { id, .. } => ("tool", id.clone()),
         AgentChunk::DshCommand { id, .. } => ("dsh-command", id.clone()),
+        AgentChunk::CodexCommand { id, .. } => ("codex-command", id.clone()),
         AgentChunk::Error { .. } => ("error", "error".to_string()),
         _ => return canonical,
     };
@@ -373,7 +382,18 @@ fn canonical_chunk_metadata(
         .source_message_id
         .clone()
         .or_else(|| metadata.message_id.clone())
-        .unwrap_or(fallback_source);
+        .unwrap_or_else(|| {
+            // A real Codex item id is safe to use raw, but a missing item id
+            // must not fall back to the shared "stream" marker. Otherwise
+            // two runs on the same thread would address the same assistant
+            // row. Keep the synthetic path run-scoped and let the existing
+            // `msg:` idempotency guard preserve it end-to-end.
+            if agent_type == "codex" {
+                format!("msg:codex:{run_id}:{role}:{fallback_source}")
+            } else {
+                fallback_source
+            }
+        });
     canonical.source_message_id = Some(source.clone());
     canonical.message_id = Some(canonical_message_id(agent_type, run_id, role, &source));
     canonical

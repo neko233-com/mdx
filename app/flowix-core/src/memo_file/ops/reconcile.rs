@@ -1,7 +1,7 @@
 use super::*;
 
 impl MemoFile {
-    /// 启动 / 切 notebook 时调用: 扫当前 notebook 根目录 .md, 把 memo index 没记录的补进来。
+    /// 启动 / 切 notebook 时调用: 递归扫描 notebook 内 .md, 把 memo index 没记录的补进来。
     /// **不**重命名磁盘文件, 保留外部工具的句柄。
     /// 跳过 notebook 内部目录; 已在 memo index 里的 .md 跳过 (按 filename 精确比对)。
     pub fn reconcile_with_disk(&self) -> Result<usize, String> {
@@ -11,31 +11,30 @@ impl MemoFile {
         if !base.exists() {
             return Ok(0);
         }
-        let entries = match fs::read_dir(&base) {
-            Ok(e) => e,
-            Err(e) => return Err(format!("read_dir failed: {e}")),
-        };
+        let mut markdown_paths = Vec::new();
+        let _ = collect_markdown_paths(&base, &base, &mut markdown_paths)?;
 
-        let known_filenames: std::collections::HashSet<String> = self
+        let known_paths: std::collections::HashSet<String> = self
             .read_index()
-            .map(|l| l.memos.into_iter().map(|e| e.filename).collect())
+            .map(|l| {
+                l.memos
+                    .into_iter()
+                    .map(|e| {
+                        if e.relative_path.is_empty() {
+                            e.filename
+                        } else {
+                            e.relative_path
+                        }
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
 
         // 收齐所有候选文件, 排完序再批量注册, 减少锁反复获取。
         let mut to_register: Vec<PathBuf> = Vec::new();
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if !path.is_file() || !path.is_md() {
-                continue;
-            }
-            if is_internal_notebook_path(&path) {
-                continue;
-            }
-            let filename = match path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n.to_string(),
-                None => continue,
-            };
-            if known_filenames.contains(&filename) {
+        for path in markdown_paths {
+            let relative = notebook_relative_path(&base, &path)?;
+            if known_paths.contains(&relative) {
                 continue;
             }
             to_register.push(path);
@@ -84,37 +83,39 @@ impl MemoFile {
         }
 
         // 1. 单次 read_dir: 收齐磁盘上所有 .md 文件名 (跳过 `.metadata/`)
-        let disk_filenames: std::collections::HashSet<String> = match fs::read_dir(&base) {
-            Ok(rd) => rd
-                .filter_map(|e| e.ok())
-                .filter_map(|entry| {
-                    let path = entry.path();
-                    if !path.is_file() || !path.is_md() {
-                        return None;
-                    }
-                    if is_internal_notebook_path(&path) {
-                        return None;
-                    }
-                    path.file_name().and_then(|n| n.to_str()).map(String::from)
-                })
-                .collect(),
-            Err(e) => return Err(format!("read_dir failed: {e}")),
-        };
+        let mut markdown_paths = Vec::new();
+        let scan_complete = collect_markdown_paths(&base, &base, &mut markdown_paths)?;
+        if !scan_complete {
+            return Err("notebook scan incomplete; refusing to prune memo index".to_string());
+        }
+        let disk_paths: std::collections::HashSet<String> = markdown_paths
+            .iter()
+            .map(|path| notebook_relative_path(&base, path))
+            .collect::<Result<_, _>>()?;
 
         // 2. 读 memo index (锁内, 仅用作算 to_register; 注册后会再读一次)
         let initial_list = self.read_index().unwrap_or_default();
 
         // 3. 算「需要注册」的文件名集合
-        let to_register: Vec<String> = disk_filenames
+        let to_register: Vec<String> = disk_paths
             .iter()
-            .filter(|f| !initial_list.memos.iter().any(|e| &e.filename == *f))
+            .filter(|path| {
+                !initial_list.memos.iter().any(|e| {
+                    let indexed = if e.relative_path.is_empty() {
+                        &e.filename
+                    } else {
+                        &e.relative_path
+                    };
+                    indexed == *path
+                })
+            })
             .cloned()
             .collect();
 
         // 4. 串行注册新文件; 单条失败仅记 warn 不中断整批
         let mut added = 0usize;
         for filename in &to_register {
-            let path = base.join(filename);
+            let path = notebook_path_from_relative(&base, filename)?;
             match self.register_existing_file_locked(&path) {
                 Ok(_) => added += 1,
                 Err(e) => tracing::warn!(
@@ -128,8 +129,28 @@ impl MemoFile {
         //    rename_memo_file_locked) 已改写过磁盘, 局部 `initial_list` 已过时。
         //    基于磁盘最新状态算 prune 差集, 避免误删刚注册的 entry。
         let mut list = self.read_index().unwrap_or_default();
+        let removed_memos: Vec<Memo> = list
+            .memos
+            .iter()
+            .filter(|entry| {
+                let indexed = if entry.relative_path.is_empty() {
+                    &entry.filename
+                } else {
+                    &entry.relative_path
+                };
+                !disk_paths.contains(indexed)
+            })
+            .map(MemoFile::index_entry_to_memo)
+            .collect();
         let before = list.memos.len();
-        list.memos.retain(|e| disk_filenames.contains(&e.filename));
+        list.memos.retain(|e| {
+            let indexed = if e.relative_path.is_empty() {
+                &e.filename
+            } else {
+                &e.relative_path
+            };
+            disk_paths.contains(indexed)
+        });
         let removed = before - list.memos.len();
         if removed > 0 {
             list.last_updated = chrono::Utc::now().timestamp_millis();
@@ -137,7 +158,119 @@ impl MemoFile {
                 .map_err(|e| format!("write_index failed: {e}"))?;
         }
 
-        Ok(ReconcileReport { added, removed })
+        Ok(ReconcileReport {
+            added,
+            removed,
+            removed_memos,
+        })
+    }
+
+    /// Reconcile one configured notebook without changing the current
+    /// notebook selection. This is used by recursive file watchers when a
+    /// directory-level event does not contain individual child file events.
+    pub fn reconcile_notebook_with_disk_bidirectional(
+        &self,
+        notebook_id: &str,
+    ) -> Result<ReconcileReport, String> {
+        self.reconcile_notebook_with_disk_bidirectional_inner(notebook_id)
+    }
+
+    /// Reconcile a newly imported notebook. Every imported Markdown file gets
+    /// a Flowix frontmatter key; an existing conflicting key is re-keyed.
+    pub fn reconcile_notebook_with_disk_bidirectional_for_import(
+        &self,
+        notebook_id: &str,
+    ) -> Result<ReconcileReport, String> {
+        self.reconcile_notebook_with_disk_bidirectional_inner(notebook_id)
+    }
+
+    fn reconcile_notebook_with_disk_bidirectional_inner(
+        &self,
+        notebook_id: &str,
+    ) -> Result<ReconcileReport, String> {
+        let base = self.memo_base_for_notebook_id_result(notebook_id)?;
+        if !base.exists() {
+            return Ok(ReconcileReport::default());
+        }
+
+        let mut markdown_paths = Vec::new();
+        let scan_complete = collect_markdown_paths(&base, &base, &mut markdown_paths)?;
+        if !scan_complete {
+            return Err("notebook scan incomplete; refusing to prune memo index".to_string());
+        }
+        let disk_paths: std::collections::HashSet<String> = markdown_paths
+            .iter()
+            .map(|path| notebook_relative_path(&base, path))
+            .collect::<Result<_, _>>()?;
+        let initial = self
+            .read_index_for_notebook_id(Some(notebook_id))
+            .map_err(|error| format!("read_index failed: {error}"))?
+            .unwrap_or_default();
+        let known: std::collections::HashSet<String> = initial
+            .memos
+            .iter()
+            .map(|entry| {
+                if entry.relative_path.is_empty() {
+                    entry.filename.clone()
+                } else {
+                    entry.relative_path.clone()
+                }
+            })
+            .collect();
+
+        let mut added = 0;
+        for relative_path in disk_paths.difference(&known) {
+            let path = notebook_path_from_relative(&base, relative_path)?;
+            let registered = self.register_existing_file_for_notebook_id(notebook_id, &path);
+            match registered {
+                Ok(_) => added += 1,
+                Err(error) => tracing::warn!(
+                    notebook_id,
+                    relative_path,
+                    %error,
+                    "directory reconciliation could not register note"
+                ),
+            }
+        }
+
+        let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
+        let mut current = self
+            .read_index_for_notebook_id(Some(notebook_id))
+            .map_err(|error| format!("read_index failed: {error}"))?
+            .unwrap_or_default();
+        let removed_memos: Vec<Memo> = current
+            .memos
+            .iter()
+            .filter(|entry| {
+                let relative_path = if entry.relative_path.is_empty() {
+                    &entry.filename
+                } else {
+                    &entry.relative_path
+                };
+                !disk_paths.contains(relative_path)
+            })
+            .map(MemoFile::index_entry_to_memo)
+            .collect();
+        let before = current.memos.len();
+        current.memos.retain(|entry| {
+            let relative_path = if entry.relative_path.is_empty() {
+                &entry.filename
+            } else {
+                &entry.relative_path
+            };
+            disk_paths.contains(relative_path)
+        });
+        let removed = before - current.memos.len();
+        if removed > 0 {
+            current.last_updated = chrono::Utc::now().timestamp_millis();
+            self.write_index_for_notebook_id(notebook_id, &current)
+                .map_err(|error| format!("write_index failed: {error}"))?;
+        }
+        Ok(ReconcileReport {
+            added,
+            removed,
+            removed_memos,
+        })
     }
 
     /// 重新读 .md 派生 preview / tags / todos, 同步到 memo index。
@@ -149,33 +282,35 @@ impl MemoFile {
             return Ok(ReconcileReport::default());
         }
 
-        let disk_filenames: std::collections::HashSet<String> = match fs::read_dir(&base) {
-            Ok(rd) => rd
-                .filter_map(|e| e.ok())
-                .filter_map(|entry| {
-                    let path = entry.path();
-                    if !path.is_file() || !path.is_md() {
-                        return None;
-                    }
-                    if is_internal_notebook_path(&path) {
-                        return None;
-                    }
-                    path.file_name().and_then(|n| n.to_str()).map(String::from)
-                })
-                .collect(),
-            Err(e) => return Err(format!("read_dir failed: {e}")),
-        };
+        let mut markdown_paths = Vec::new();
+        let scan_complete = collect_markdown_paths(&base, &base, &mut markdown_paths)?;
+        if !scan_complete {
+            return Err("notebook scan incomplete; refusing to prune memo index".to_string());
+        }
+        let disk_paths: std::collections::HashSet<String> = markdown_paths
+            .iter()
+            .map(|path| notebook_relative_path(&base, path))
+            .collect::<Result<_, _>>()?;
 
         let initial_list = self.read_index().unwrap_or_default();
-        let to_register: Vec<String> = disk_filenames
+        let to_register: Vec<String> = disk_paths
             .iter()
-            .filter(|f| !initial_list.memos.iter().any(|e| &e.filename == *f))
+            .filter(|path| {
+                !initial_list.memos.iter().any(|e| {
+                    let indexed = if e.relative_path.is_empty() {
+                        &e.filename
+                    } else {
+                        &e.relative_path
+                    };
+                    indexed == *path
+                })
+            })
             .cloned()
             .collect();
 
         let mut added = 0usize;
         for filename in &to_register {
-            let path = base.join(filename);
+            let path = notebook_path_from_relative(&base, filename)?;
             match self.register_existing_file_as_new_locked(&path) {
                 Ok(_) => added += 1,
                 Err(e) => tracing::warn!(
@@ -187,7 +322,14 @@ impl MemoFile {
 
         let mut list = self.read_index().unwrap_or_default();
         let before = list.memos.len();
-        list.memos.retain(|e| disk_filenames.contains(&e.filename));
+        list.memos.retain(|e| {
+            let indexed = if e.relative_path.is_empty() {
+                &e.filename
+            } else {
+                &e.relative_path
+            };
+            disk_paths.contains(indexed)
+        });
         let removed = before - list.memos.len();
         if removed > 0 {
             list.last_updated = chrono::Utc::now().timestamp_millis();
@@ -195,7 +337,11 @@ impl MemoFile {
                 .map_err(|e| format!("write_index failed: {e}"))?;
         }
 
-        Ok(ReconcileReport { added, removed })
+        Ok(ReconcileReport {
+            added,
+            removed,
+            removed_memos: Vec::new(),
+        })
     }
 
     pub fn reload_memo_from_disk(&self, id: &str) -> Result<Memo, String> {
@@ -222,13 +368,13 @@ impl MemoFile {
     ) -> Result<Memo, String> {
         let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
         let memo = self
-            .find_memo_by_filename_for_notebook_id(notebook_id, filename)
+            .find_memo_by_relative_path_for_notebook_id(notebook_id, filename)
             .ok_or_else(|| format!("memo with filename {filename} not in memo index"))?;
         self.reload_memo_inner_for_notebook_id_locked(notebook_id, memo)
     }
 
     pub(super) fn reload_memo_inner_locked(&self, mut memo: Memo) -> Result<Memo, String> {
-        let path = self.get_memo_base().join(&memo.filename);
+        let path = notebook_path_from_relative(&self.get_memo_base(), &memo.relative_path)?;
         let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
         memo.updated_at = chrono::Utc::now().timestamp_millis();
         apply_derived_memo_fields(&mut memo, &content);
@@ -242,9 +388,8 @@ impl MemoFile {
         notebook_id: &str,
         mut memo: Memo,
     ) -> Result<Memo, String> {
-        let path = self
-            .memo_base_for_notebook_id_result(notebook_id)?
-            .join(&memo.filename);
+        let base = self.memo_base_for_notebook_id_result(notebook_id)?;
+        let path = notebook_path_from_relative(&base, &memo.relative_path)?;
         let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
         memo.updated_at = chrono::Utc::now().timestamp_millis();
         apply_derived_memo_fields(&mut memo, &content);
@@ -262,10 +407,42 @@ impl MemoFile {
             .map(|e| MemoFile::index_entry_to_memo(&e))
     }
 
+    pub fn find_memo_by_relative_path(&self, relative_path: &str) -> Option<Memo> {
+        let list = self.read_index()?;
+        list.memos
+            .into_iter()
+            .find(|e| {
+                e.relative_path == relative_path
+                    || (e.relative_path.is_empty() && e.filename == relative_path)
+            })
+            .map(|e| MemoFile::index_entry_to_memo(&e))
+    }
+
+    pub fn find_memo_by_relative_path_for_notebook_id(
+        &self,
+        notebook_id: &str,
+        relative_path: &str,
+    ) -> Option<Memo> {
+        let list = self.read_index_for_notebook_id(Some(notebook_id)).ok()??;
+        list.memos
+            .into_iter()
+            .find(|e| {
+                e.relative_path == relative_path
+                    || (e.relative_path.is_empty() && e.filename == relative_path)
+            })
+            .map(|e| MemoFile::index_entry_to_memo(&e))
+    }
+
     /// 按 id 找 memo 物理文件绝对路径。文件可能已不在 (返回路径不保证存在)。
     pub fn find_memo_file_path(&self, id: &str) -> Option<PathBuf> {
         let location = self.resolve_memo_location(id).ok().flatten()?;
-        Some(PathBuf::from(location.notebook.path).join(location.memo.filename))
+        Some(
+            notebook_path_from_relative(
+                &PathBuf::from(location.notebook.path),
+                &location.memo.relative_path,
+            )
+            .ok()?,
+        )
     }
 
     /// 按 filename 拼绝对路径。
@@ -273,11 +450,56 @@ impl MemoFile {
         self.get_memo_base().join(filename)
     }
 
-    /// 同步 memo index 中某条 memo 的非文件字段 (favorited / colors / icon 等)。
-    /// 不动磁盘文件, 不重写派生字段 (preview / tags / todos)。
+    fn persist_memo_metadata_to_markdown(
+        &self,
+        notebook_id: &str,
+        memo: &Memo,
+    ) -> std::io::Result<Memo> {
+        let base = self
+            .memo_base_for_notebook_id_result(notebook_id)
+            .map_err(std::io::Error::other)?;
+        let path = notebook_path_from_relative(&base, &memo.relative_path)
+            .map_err(std::io::Error::other)?;
+        let content = fs::read_to_string(&path)?;
+        let content = replace_frontmatter_tags(&content, &memo.tags)
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+        let colors = serde_json::to_string(&memo.colors).map_err(std::io::Error::other)?;
+        let icon = serde_json::to_string(&memo.icon).map_err(std::io::Error::other)?;
+        let mut overrides: MergeOverrides = [
+            ("flowix_favorited".to_string(), memo.favorited.to_string()),
+            ("flowix_icon".to_string(), icon),
+            ("flowix_colors".to_string(), colors),
+        ]
+        .into_iter()
+        .collect();
+        if let serde_json::Value::Object(properties) = &memo.properties {
+            for (key, value) in properties {
+                if matches!(
+                    key.as_str(),
+                    "key" | "tag" | "tags" | "flowix_favorited" | "flowix_icon" | "flowix_colors"
+                ) {
+                    continue;
+                }
+                overrides.insert(
+                    key.clone(),
+                    serde_json::to_string(value).map_err(std::io::Error::other)?,
+                );
+            }
+        }
+        let updated_content = merge_frontmatter(&content, &overrides);
+        atomic_write_bytes(&path, updated_content.as_bytes())?;
+        let mut rebuilt = memo.clone();
+        apply_derived_memo_fields(&mut rebuilt, &updated_content);
+        Ok(rebuilt)
+    }
+
+    /// Persist user-visible metadata into Markdown frontmatter, then refresh
+    /// the derived SQLite cache. Deleting the cache must never lose metadata.
     pub fn sync_metadata_only(&self, memo: &Memo) -> std::io::Result<()> {
         let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
-        MemoFile::sync_index_on_write_locked(self, memo)
+        let notebook_id = self.current_notebook_id_for_index();
+        let rebuilt = self.persist_memo_metadata_to_markdown(&notebook_id, memo)?;
+        MemoFile::sync_index_on_write_locked(self, &rebuilt)
     }
 
     pub fn sync_metadata_only_global(&self, memo: &Memo) -> std::io::Result<()> {
@@ -286,7 +508,8 @@ impl MemoFile {
             .resolve_memo_location(&memo.id)?
             .map(|location| location.notebook.id)
             .unwrap_or_else(|| self.current_notebook_id_for_index());
-        MemoFile::sync_index_on_write_for_notebook_id_locked(self, &notebook_id, memo)
+        let rebuilt = self.persist_memo_metadata_to_markdown(&notebook_id, memo)?;
+        MemoFile::sync_index_on_write_for_notebook_id_locked(self, &notebook_id, &rebuilt)
     }
 
     /// 按绝对路径找 memo index entry 并移除 (memo index 同步)。物理文件删除由 caller 负责。
@@ -294,17 +517,16 @@ impl MemoFile {
     /// 规范化相等才删 (避免 rename 旧文件 Remove 事件误删 entry)。
     pub fn unregister_memo_by_path(&self, abs_path: &Path) -> bool {
         let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
-        let filename = abs_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(|s| s.to_string());
-        let Some(filename) = filename else {
+        let base = self.get_memo_base();
+        let Ok(relative_path) = notebook_relative_path(&base, abs_path) else {
             return false;
         };
-        let Some(memo) = self.find_memo_by_filename(&filename) else {
+        let Some(memo) = self.find_memo_by_relative_path(&relative_path) else {
             return false;
         };
-        let expected_abs = self.get_memo_base().join(&memo.filename);
+        let Ok(expected_abs) = notebook_path_from_relative(&base, &memo.relative_path) else {
+            return false;
+        };
         if normalize_for_compare(&expected_abs) != normalize_for_compare(abs_path) {
             tracing::debug!(
                 "[unregister_memo_by_path] refused: memo index entry.filename={} but abs_path={}",
@@ -322,20 +544,20 @@ impl MemoFile {
         abs_path: &Path,
     ) -> bool {
         let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
-        let filename = abs_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(|s| s.to_string());
-        let Some(filename) = filename else {
-            return false;
-        };
-        let Some(memo) = self.find_memo_by_filename_for_notebook_id(notebook_id, &filename) else {
-            return false;
-        };
         let Ok(base) = self.memo_base_for_notebook_id_result(notebook_id) else {
             return false;
         };
-        let expected_abs = base.join(&memo.filename);
+        let Ok(relative_path) = notebook_relative_path(&base, abs_path) else {
+            return false;
+        };
+        let Some(memo) =
+            self.find_memo_by_relative_path_for_notebook_id(notebook_id, &relative_path)
+        else {
+            return false;
+        };
+        let Ok(expected_abs) = notebook_path_from_relative(&base, &memo.relative_path) else {
+            return false;
+        };
         if normalize_for_compare(&expected_abs) != normalize_for_compare(abs_path) {
             // 对齐 Create 路径 (save_registered_memo) 的设计: filename 已在
             // notebook 内反查命中 = 唯一 memo, 此处 `normalize` 不一致多源自
@@ -370,17 +592,14 @@ impl MemoFile {
             .map_err(|e| format!("resolve memo location failed: {e}"))?
             .ok_or_else(|| format!("memo id not in index: {id}"))?;
 
-        let new_filename = new_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("invalid new path: {}", new_path.display()))?
-            .to_string();
         if !new_path.is_md() {
             return Err(format!("new path is not markdown: {}", new_path.display()));
         }
 
         let base = PathBuf::from(&location.notebook.path);
-        let expected_new_abs = base.join(&new_filename);
+        let new_relative_path = notebook_relative_path(&base, new_path)?;
+        let new_filename = filename_from_notebook_relative_path(&new_relative_path);
+        let expected_new_abs = notebook_path_from_relative(&base, &new_relative_path)?;
         if normalize_for_compare(&expected_new_abs) != normalize_for_compare(new_path) {
             return Err(format!(
                 "new path not under memo notebook base: {}",
@@ -388,9 +607,9 @@ impl MemoFile {
             ));
         }
 
-        let current_filename = location.memo.filename.clone();
-        if current_filename != new_filename {
-            let old_abs = base.join(&current_filename);
+        let current_relative_path = location.memo.relative_path.clone();
+        if current_relative_path != new_relative_path {
+            let old_abs = notebook_path_from_relative(&base, &current_relative_path)?;
             if old_abs.exists() {
                 return Err(format!(
                     "indexed file still exists; treating as copy instead of rename: {}",
@@ -406,7 +625,7 @@ impl MemoFile {
         if let Some(existing) = list
             .memos
             .iter()
-            .find(|entry| entry.filename == new_filename && entry.id != id)
+            .find(|entry| entry.relative_path == new_relative_path && entry.id != id)
         {
             return Err(format!(
                 "new filename already occupied by another memo (id={})",
@@ -418,6 +637,7 @@ impl MemoFile {
             .map_err(|e| format!("failed to read new path {}: {e}", new_path.display()))?;
         let mut memo = MemoFile::index_entry_to_memo(&location.memo);
         memo.filename = new_filename;
+        memo.relative_path = new_relative_path;
         apply_derived_memo_fields(&mut memo, &content);
         memo.updated_at = chrono::Utc::now().timestamp_millis();
 
@@ -437,17 +657,14 @@ impl MemoFile {
             .read_memo_for_notebook_id(notebook_id, id)
             .ok_or_else(|| format!("memo id not in notebook {notebook_id}: {id}"))?;
 
-        let new_filename = new_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("invalid new path: {}", new_path.display()))?
-            .to_string();
         if !new_path.is_md() {
             return Err(format!("new path is not markdown: {}", new_path.display()));
         }
 
         let base = self.memo_base_for_notebook_id_result(notebook_id)?;
-        let expected_new_abs = base.join(&new_filename);
+        let new_relative_path = notebook_relative_path(&base, new_path)?;
+        let new_filename = filename_from_notebook_relative_path(&new_relative_path);
+        let expected_new_abs = notebook_path_from_relative(&base, &new_relative_path)?;
         if normalize_for_compare(&expected_new_abs) != normalize_for_compare(new_path) {
             return Err(format!(
                 "new path not under memo notebook base: {}",
@@ -455,8 +672,8 @@ impl MemoFile {
             ));
         }
 
-        if existing.filename != new_filename {
-            let old_abs = base.join(&existing.filename);
+        if existing.relative_path != new_relative_path {
+            let old_abs = notebook_path_from_relative(&base, &existing.relative_path)?;
             if old_abs.exists() {
                 return Err(format!(
                     "indexed file still exists; treating as copy instead of rename: {}",
@@ -472,7 +689,7 @@ impl MemoFile {
         if let Some(occupied) = list
             .memos
             .iter()
-            .find(|entry| entry.filename == new_filename && entry.id != id)
+            .find(|entry| entry.relative_path == new_relative_path && entry.id != id)
         {
             return Err(format!(
                 "new filename already occupied by another memo (id={})",
@@ -484,6 +701,7 @@ impl MemoFile {
             .map_err(|e| format!("failed to read new path {}: {e}", new_path.display()))?;
         let mut memo = existing;
         memo.filename = new_filename;
+        memo.relative_path = new_relative_path;
         apply_derived_memo_fields(&mut memo, &content);
         memo.updated_at = chrono::Utc::now().timestamp_millis();
 
@@ -511,27 +729,19 @@ impl MemoFile {
     pub fn rename_memo_file(&self, old_path: &Path, new_path: &Path) -> Result<Memo, String> {
         let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
 
-        let old_filename = old_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("invalid old path: {}", old_path.display()))?
-            .to_string();
-        let new_filename = new_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("invalid new path: {}", new_path.display()))?
-            .to_string();
+        let base = self.get_memo_base();
+        let old_relative_path = notebook_relative_path(&base, old_path)?;
+        let new_relative_path = notebook_relative_path(&base, new_path)?;
 
         // 1. 找旧 entry
-        let mut memo = match self.find_memo_by_filename(&old_filename) {
+        let mut memo = match self.find_memo_by_relative_path(&old_relative_path) {
             Some(m) => m.clone(),
-            None => return Err(format!("old filename not in memo index: {old_filename}")),
+            None => return Err(format!("old path not in memo index: {old_relative_path}")),
         };
         let id = memo.id.clone();
 
         // 2. 旧路径在不在当前 notebook base 下 (规范化检查)
-        let base = self.get_memo_base();
-        let expected_old_abs = base.join(&old_filename);
+        let expected_old_abs = notebook_path_from_relative(&base, &old_relative_path)?;
         if normalize_for_compare(&expected_old_abs) != normalize_for_compare(old_path) {
             return Err(format!(
                 "old path not under notebook base: {}",
@@ -545,7 +755,7 @@ impl MemoFile {
         }
 
         // 4. new_filename 不能已在 memo index (会跟另一条 entry 撞名)
-        if let Some(existing) = self.find_memo_by_filename(&new_filename) {
+        if let Some(existing) = self.find_memo_by_relative_path(&new_relative_path) {
             if existing.id != id {
                 return Err(format!(
                     "new filename already occupied by another memo (id={})",
@@ -556,8 +766,9 @@ impl MemoFile {
 
         // 5. 改 entry.filename + 重新派生 preview / tags / todos (frontmatter 跟着物理文件
         //    一起被 mv 搬过来了, 重新读)
-        memo.filename = new_filename.clone();
-        let new_abs = base.join(&new_filename);
+        memo.filename = filename_from_notebook_relative_path(&new_relative_path);
+        memo.relative_path = new_relative_path;
+        let new_abs = notebook_path_from_relative(&base, &memo.relative_path)?;
         let content = std::fs::read_to_string(&new_abs)
             .map_err(|e| format!("failed to read new path {}: {e}", new_abs.display()))?;
         apply_derived_memo_fields(&mut memo, &content);
@@ -580,32 +791,84 @@ impl MemoFile {
         self.rename_memo_file_for_notebook_id_locked(notebook_id, old_path, new_path)
     }
 
+    /// Move one indexed memo into an existing notebook directory while keeping
+    /// its frontmatter key and memo id unchanged.
+    pub fn move_memo_to_directory_for_notebook_id(
+        &self,
+        notebook_id: &str,
+        memo_id: &str,
+        parent_relative_path: &str,
+    ) -> Result<(Memo, PathBuf, PathBuf), String> {
+        let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
+        let base = self.memo_base_for_notebook_id_result(notebook_id)?;
+        let memo = self
+            .read_memo_for_notebook_id(notebook_id, memo_id)
+            .ok_or_else(|| format!("memo id not in notebook {notebook_id}: {memo_id}"))?;
+        let old_path = notebook_path_from_relative(&base, &memo.relative_path)?;
+        let parent = if parent_relative_path.trim().is_empty() {
+            base.clone()
+        } else {
+            notebook_path_from_relative(&base, parent_relative_path)?
+        };
+        if !parent.is_dir() {
+            return Err(format!(
+                "memo destination directory does not exist: {}",
+                parent.display()
+            ));
+        }
+        let destination_relative = if parent_relative_path.trim().is_empty() {
+            memo.filename.clone()
+        } else {
+            format!(
+                "{parent_relative_path}/{filename}",
+                filename = memo.filename
+            )
+        };
+        if !parent_relative_path.trim().is_empty()
+            && is_internal_notebook_path(Path::new(parent_relative_path))
+        {
+            return Err("memo destination is an internal notebook directory".to_string());
+        }
+        let new_path = notebook_path_from_relative(&base, &destination_relative)?;
+        if old_path == new_path {
+            return Ok((memo, old_path, new_path));
+        }
+        if new_path.exists() {
+            return Err(format!(
+                "FILE_EXISTS: destination file already exists: {}",
+                new_path.display()
+            ));
+        }
+
+        fs::rename(&old_path, &new_path).map_err(|error| format!("move memo failed: {error}"))?;
+        match self.rename_memo_file_for_notebook_id_locked(notebook_id, &old_path, &new_path) {
+            Ok(moved) => Ok((moved, old_path, new_path)),
+            Err(error) => {
+                let _ = fs::rename(&new_path, &old_path);
+                Err(error)
+            }
+        }
+    }
+
     pub(super) fn rename_memo_file_for_notebook_id_locked(
         &self,
         notebook_id: &str,
         old_path: &Path,
         new_path: &Path,
     ) -> Result<Memo, String> {
-        let old_filename = old_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("invalid old path: {}", old_path.display()))?
-            .to_string();
-        let new_filename = new_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("invalid new path: {}", new_path.display()))?
-            .to_string();
+        let base = self.memo_base_for_notebook_id_result(notebook_id)?;
+        let old_relative_path = notebook_relative_path(&base, old_path)?;
+        let new_relative_path = notebook_relative_path(&base, new_path)?;
 
-        let mut memo = match self.find_memo_by_filename_for_notebook_id(notebook_id, &old_filename)
+        let mut memo = match self
+            .find_memo_by_relative_path_for_notebook_id(notebook_id, &old_relative_path)
         {
             Some(m) => m,
-            None => return Err(format!("old filename not in memo index: {old_filename}")),
+            None => return Err(format!("old path not in memo index: {old_relative_path}")),
         };
         let id = memo.id.clone();
 
-        let base = self.memo_base_for_notebook_id_result(notebook_id)?;
-        let expected_old_abs = base.join(&old_filename);
+        let expected_old_abs = notebook_path_from_relative(&base, &old_relative_path)?;
         if normalize_for_compare(&expected_old_abs) != normalize_for_compare(old_path) {
             return Err(format!(
                 "old path not under notebook base: {}",
@@ -618,7 +881,7 @@ impl MemoFile {
         }
 
         if let Some(existing) =
-            self.find_memo_by_filename_for_notebook_id(notebook_id, &new_filename)
+            self.find_memo_by_relative_path_for_notebook_id(notebook_id, &new_relative_path)
         {
             if existing.id != id {
                 return Err(format!(
@@ -628,8 +891,9 @@ impl MemoFile {
             }
         }
 
-        memo.filename = new_filename.clone();
-        let new_abs = base.join(&new_filename);
+        memo.filename = filename_from_notebook_relative_path(&new_relative_path);
+        memo.relative_path = new_relative_path;
+        let new_abs = notebook_path_from_relative(&base, &memo.relative_path)?;
         let content = std::fs::read_to_string(&new_abs)
             .map_err(|e| format!("failed to read new path {}: {e}", new_abs.display()))?;
         apply_derived_memo_fields(&mut memo, &content);
@@ -642,11 +906,59 @@ impl MemoFile {
 }
 
 fn is_internal_notebook_path(path: &Path) -> bool {
-    path.components().any(|component| {
-        matches!(
-            component,
-            std::path::Component::Normal(name)
-                if name == ".flowix" || name == ".metadata" || name == ".plugin-output"
-        )
-    })
+    is_ignored_notebook_relative_path(path)
+}
+
+fn collect_markdown_paths(
+    base: &Path,
+    directory: &Path,
+    output: &mut Vec<PathBuf>,
+) -> Result<bool, String> {
+    let entries = fs::read_dir(directory).map_err(|e| format!("read_dir failed: {e}"))?;
+    let mut complete = true;
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                complete = false;
+                tracing::warn!(
+                    path = %directory.display(),
+                    %error,
+                    "failed to read notebook directory entry"
+                );
+                continue;
+            }
+        };
+        let path = entry.path();
+        if is_internal_notebook_path(path.strip_prefix(base).unwrap_or(&path)) {
+            continue;
+        }
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) => {
+                complete = false;
+                tracing::warn!(path = %path.display(), %error, "failed to inspect notebook entry");
+                continue;
+            }
+        };
+        if file_type.is_dir() {
+            match collect_markdown_paths(base, &path, output) {
+                Ok(child_complete) => complete &= child_complete,
+                Err(error) => {
+                    complete = false;
+                    tracing::warn!(
+                        path = %path.display(),
+                        %error,
+                        "skipping unreadable notebook subdirectory"
+                    );
+                }
+            }
+        } else if file_type.is_file() && path.is_md() {
+            output.push(path);
+        }
+    }
+    if directory == base {
+        output.sort();
+    }
+    Ok(complete)
 }

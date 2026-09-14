@@ -76,7 +76,8 @@ export type PropertyFieldType =
   | 'URL'
   | 'Icon'
   | 'Select'
-  | 'MultiSelect';
+  | 'MultiSelect'
+  | 'List';
 
 export interface PropertyFieldConfig {
   key: string;
@@ -89,7 +90,7 @@ export interface PropertiesConfig {
   fields: PropertyFieldConfig[];
 }
 
-export type MemoCardVariant = 'detailed' | 'compact';
+export type MemoListView = 'detailed' | 'folders';
 
 export interface AgentsConfig {
   enabledByType: Partial<Record<AgentTypeKey, boolean>>;
@@ -114,8 +115,8 @@ export interface UserSettings {
    * 时保持一致)。 与 `language` 同生命周期。
    */
   region: Region;
-  /** Memo list card presentation. */
-  memoCardVariant: MemoCardVariant;
+  /** Whether the memo list is rendered as a detailed list or as the notebook file tree. */
+  memoListView: MemoListView;
   /**
    * 快捷键用户覆盖层 — actionId → chord 字符串 (e.g. 'Mod+Shift+K')。
    * 只存与 ActionDefinition.defaultBinding 不同的部分, 缺省走默认。
@@ -238,7 +239,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   // loadInitial 阶段会被 detectRegion() 覆盖为真实值; 默认 'mainland'
   // 让大陆特性 (MiniMax / GLM 等) 在 SSR / IPC 还没回来时也可见。
   region: 'mainland',
-  memoCardVariant: 'detailed',
+  memoListView: 'detailed',
   // 启动时无任何用户覆盖, 所有 action 走 ActionDefinition.defaultBinding。
   shortcuts: {},
   properties: {

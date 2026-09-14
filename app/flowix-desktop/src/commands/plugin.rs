@@ -6,7 +6,7 @@ use crate::agent_wire::{AgentRuntimeConfig, AgentUserMessage, RuntimePathConfig}
 use crate::app::state::AppState;
 use crate::commands::agent::runtime::start_plugin_chat;
 use crate::commands::agent::runtime::stop_any_runtime_chat;
-use crate::plugin::{self, PluginArtifact, PluginDescriptor};
+use crate::plugin::{self, PluginArtifact, PluginCatalogSnapshot, PluginDescriptor};
 
 #[tauri::command]
 pub fn plugin_list() -> Result<Vec<PluginDescriptor>, String> {
@@ -16,6 +16,31 @@ pub fn plugin_list() -> Result<Vec<PluginDescriptor>, String> {
 #[tauri::command]
 pub fn plugin_refresh() -> Result<Vec<PluginDescriptor>, String> {
     plugin::refresh_plugins()
+}
+
+#[tauri::command]
+pub fn plugin_diagnostics() -> Result<Vec<plugin::PluginDiagnostic>, String> {
+    plugin::plugin_diagnostics()
+}
+
+#[tauri::command]
+pub fn plugin_catalog() -> Result<PluginCatalogSnapshot, String> {
+    plugin::plugin_catalog_snapshot()
+}
+
+#[tauri::command]
+pub fn plugin_validate(source_directory: String) -> Result<PluginDescriptor, String> {
+    plugin::validate_plugin_directory(&source_directory)
+}
+
+#[tauri::command]
+pub fn plugin_set_enabled(
+    plugin_id: String,
+    enabled: bool,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    plugin::set_enabled(&plugin_id, enabled)?;
+    plugin::emit_catalog_changed(&app_handle)
 }
 
 #[tauri::command]
@@ -53,14 +78,8 @@ pub fn plugin_list_notes(
     plugin_id: String,
     notebook_id: String,
     state: State<AppState>,
-    app_handle: AppHandle,
 ) -> Result<Vec<flowix_core::memo_file::Memo>, String> {
-    plugin::list_notes(
-        &plugin_id,
-        &notebook_id,
-        &state.memo_file,
-        Some(&app_handle),
-    )
+    plugin::list_notes(&plugin_id, &notebook_id, &state.memo_file)
 }
 
 #[tauri::command]

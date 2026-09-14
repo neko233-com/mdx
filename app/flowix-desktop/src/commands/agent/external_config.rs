@@ -13,6 +13,7 @@ use crate::app::state::AppState;
 #[serde(rename_all = "camelCase")]
 pub struct AgentRuntimeAvailability {
     available: bool,
+    installed: bool,
     reason: Option<String>,
 }
 
@@ -56,7 +57,11 @@ fn external_availability(entry: AgentExternalEntry, label: &str) -> AgentRuntime
         Some(p) if !available => Some(format!("{label} not found ({})", p.display())),
         Some(_) => None,
     };
-    AgentRuntimeAvailability { available, reason }
+    AgentRuntimeAvailability {
+        available,
+        installed: available,
+        reason,
+    }
 }
 
 #[tauri::command]
@@ -77,6 +82,7 @@ pub async fn agent_runtime_status(
     let deepseek_harness = if !dsh_status.installed {
         AgentRuntimeAvailability {
             available: false,
+            installed: false,
             reason: dsh_status
                 .message
                 .or_else(|| Some("DeepSeek Harness runtime is not installed".to_string())),
@@ -94,19 +100,23 @@ pub async fn agent_runtime_status(
             {
                 AgentRuntimeAvailability {
                     available: true,
+                    installed: true,
                     reason: None,
                 }
             }
             Ok(configs) if configs.is_empty() => AgentRuntimeAvailability {
                 available: false,
+                installed: true,
                 reason: Some("No DeepSeek Harness model is configured".to_string()),
             },
             Ok(_) => AgentRuntimeAvailability {
                 available: false,
+                installed: true,
                 reason: Some("DeepSeek Harness has no usable model configuration".to_string()),
             },
             Err(error) => AgentRuntimeAvailability {
                 available: false,
+                installed: true,
                 reason: Some(format!("Could not read DeepSeek Harness models: {error}")),
             },
         }

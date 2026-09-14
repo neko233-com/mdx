@@ -46,6 +46,41 @@ describe("mergeMessagesForThreadRender", () => {
     ).toBe(true);
   });
 
+  it("requires commentary rows when they are present in the live turn", () => {
+    const live = [
+      message("user-live", "user", "ask", "2026-01-01T00:00:00Z"),
+      {
+        ...message("commentary-live", "assistant", "checking", "2026-01-01T00:00:00Z"),
+        messageType: "agent-commentary" as const,
+      },
+      message("assistant-live", "assistant", "done", "2026-01-01T00:00:01Z"),
+    ];
+
+    expect(
+      historyCoversLiveTurn(
+        [
+          message("user-provider", "user", "ask", "2026-01-01T00:00:00Z"),
+          message("assistant-provider", "assistant", "done", "2026-01-01T00:00:01Z"),
+        ],
+        live,
+      ),
+    ).toBe(false);
+
+    expect(
+      historyCoversLiveTurn(
+        [
+          message("user-provider", "user", "ask", "2026-01-01T00:00:00Z"),
+          {
+            ...message("commentary-provider", "assistant", "checking", "2026-01-01T00:00:00Z"),
+            messageType: "agent-commentary",
+          },
+          message("assistant-provider", "assistant", "done", "2026-01-01T00:00:01Z"),
+        ],
+        live,
+      ),
+    ).toBe(true);
+  });
+
   it("removes the system context from historical user messages", () => {
     expect(filterRenderableHistoryMessages([
       message(
@@ -69,6 +104,22 @@ describe("mergeMessagesForThreadRender", () => {
       ),
     ])).toEqual([
       message("u2", "user", "你好", "2026-01-01T00:00:00.000Z"),
+    ]);
+  });
+
+  it("keeps provider commentary in renderable messages", () => {
+    expect(filterRenderableHistoryMessages([
+      {
+        ...message("commentary", "assistant", "checking", "2026-01-01T00:00:00.000Z"),
+        messageType: "agent-commentary",
+      },
+      message("final", "assistant", "done", "2026-01-01T00:00:01.000Z"),
+    ])).toEqual([
+      {
+        ...message("commentary", "assistant", "checking", "2026-01-01T00:00:00.000Z"),
+        messageType: "agent-commentary",
+      },
+      message("final", "assistant", "done", "2026-01-01T00:00:01.000Z"),
     ]);
   });
 
@@ -203,6 +254,46 @@ describe("mergeHistoricalMessages", () => {
     expect(
       mergeHistoricalMessages(existing, historical, "codex").map((item) => item.id),
     ).toEqual(["codex-user", "codex-commentary", "codex-tool", "codex-final"]);
+  });
+
+  it("reconciles the live compact command with its reconstructed history row", () => {
+    const existing = [
+      {
+        ...message(
+          "codex-command:live:command-1",
+          "user",
+          "/compact",
+          "2026-08-29T10:00:01.000Z",
+        ),
+        messageType: "codex-command" as const,
+        isCompleted: true,
+      },
+    ];
+    const historical = [
+      {
+        ...message(
+          "codex-command-history-compaction-1",
+          "user",
+          "/compact",
+          "2026-08-29T10:00:00.000Z",
+        ),
+        messageType: "codex-command" as const,
+        isCompleted: true,
+      },
+      {
+        ...message(
+          "compaction-1",
+          "system",
+          "",
+          "2026-08-29T10:00:00.000Z",
+        ),
+        messageType: "context-compaction" as const,
+      },
+    ];
+
+    expect(
+      mergeHistoricalMessages(existing, historical, "codex").map((item) => item.id),
+    ).toEqual(["codex-command-history-compaction-1", "compaction-1"]);
   });
 });
 

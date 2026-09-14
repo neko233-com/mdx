@@ -47,6 +47,17 @@ export interface AgentRuntimeCapabilities {
   supportsThreadArchive?: boolean;
 }
 
+/** Metadata kept with a human message for each uploaded image/file. */
+export interface AgentMessageAttachment {
+  /** Provider input block kind, e.g. `input_image`. */
+  type: "input_image" | "input_file";
+  path: string;
+  name: string;
+  mimeType: string;
+  /** Codex image rendering detail; kept for parity with its input block. */
+  detail?: "high";
+}
+
 /** Structured diagnostics from an external CLI/provider. Raw wire fields are
  * snake_case; the event/message layers expose this normalized camelCase form.
  */
@@ -130,12 +141,7 @@ export interface AccessConfig {
 }
 
 export interface FilesConfig {
-  /**
-   * 主工作目录 (folder path)。`null` 表示用户**显式取消主空间**──
-   * 当前 notebook 的"资料"列表里没有 folder 充当主空间, runtime 应
-   * fallback 到 notebook 自身的 path (与 `undefined` 不区分, 都视作
-   * "无显式主空间")。老磁盘数据只会落 `string` 或缺失, JSON 兼容。
-   */
+  /** @deprecated Notebook path is always cwd; retained for legacy JSON reads. */
   workspace?: string | null;
   /** 启用目录列表 (path 数组) */
   folders: string[];
@@ -159,7 +165,7 @@ export interface WorkspaceSnapshot {
   version: 1;
   /** Effective process working directory. */
   cwd: string;
-  /** Complete authorized path set; runtime adapters de-duplicate cwd. */
+  /** Notebook-local add-dir roots; cwd is carried separately above. */
   workspacePaths: string[];
   /** Notebook association and path as they existed when the snapshot was made. */
   notebookId?: string;
@@ -198,13 +204,12 @@ export interface RuntimeConfig {
   /**
    * 创建该 instance 时所属 notebook 的 id 快照 (如 `nb_<ts>` / `nb_default`)。
    *
-   * 非运行时配置 ── 它不发给 LLM, 仅用于把"卡片里勾选/设主空间确认的
-   * files"回写到所属 notebook 的默认 (`agent-access.defaults.files[<notebookId>]`),
-   * 让同一 notebook 下后续新建的卡片共享这份默认。 借 `runtimeConfig` 的
+   * 非运行时配置 ── 它不发给 LLM, 仅用于把卡片关联到所属 notebook 的
+   * `.flowix/agent.json` add-dir 配置。借 `runtimeConfig` 的
    * JSON 透传通道一起落 SQLite (后端 `runtime_config` 是裸 TEXT, 不解析内部),
    * 与 `_frozen` 同构 ── 无需 backend schema 升级。
    *
-   * 缺失 (历史 instance / 创建时未选笔记本) 时, 回写 fallback 到 `_global`。
+   * 缺失时仅保留历史会话兼容，不再写入全局资料默认。
    */
   notebookId?: string;
 }
@@ -231,6 +236,8 @@ export interface ChatMessage {
   /** Provider-owned timeline/control message, distinct from human content. */
   messageType?: AgentMessageType;
   content: string;
+  /** Attachments submitted with this user message. Absent on legacy messages. */
+  attachments?: AgentMessageAttachment[];
   /** Display-only notice kind for provider-specific runtime failures. */
   notice?: "deepseek-harness-reconnect-failed";
   errorDetails?: AgentErrorDetails;
@@ -264,6 +271,8 @@ export interface ChatMessage {
 
 /** Display categories for messages that are not ordinary human/agent text. */
 export type AgentMessageType =
+  /** Provider commentary/progress item. It remains a normal transcript row. */
+  | "agent-commentary"
   | "context-compaction"
   | "goal-round"
   | "goal-complete"
@@ -272,7 +281,9 @@ export type AgentMessageType =
   | "dsh-command"
   | "dsh-command-result"
   /** Legacy classification for older `/plan` history projections. */
-  | "dsh-command-prompt";
+  | "dsh-command-prompt"
+  /** Product-owned row for Codex-native `/compact` and `/goal` operations. */
+  | "codex-command";
 
 // Tool call definition
 export interface ToolCall {
@@ -298,6 +309,7 @@ export type AgentChunk =
   | AgentChunkToolCall
   | AgentChunkToolResult
   | AgentChunkDshCommand
+  | AgentChunkCodexCommand
   | AgentChunkError
   | AgentChunkStreamStart
   | AgentChunkStreamEnd
@@ -315,6 +327,7 @@ export interface AgentChunkUserMessage {
   run_id?: string;
   message_id?: string;
   source_message_id?: string;
+  attachments?: AgentMessageAttachment[];
 }
 
 export interface AgentChunkText {
@@ -402,6 +415,20 @@ export interface AgentChunkDshCommand {
   id: string;
   name: string;
   args: string;
+  status: "pending" | "success" | "error" | "cancelled";
+  result?: string;
+  timestamp: number;
+  agent_type?: AgentTypeKey;
+  run_id?: string;
+  message_id?: string;
+  source_sequence?: number;
+}
+
+export interface AgentChunkCodexCommand {
+  kind: "codex_command";
+  thread_id: string;
+  id: string;
+  command: string;
   status: "pending" | "success" | "error" | "cancelled";
   result?: string;
   timestamp: number;
@@ -579,6 +606,7 @@ interface AgentEventBase {
   runId: string;
   timestamp: number;
   messageId?: string;
+  messageType?: AgentMessageType;
   messagePhase?: "started" | "updated" | "completed";
   contentMode?: "delta" | "snapshot";
   sourceTimestamp?: number;
@@ -602,6 +630,7 @@ export type AgentEvent =
       id: string;
       text: string;
       messageType?: AgentMessageType;
+      attachments?: AgentMessageAttachment[];
     })
   | (AgentEventBase & { kind: "final_message"; text: string })
   | (AgentEventBase & { kind: "reasoning_delta"; text: string })
@@ -624,6 +653,13 @@ export type AgentEvent =
       id: string;
       name: string;
       args: string;
+      status: "pending" | "success" | "error" | "cancelled";
+      result?: string;
+    })
+  | (AgentEventBase & {
+      kind: "codex_command";
+      id: string;
+      command: string;
       status: "pending" | "success" | "error" | "cancelled";
       result?: string;
     })

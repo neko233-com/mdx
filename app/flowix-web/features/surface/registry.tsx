@@ -1,3 +1,4 @@
+import { WorkFileBrowserView } from './work-file-browser-view';
 'use client';
 
 import {
@@ -8,14 +9,14 @@ import {
 } from 'react';
 import { DocumentContainer } from '@features/document/components/document-container';
 import { LazyAgentConversationDetail } from '@features/agent/components/lazy-agent-conversation-detail';
-import backgroundImage from '@/assets/bg.document.png';
 import { useI18n } from '@/lib/i18n';
+import { WorkspaceEmptyState } from '@shared/ui/workspace-empty-state';
 import type {
   AgentConversationSurface,
-  EmptySurface,
   MarkdownSurface,
   PluginArtifactSurfaceBase,
   PluginWorkbenchSurface,
+  WorkColumnContentPresentation,
   WorkColumnSurface,
   WorkColumnSurfaceCapability,
   WorkColumnSurfaceChrome,
@@ -76,7 +77,7 @@ function defineSurface<K extends WorkColumnSurfaceKind>(
 }
 
 function MarkdownSurfaceView({ surface }: { surface: MarkdownSurface }) {
-  return <DocumentContainer {...surface.props} />;
+  return surface.props.isExternalDocument ? <WorkFileBrowserView props={surface.props} /> : <DocumentContainer {...surface.props} />;
 }
 
 function PluginArtifactSurfaceView({ surface }: { surface: PluginArtifactSurfaceBase }) {
@@ -107,21 +108,6 @@ function WebSurfaceView({ surface }: { surface: WebSurface }) {
   return (
     <div className="flex h-full items-center justify-center text-sm text-[var(--muted-foreground)]">
       {surface.url}
-    </div>
-  );
-}
-
-function EmptySurfaceView({ surface }: { surface: EmptySurface }) {
-  return (
-    <div className="relative flex h-full w-full items-center justify-center">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-no-repeat bg-bottom bg-[length:auto_800px] opacity-[0.32]"
-        style={{ backgroundImage: `url(${backgroundImage})` }}
-      />
-      <span className="relative text-center text-sm text-[var(--muted-foreground)]">
-        {surface.message}
-      </span>
     </div>
   );
 }
@@ -181,10 +167,6 @@ export const workColumnSurfaceRegistry = Object.freeze({
     chrome: 'document',
     component: WebSurfaceView,
   }),
-  empty: defineSurface('empty', {
-    chrome: 'document',
-    component: EmptySurfaceView,
-  }),
 } satisfies Record<WorkColumnSurfaceKind, WorkColumnSurfaceDefinition>);
 
 export function getWorkColumnSurfaceDefinition(
@@ -211,4 +193,12 @@ export function WorkColumnSurfaceHost({ surface }: { surface: WorkColumnSurface 
       surface={surface}
     />
   );
+}
+
+export function WorkColumnContentHost({ content }: { content: WorkColumnContentPresentation }) {
+  if (content.status === 'empty') {
+    return <WorkspaceEmptyState tone={content.tone} message={content.message} />;
+  }
+
+  return <WorkColumnSurfaceHost surface={content.surface} />;
 }

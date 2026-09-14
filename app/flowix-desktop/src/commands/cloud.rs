@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+mod deletion;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -6,8 +7,8 @@ use std::time::Duration;
 
 use chrono::Utc;
 use flowix_core::memo_file::{
-    atomic_write_bytes, extract_frontmatter_key, merge_frontmatter, resolve_filename_conflict,
-    sanitize_filename_component, IsMd, MergeOverrides,
+    atomic_write_bytes, extract_frontmatter_key, merge_frontmatter, notebook_path_from_relative,
+    resolve_filename_conflict, sanitize_filename_component, IsMd, MergeOverrides,
 };
 use flowix_sync::{
     collect_v2_attachments, v2_content_hash, v2_local_content_diverged, CloudCheckout,
@@ -88,13 +89,15 @@ fn emit_cloud_state(app: &AppHandle, state: &CloudState) {
 }
 
 fn persist_rotated_token(state: &AppState) -> Result<(), String> {
-    if let Some(token) = state.cloud_sync.current_refresh_token() {
-        state
-            .user_config
-            .save_cloud_refresh_token(&token)
-            .map_err(sync_error)?;
-    }
-    Ok(())
+    state.cloud_sync.with_current_refresh_token(|token| {
+        if let Some(token) = token {
+            state
+                .user_config
+                .save_cloud_refresh_token(token)
+                .map_err(sync_error)?;
+        }
+        Ok(())
+    })
 }
 
 const FULL_LOCAL_SNAPSHOT_INTERVAL_MS: i64 = 5 * 60 * 1_000;
@@ -158,7 +161,8 @@ fn v2_account_snapshot(
             {
                 continue;
             }
-            let path = PathBuf::from(&config.path).join(&memo.filename);
+            let path = notebook_path_from_relative(Path::new(&config.path), &memo.relative_path)
+                .unwrap_or_else(|_| PathBuf::from(&config.path).join(&memo.filename));
             let content = std::fs::read(&path)
                 .map_err(|error| format!("READ_NOTE_FAILED {}: {error}", path.display()))?;
             let attachments =
@@ -199,17 +203,25 @@ fn write_cloud_attachments(
     std::fs::create_dir_all(&directory).map_err(sync_error)?;
     for attachment in attachments {
         let filename = &attachment.metadata.filename;
-        if Path::new(filename)
-            .file_name()
-            .and_then(|value| value.to_str())
-            != Some(filename)
+        let relative = Path::new(filename);
+        if relative.is_absolute()
+            || relative
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+            || relative.components().next() == Some(std::path::Component::CurDir)
             || attachment.metadata.size_bytes
                 != i64::try_from(attachment.content.len()).map_err(|_| "ATTACHMENT_TOO_LARGE")?
             || v2_content_hash(&attachment.content) != attachment.metadata.content_hash
         {
             return Err(format!("CLOUD_ATTACHMENT_INVALID: {filename}"));
         }
-        let path = directory.join(filename);
+        let path = match relative.strip_prefix("attachments") {
+            Ok(path) => base.join("attachments").join(path),
+            Err(_) => directory.join(relative),
+        };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(sync_error)?;
+        }
         atomic_write_bytes(&path, &attachment.content).map_err(sync_error)?;
     }
     Ok(())
@@ -222,6 +234,9 @@ fn apply_v2_note_changes(
     changes: &[&V2RemoteApply],
 ) -> Result<(), String> {
     let memo_file = read_lock(&state.memo_file, "memo_file");
+    let _write_guard = memo_file
+        .acquire_cross_process_write_lock()
+        .map_err(sync_error)?;
     let notebook = memo_file
         .get_notebook_config_by_id(notebook_id)
         .ok_or_else(|| "NOTEBOOK_NOT_FOUND".to_string())?;
@@ -246,25 +261,26 @@ fn apply_v2_note_changes(
             continue;
         };
         if *deleted {
-            if let Some(memo) = memo_file.read_memo_for_notebook_id(notebook_id, note_id) {
-                let path = base.join(&memo.filename);
-                crate::watcher::runtime::mark_self_write_for(app, &path);
+            if let Some(memo) = deletion::delete_cloud_note_locked(
+                &memo_file,
+                &state.cloud_sync,
+                notebook_id,
+                note_id,
+                |path| crate::watcher::runtime::mark_self_write_for(app, path),
+            )? {
+                let path = notebook_path_from_relative(&base, &memo.relative_path)
+                    .unwrap_or_else(|_| base.join(&memo.filename));
                 let derived_changed = MemoDerivedChanged::from_deleted(&memo);
-                if memo_file
-                    .delete_memo_result_for_notebook_id(notebook_id, note_id)
-                    .map_err(sync_error)?
-                {
-                    memo_events::emit(
-                        app,
-                        MemoEvent::Deleted {
-                            id: note_id.clone(),
-                            path: path.to_string_lossy().into_owned(),
-                            notebook_id: notebook_id.to_string(),
-                            derived_changed,
-                            source: MemoChangeSource::CloudSync,
-                        },
-                    );
-                }
+                memo_events::emit(
+                    app,
+                    MemoEvent::Deleted {
+                        id: note_id.clone(),
+                        path: path.to_string_lossy().into_owned(),
+                        notebook_id: notebook_id.to_string(),
+                        derived_changed,
+                        source: MemoChangeSource::CloudSync,
+                    },
+                );
             }
         } else {
             let bytes = content
@@ -294,7 +310,10 @@ fn apply_v2_note_changes(
                     ));
                 }
             }
-            let old_path = current_memo.as_ref().map(|memo| base.join(&memo.filename));
+            let old_path = current_memo.as_ref().map(|memo| {
+                notebook_path_from_relative(&base, &memo.relative_path)
+                    .unwrap_or_else(|_| base.join(&memo.filename))
+            });
             let mut desired_path = safe_cloud_note_path(&base, filename)?;
             if desired_path.exists() && old_path.as_ref() != Some(&desired_path) {
                 let title = Path::new(filename)
@@ -503,6 +522,9 @@ fn canonicalize_local_keys(
     notebook_id: &str,
 ) -> Result<(), String> {
     let memo_file = read_lock(&state.memo_file, "memo_file");
+    let _write_guard = memo_file
+        .acquire_cross_process_write_lock()
+        .map_err(sync_error)?;
     let notebook = memo_file
         .get_notebook_config_by_id(notebook_id)
         .ok_or_else(|| "NOTEBOOK_NOT_FOUND".to_string())?;
@@ -511,7 +533,8 @@ fn canonicalize_local_keys(
     let mut disk_keys = HashMap::<String, String>::new();
 
     for memo in memos {
-        let path = base.join(&memo.filename);
+        let path = notebook_path_from_relative(&base, &memo.relative_path)
+            .unwrap_or_else(|_| base.join(&memo.filename));
         let content = std::fs::read_to_string(&path)
             .map_err(|error| format!("READ_NOTE_FAILED {}: {error}", path.display()))?;
         if let Some(disk_key) = extract_frontmatter_key(&content) {
@@ -747,6 +770,7 @@ async fn sync_v2_account_pass(
     enabled: &[V2SyncedNotebook],
     activity: &SyncActivity,
 ) -> Result<V2AccountSyncReport, String> {
+    let generation = state.cloud_sync.session_restore_generation();
     let notebook_scope = target.notebook_scope();
     let full_local_snapshot = should_run_full_local_snapshot(state, notebook_scope)?;
     let sync_lock = account_sync_lock();
@@ -776,15 +800,10 @@ async fn sync_v2_account_pass(
         "transfer",
         None,
     );
-    let report_result = match notebook_scope {
-        Some(notebook_id) => {
-            state
-                .cloud_sync
-                .sync_v2_notebook(notebook_id, notebooks, notes)
-                .await
-        }
-        None => state.cloud_sync.sync_v2_account(notebooks, notes).await,
-    };
+    let report_result = state
+        .cloud_sync
+        .sync_v2_snapshot_at_generation(notebook_scope, notebooks, notes, generation)
+        .await;
     persist_rotated_token(state)?;
     let report = report_result.map_err(cloud_error)?;
     emit_activity_status(
@@ -795,17 +814,12 @@ async fn sync_v2_account_pass(
         "apply",
         None,
     );
-    apply_v2_report(state, app, &report)?;
-    match notebook_scope {
-        Some(notebook_id) => state
-            .cloud_sync
-            .complete_v2_notebook_sync(notebook_id, &report)
-            .map_err(sync_error)?,
-        None => state
-            .cloud_sync
-            .complete_v2_account_sync(&report)
-            .map_err(sync_error)?,
-    }
+    state
+        .cloud_sync
+        .complete_v2_sync_with_apply(&report, notebook_scope, || {
+            apply_v2_report(state, app, &report).map_err(SyncError::InvalidState)
+        })
+        .map_err(sync_error)?;
     if full_local_snapshot && notebook_scope.is_none() {
         LAST_FULL_LOCAL_SNAPSHOT_AT.store(Utc::now().timestamp_millis(), Ordering::SeqCst);
     }
@@ -1237,17 +1251,15 @@ pub async fn cloud_register(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<CloudState, String> {
-    let outcome = state
+    state
         .cloud_sync
         .register(email.trim(), &password, display_name.trim())
         .await
         .map_err(sync_error)?;
-    state
-        .user_config
-        .save_cloud_refresh_token(&outcome.refresh_token)
-        .map_err(sync_error)?;
-    emit_cloud_state(&app, &outcome.state);
-    Ok(outcome.state)
+    persist_rotated_token(state.inner())?;
+    let next_state = state.cloud_sync.state().map_err(sync_error)?;
+    emit_cloud_state(&app, &next_state);
+    Ok(next_state)
 }
 
 #[tauri::command]
@@ -1257,17 +1269,15 @@ pub async fn cloud_login(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<CloudState, String> {
-    let outcome = state
+    state
         .cloud_sync
         .login(email.trim(), &password)
         .await
         .map_err(sync_error)?;
-    state
-        .user_config
-        .save_cloud_refresh_token(&outcome.refresh_token)
-        .map_err(sync_error)?;
-    emit_cloud_state(&app, &outcome.state);
-    Ok(outcome.state)
+    persist_rotated_token(state.inner())?;
+    let next_state = state.cloud_sync.state().map_err(sync_error)?;
+    emit_cloud_state(&app, &next_state);
+    Ok(next_state)
 }
 
 #[tauri::command]
@@ -1282,17 +1292,15 @@ pub async fn cloud_sign_in_with_apple(
         .await
         .map_err(sync_error)?;
     let authorization = crate::apple_sign_in::authorize(window, challenge).await?;
-    let outcome = state
+    state
         .cloud_sync
         .sign_in_with_apple(&authorization)
         .await
         .map_err(sync_error)?;
-    state
-        .user_config
-        .save_cloud_refresh_token(&outcome.refresh_token)
-        .map_err(sync_error)?;
-    emit_cloud_state(&app, &outcome.state);
-    Ok(outcome.state)
+    persist_rotated_token(state.inner())?;
+    let next_state = state.cloud_sync.state().map_err(sync_error)?;
+    emit_cloud_state(&app, &next_state);
+    Ok(next_state)
 }
 
 #[tauri::command]
@@ -1320,13 +1328,19 @@ pub async fn cloud_logout(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<CloudState, String> {
-    state.cloud_sync.logout().await.map_err(sync_error)?;
-    state
-        .user_config
-        .delete_cloud_refresh_token()
-        .map_err(sync_error)?;
+    let logout_result = state
+        .cloud_sync
+        .logout_with_cleanup(|| {
+            state
+                .user_config
+                .delete_cloud_refresh_token()
+                .map_err(|error| SyncError::InvalidState(error.to_string()))
+        })
+        .await
+        .map_err(sync_error);
     let next_state = state.cloud_sync.state().map_err(sync_error)?;
     emit_cloud_state(&app, &next_state);
+    logout_result?;
     Ok(next_state)
 }
 

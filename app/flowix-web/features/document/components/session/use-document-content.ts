@@ -12,7 +12,7 @@ import {
 import { translate } from '@/lib/i18n';
 import { replaceActiveMemoPath } from '@features/workspace/use-cases/workspace-navigation';
 import { replaceBrowserColumnMemoPath } from '@features/workspace/use-cases/browser-column-navigation';
-import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
+import { getCurrentAppLanguage } from '@features/preferences/public/runtime-api';
 import { formatDateTime } from '@/lib/utils';
 import {
   initialDocumentContainerState,
@@ -50,7 +50,7 @@ async function resolveLatestMemoPathFromBackend(
   const memo = await memosClient.readMemo(memoId);
   if (!memo?.filename) return null;
   useMemoStore.getState().handleMemoUpdated(memo);
-  return joinPath(notebookPath, memo.filename);
+  return joinPath(notebookPath, memo.relativePath || memo.filename);
 }
 
 function logOpenDocPerf(label: string, startedAt: number, meta?: Record<string, unknown>) {
@@ -83,15 +83,18 @@ export function useDocumentContent({
     (path: string, fullContent: string, options?: Pick<LoadContentOptions, 'preservePending'>) => {
       const startedAt = performance.now();
       const buf = applyLoadedDocumentContent(identity, path, fullContent, {
-        preservePending: options?.preservePending,
+        preservePending: options?.preservePending ?? true,
         setAsCurrent: !isolatedSession,
       });
       const memo = isExternalDocument ? null : getMemoSnapshot(memoId);
-      const createdAt = memo?.createdAt ? formatDateTime(memo.createdAt, useUserSettingsStore.getState().settings.language) : '';
-      const updatedAt = memo?.updatedAt ? formatDateTime(memo.updatedAt, useUserSettingsStore.getState().settings.language) : '';
+      const createdAt = memo?.createdAt ? formatDateTime(memo.createdAt, getCurrentAppLanguage()) : '';
+      const updatedAt = memo?.updatedAt ? formatDateTime(memo.updatedAt, getCurrentAppLanguage()) : '';
       const updatedAtDate = memo?.updatedAt ? new Date(memo.updatedAt) : null;
       const isFavorited = memo?.favorited || false;
-      const isNew = fullContent.trimStart().startsWith('# ');
+      // New memo focus is explicit navigation metadata now.  Inferring it
+      // from the first Markdown heading would make an existing document look
+      // newly created and is invalid once the title lives outside Markdown.
+      const isNew = false;
       const initialContent = buf.content;
       const initialBody = extractBodyContent(initialContent);
       const initialCharCount = countTextUnits(initialBody);
@@ -147,7 +150,7 @@ export function useDocumentContent({
       }
       const stagedContent = consumeStagedDocumentSnapshot(identity, path);
       if (stagedContent !== null) {
-        applyLoadedContent(path, stagedContent, { preservePending: false });
+        applyLoadedContent(path, stagedContent, { preservePending: true });
         logOpenDocPerf('reloadDocument:staged', startedAt, {
           memoId,
           transitionId,
@@ -214,7 +217,7 @@ export function useDocumentContent({
 
         if (fullContent === null || fullContent === undefined) {
           if (currentLoadId !== counter.current) return;
-          const language = useUserSettingsStore.getState().settings.language;
+          const language = getCurrentAppLanguage();
           setState((prev) => ({ ...prev, isLoading: false, error: translate(language, 'document.load.failed') }));
           if (!isolatedSession && transitionId !== null) {
             useDocumentStore.getState().finishDocumentTransition(transitionId);
@@ -234,7 +237,7 @@ export function useDocumentContent({
         }
       } catch (err) {
         if (currentLoadId !== counter.current) return;
-        const language = useUserSettingsStore.getState().settings.language;
+        const language = getCurrentAppLanguage();
         setState((prev) => ({ ...prev, isLoading: false, error: translate(language, 'document.load.failed') }));
         logOpenDocPerf('reloadDocument:error', startedAt, {
           memoId,

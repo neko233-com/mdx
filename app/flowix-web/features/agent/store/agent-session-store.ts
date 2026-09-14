@@ -17,6 +17,7 @@ import {
   subscribeWithSelector,
 } from "zustand/middleware";
 import type {
+  AgentMessageAttachment,
   AgentChunk,
   AgentEvent,
   AgentTypeKey,
@@ -38,31 +39,30 @@ import {
   mapAgentChunkToEvent,
 } from "@features/agent/events/agent-event-mapper";
 import { completedRunUserMessageId } from "@features/agent/events/message-identity";
-import {
-  resolveExternalChunkThreadId,
-  resolveProductThreadId,
-} from "@features/agent/store/external-session";
+import { resolveProductThreadId } from "@features/agent/store/external-session";
 import { eventMapperStateForChunk } from "@features/agent/store/agent-chunk-routing";
 import {
   recordAgentChunkMapped,
   recordAgentStopRequested,
 } from "@features/agent/diagnostics/agent-run-trace";
-import { createAgentChunkBridge } from "@features/agent/store/agent-chunk-bridge";
-import { hasThreadInterest } from "@features/agent/store/thread-interest";
 import {
   defaultExternalThreadTitle,
   getConversationTitleForThread,
   getLanguage,
   normalizeThreadTitle,
 } from "@features/agent/store/thread-titles";
-import { createSendErrorMessage, prepareUserMessage } from "@features/agent/store/user-message";
+import {
+  createAgentMessageAttachments,
+  createSendErrorMessage,
+  prepareUserMessage,
+} from "@features/agent/store/user-message";
 import { dispatchChatStream } from "@features/agent/store/chat-stream";
 import { translate } from "@/lib/i18n";
 import { createLogger } from "@/lib/logger";
 import { applyRunStopped } from "@features/agent/store/run-lifecycle";
 import { buildInitialInstanceRuntimeConfig } from "@features/agent/store/initial-runtime-config";
 import { createAgentSessionStateStorage } from "@features/agent/store/window-session-storage";
-import { installGlobalAgentSettingsSync } from "@features/agent/store/global-agent-settings-sync";
+import { installAgentSessionRuntimeBridges } from "@features/agent/store/agent-session-runtime-bridges";
 import { DEFAULT_AGENT_SESSION_META } from "@features/agent/store/session-state";
 import { rehydrateSessionMeta } from "@features/agent/store/session-persistence";
 import {
@@ -123,6 +123,7 @@ export interface AgentSessionStore
       isFirstMessage?: boolean;
       runtimeConfig?: RuntimeConfig | null;
       imagePaths?: string[];
+      attachments?: AgentMessageAttachment[];
       agentRoleBody?: string | null;
       runId?: string;
     },
@@ -131,6 +132,7 @@ export interface AgentSessionStore
   enqueueSteeringMessage: (message: PendingSteeringMessage) => void;
   removeSteeringMessage: (threadId: string, messageId: string) => void;
   removeSteeringMessageByClientId: (threadId: string, clientUserMessageId: string) => void;
+  clearPendingSteeringMessages: (threadId: string) => void;
   stopStream: () => Promise<void>;
   stopThreadRun: (threadId: string, runId?: string) => Promise<void>;
   dispatchAgentEvent: (event: AgentEvent) => void;
@@ -202,6 +204,23 @@ export const useAgentSessionStore = create<AgentSessionStore>()(
         dispatch: (event) => get().dispatch(event),
         applySessionResolved: (event) => get().applySessionResolved(event),
       });
+      const clearPendingSteeringForLifecycleEvent = (event: AgentEvent): void => {
+        if (event.kind !== "error" && event.kind !== "stream_end") return;
+        const state = get();
+        const canonicalThreadId = resolveProductThreadId(
+          event.threadId,
+          state.sessionMeta.externalSessionResolutions,
+        );
+        const projection = state.threadProjections[canonicalThreadId];
+        const activeRunId = projection?.runs.activeRunId;
+        // Ignore a delayed lifecycle event from an older run. The reducer
+        // uses the same active-run ownership rule for known run ids.
+        if (activeRunId && event.runId && activeRunId !== event.runId) return;
+        state.clearPendingSteeringMessages(event.threadId);
+        if (canonicalThreadId !== event.threadId) {
+          state.clearPendingSteeringMessages(canonicalThreadId);
+        }
+      };
       return ({
         ...createSessionMetaSlice(set, get),
         ...createConversationSlice(set, get),
@@ -235,6 +254,14 @@ export const useAgentSessionStore = create<AgentSessionStore>()(
           const current = get().pendingSteeringMessages[threadId] ?? [];
           const match = current.find((message) => message.clientUserMessageId === clientUserMessageId);
           if (match) get().removeSteeringMessage(threadId, match.id);
+        },
+        clearPendingSteeringMessages: (threadId) => {
+          set((state) => {
+            if (!state.pendingSteeringMessages[threadId]) return state;
+            const pendingSteeringMessages = { ...state.pendingSteeringMessages };
+            delete pendingSteeringMessages[threadId];
+            return { pendingSteeringMessages };
+          });
         },
 
         sendMessageToThread: async (threadId, content, typeKey, options) => {
@@ -292,6 +319,8 @@ export const useAgentSessionStore = create<AgentSessionStore>()(
             agentRoleBody: options?.agentRoleBody ?? null,
             systemReminderDirectory:
               options?.runtimeConfig?.workspaceSnapshot?.notebookPath,
+            attachments:
+              options?.attachments ?? createAgentMessageAttachments(options?.imagePaths),
           });
           if (
             (type.key === "codex" || type.key === "deepseek-harness") &&
@@ -348,6 +377,7 @@ export const useAgentSessionStore = create<AgentSessionStore>()(
             timestamp: startedAt,
             text: userMessage.content,
             id: userMessage.id,
+            attachments: userMessage.attachments,
           });
           if (options?.instanceId) {
             state.updateThread(options.instanceId, { threadId, agentType: type.key });
@@ -377,7 +407,7 @@ export const useAgentSessionStore = create<AgentSessionStore>()(
               err,
               translate(getLanguage(), "agent.chat.sendFailed"),
             );
-            get().dispatch({
+            get().dispatchAgentEvent({
               kind: "error",
               agentType: type.key,
               threadId,
@@ -396,6 +426,19 @@ export const useAgentSessionStore = create<AgentSessionStore>()(
         stopThreadRun: async (threadId, runId) => {
           if (!threadId) return;
           streamDispatcher.flushBuffer();
+          // Steering messages belong to the active turn. Once that turn is
+          // explicitly stopped, none of its queued messages can be delivered
+          // safely, so remove them immediately instead of waiting for a
+          // provider user_message acknowledgement that will never arrive.
+          const projectionBeforeStop = get().threadProjections[threadId];
+          const activeRunIdBeforeStop = projectionBeforeStop?.runs.activeRunId;
+          const pendingCodexCommandRunId =
+            projectionBeforeStop?.runs.codexCommand?.status === "pending"
+              ? projectionBeforeStop.runs.codexCommand.runId
+              : undefined;
+          if (!runId || !activeRunIdBeforeStop || runId === activeRunIdBeforeStop) {
+            get().clearPendingSteeringMessages(threadId);
+          }
           let targetRunId: string | undefined;
           get().setThreadProjection(threadId, (projection) => {
             const candidate = runId ?? projection.runs.activeRunId ?? undefined;
@@ -415,12 +458,17 @@ export const useAgentSessionStore = create<AgentSessionStore>()(
             const type = getAgentType(
               meta.threadTypes[threadId] ?? meta.activeAgentTypeKey,
             );
-            await agentClient.stopChatStream(threadId, type.key, targetRunId);
+            const stopRunId = targetRunId ??
+              (type.key === "codex" ? pendingCodexCommandRunId : undefined);
+            await agentClient.stopChatStream(threadId, type.key, stopRunId);
           } catch (err) {
             logger.error("Failed to stop stream", { error: String(err) });
           }
         },
-        dispatchAgentEvent: (event) => streamDispatcher.dispatch(event),
+        dispatchAgentEvent: (event) => {
+          clearPendingSteeringForLifecycleEvent(event);
+          streamDispatcher.dispatch(event);
+        },
         flushAgentEventBuffer: () => streamDispatcher.flushBuffer(),
         dispatchAgentChunk: (chunk) => {
           const state = get();
@@ -429,6 +477,7 @@ export const useAgentSessionStore = create<AgentSessionStore>()(
             eventMapperStateForChunk(chunk, state),
           );
           recordAgentChunkMapped(chunk, event);
+          clearPendingSteeringForLifecycleEvent(event);
           streamDispatcher.dispatch(event);
         },
         reconcileRunningRunsFromSnapshot: (running) => {
@@ -529,7 +578,7 @@ export const useAgentSessionStore = create<AgentSessionStore>()(
             ) {
               continue;
             }
-            get().dispatch({
+            get().dispatchAgentEvent({
               kind: "stream_end",
               agentType: activeRun?.agentType ?? DEFAULT_AGENT_TYPE_KEY,
               threadId,
@@ -581,69 +630,4 @@ export const selectSessionMeta = (state: AgentSessionStore) => state.sessionMeta
 
 export const selectConversationRegistry = (state: AgentSessionStore) =>
   state.conversationRegistry;
-installGlobalAgentSettingsSync((updater) =>
-  useAgentSessionStore.getState().setSessionMeta(updater),
-);
-
-export const acquireAgentChunkBridge = createAgentChunkBridge((chunk) => {
-  const stateBeforeDispatch = useAgentSessionStore.getState();
-  useAgentSessionStore.getState().dispatchAgentChunk(chunk);
-  if (chunk.kind === "user_message") {
-    const enrichedChunk = chunk as AgentChunk & {
-      client_user_message_id?: string;
-      message_id?: string;
-    };
-    const clientId = enrichedChunk.client_user_message_id ?? enrichedChunk.message_id;
-    if (clientId) stateBeforeDispatch.removeSteeringMessageByClientId(chunk.thread_id, clientId);
-  }
-  if (chunk.kind !== "stream_end") return;
-
-  const state = useAgentSessionStore.getState();
-  const canonicalThreadId = resolveExternalChunkThreadId(
-    chunk,
-    state.sessionMeta.externalSessionResolutions,
-  );
-  const projection = state.threadProjections[canonicalThreadId];
-  const runId =
-    chunk.run_id ?? projection?.runs.lastRun?.runId;
-  const hasResidentRun = !!projection && (
-    !chunk.run_id ||
-    projection.runs.activeRunId === chunk.run_id ||
-    projection.runs.lastRun?.runId === chunk.run_id
-  );
-  const ownsThread =
-    hasThreadInterest(canonicalThreadId) ||
-    // A conversation can be switched away from while its run is still
-    // streaming. The card then releases its interest, but the canonical
-    // projection remains resident and still needs the completion snapshot
-    // reconciliation; otherwise reopening the card can show the last
-    // persisted (older) turn while the provider is catching up.
-    hasResidentRun ||
-    Object.values(state.sessionMeta.activeThreadIds).some(
-      (threadId) =>
-        threadId === canonicalThreadId ||
-        (threadId
-          ? state.sessionMeta.externalSessionResolutions[threadId] ===
-            canonicalThreadId
-          : false),
-    );
-  if (!ownsThread) return;
-
-  const agentType =
-    state.sessionMeta.threadTypes[canonicalThreadId] ??
-    state.sessionMeta.threadTypes[chunk.thread_id] ??
-    state.sessionMeta.activeAgentTypeKey;
-  if (runId) {
-    if (agentType === "opencode") return;
-    // Let the stream-end render settle first. The persisted history can lag
-    // the event by a short window, and reconciliation is a consistency check,
-    // not part of the interactive completion path.
-    globalThis.setTimeout(() => {
-      const latest = useAgentSessionStore.getState();
-      if (latest.threadTombstones[canonicalThreadId]) return;
-      void latest.reconcileCompletedRun(agentType, canonicalThreadId, runId);
-    }, 300);
-  } else {
-    void state.loadMessages(agentType, canonicalThreadId);
-  }
-});
+export const acquireAgentChunkBridge = installAgentSessionRuntimeBridges(useAgentSessionStore);

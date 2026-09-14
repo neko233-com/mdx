@@ -38,6 +38,14 @@
 @import './theme/mist.css';
 @import './theme/ember.css';
 
+@font-face {
+	font-family: 'FlowixSeti';
+	src: url('../assets/seti/seti.woff') format('woff');
+	font-display: block;
+	font-style: normal;
+	font-weight: normal;
+}
+
 @import "shadcn/tailwind.css";
 
 
@@ -54,13 +62,58 @@
 	background: linear-gradient(
 		90deg,
 		transparent 0%,
-		var(--brand) 30%,
-		var(--brand) 70%,
+		var(--brand) 40%,
+		var(--brand) 60%,
 		transparent 100%
 	);
 	transform: scaleX(0);
 	transform-origin: center;
 	animation: browser-column-active-tab-indicator-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Chrome-style active tab: the tab surface continues around the lower
+ * corners, while the transparent pseudo-elements reveal the titlebar behind
+ * it. Keep this outside the Tailwind utility layer so the shape is shared by
+ * every Browser Column surface. */
+.browser-column-tab-active {
+	/* Use the elevated surface token so the entire active tab reads as one
+	 * continuous white panel in light themes, including both corner flares. */
+	--browser-column-tab-surface: var(--document-bg);
+	--browser-column-tab-radius: 0.75rem;
+	--browser-column-tab-flare-size: 0.75rem;
+	position: relative;
+	z-index: 1;
+	background-color: var(--browser-column-tab-surface);
+	background-image: none;
+	border-top-left-radius: var(--browser-column-tab-radius);
+	border-top-right-radius: var(--browser-column-tab-radius);
+}
+
+.agent-surface-titlebar .browser-column-tab-active {
+	--browser-column-tab-surface: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
+}
+
+.browser-column-tab-active::before,
+.browser-column-tab-active::after {
+	content: '';
+	position: absolute;
+	bottom: 0;
+	width: var(--browser-column-tab-flare-size);
+	height: var(--browser-column-tab-flare-size);
+	background: transparent;
+	pointer-events: none;
+}
+
+.browser-column-tab-active::before {
+	left: calc(-1 * var(--browser-column-tab-flare-size));
+	border-bottom-right-radius: var(--browser-column-tab-flare-size);
+	box-shadow: 0.25rem 0.25rem 0 0.25rem var(--browser-column-tab-surface);
+}
+
+.browser-column-tab-active::after {
+	right: calc(-1 * var(--browser-column-tab-flare-size));
+	border-bottom-left-radius: var(--browser-column-tab-flare-size);
+	box-shadow: -0.25rem 0.25rem 0 0.25rem var(--browser-column-tab-surface);
 }
 
 /* 全局搜索命令面板是带分组/搜索结果的特殊菜单。保留多行结果的内容高度，
@@ -149,8 +202,8 @@
 	width: 100%;
 }
 
-/* 资料文件树的子树展开/收起: 用 grid 行高从 0fr 过渡到 1fr,
- * 这样收起时子节点不会瞬间从 DOM 消失, 高度和内容能一起顺滑收回。 */
+/* 资料文件树的子树展开/收起: 用 grid 行高从 0fr 过渡到 1fr。
+ * 收起时由渲染层卸载子节点，避免隐藏分支继续参与 React 更新和布局。 */
 .folder-file-tree__subtree {
 	display: grid;
 	grid-template-rows: 0fr;
@@ -159,6 +212,37 @@
 
 .folder-file-tree__subtree[data-expanded='true'] {
 	grid-template-rows: 1fr;
+}
+
+/* 空目录也保留所属 folder group，供拖放命中和背景高亮使用；但不让没有
+ * 子项的 subtree 参与展开动画，避免子列表留白导致 2px 的高度闪动。 */
+.folder-file-tree__subtree[data-empty='true'] {
+	grid-template-rows: 0fr;
+	transition: none;
+}
+
+.folder-file-tree__subtree[data-empty='true'] .folder-file-tree__subtree-items {
+	padding-top: 0;
+	animation: none;
+}
+
+/* 拖放到文件夹时, 背景只覆盖与文件夹行相同的左右范围。
+ * 使用绝对定位的伪元素, 不改变子项自身按 depth 计算的布局位置。 */
+.folder-file-tree__group[data-drag-over='true']::before {
+	position: absolute;
+	top: 0;
+	right: var(--folder-file-tree-drop-right);
+	bottom: 0;
+	left: var(--folder-file-tree-drop-left);
+	border-radius: 0.5rem;
+	background: color-mix(in oklch, var(--brand) 15%, transparent);
+	content: '';
+	pointer-events: none;
+}
+
+.folder-file-tree__group[data-drag-over='true'] > .folder-file-tree__item,
+.folder-file-tree__group[data-drag-over='true'] > .folder-file-tree__subtree {
+	z-index: 1;
 }
 
 .folder-file-tree__subtree-inner {
@@ -178,23 +262,37 @@
 	background: color-mix(in srgb, var(--border) 72%, transparent);
 	content: '';
 	pointer-events: none;
-	transition: background-color 150ms ease;
+	transition: background-color 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* hover 子 item 时, 提亮该 item 所在列表(子树)左侧的层级引导线。
+/* hover 直接子 item 时, 提亮该 item 所在列表(子树)左侧的层级引导线。
  * 用 --foreground 而非主题色: 浅色主题为黑、深色主题为白。 */
-.folder-file-tree__subtree-inner:has(> .folder-file-tree__subtree-items > .folder-file-tree__item:hover)::before {
-	background: color-mix(in srgb, var(--foreground) 35%, transparent);
+.folder-file-tree__subtree-inner:has(
+	> .folder-file-tree__subtree-items > .folder-file-tree__item:hover,
+	> .folder-file-tree__subtree-items > .folder-file-tree__group > .folder-file-tree__item:hover
+)::before {
+	background: color-mix(in srgb, var(--foreground) 18%, transparent);
 }
 
 .folder-file-tree__subtree-items {
-	padding-top: 1px;
+	padding-top: 0.125rem;
 	animation: folder-file-tree-subtree-in 180ms ease-out both;
 }
 
 .folder-file-tree__items > .folder-file-tree__item:not(:first-child),
-.folder-file-tree__subtree-items > .folder-file-tree__item:not(:first-child) {
+.folder-file-tree__items > .folder-file-tree__group:not(:first-child),
+.folder-file-tree__subtree-items > .folder-file-tree__item:not(:first-child),
+.folder-file-tree__subtree-items > .folder-file-tree__group:not(:first-child) {
 	margin-top: 1px;
+}
+
+/* 笔记树的 root 与 folder 子列表统一使用 2px 行间距。 */
+.notebook-file-tree__items > .folder-file-tree__group:not(:first-child),
+.notebook-file-tree__items > div:not(:first-child),
+.notebook-file-tree__subtree-items > .folder-file-tree__item:not(:first-child),
+.notebook-file-tree__subtree-items > .folder-file-tree__group:not(:first-child),
+.notebook-file-tree__subtree-items > div:not(:first-child) {
+	margin-top: 2px;
 }
 
 .folder-file-tree__subtree[data-expanded='false'] .folder-file-tree__subtree-items {
@@ -219,6 +317,10 @@
 
 	.folder-file-tree__subtree-items {
 		animation: none;
+	}
+
+	.folder-file-tree__subtree[data-expanded='true'] > .folder-file-tree__subtree-inner::before {
+		transition-duration: 0ms;
 	}
 }
 
@@ -401,6 +503,22 @@
 
 	.flowix-hover-preview-leave {
 		animation: flowix-hover-preview-out 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+	}
+
+	/* The note-navigation drawer is a small, bounded overlay. Keep the blur on
+	 * that surface only: backdrop-filter is compositor-backed in the desktop
+	 * WebView, unlike a duplicated/blurred page layer. Browsers without it keep
+	 * the fully opaque card surface for legibility and zero filter cost. */
+	.flowix-note-navigation-drawer-surface {
+		background: var(--card);
+	}
+
+	@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+		.flowix-note-navigation-drawer-surface {
+			background: color-mix(in oklch, var(--card) 64%, transparent);
+			backdrop-filter: blur(8px);
+			-webkit-backdrop-filter: blur(8px);
+		}
 	}
 
 	/* Popover presence lifecycle: mount invisibly, position before paint, then
@@ -704,6 +822,26 @@
 
 .agent-conversation-list__icon--running {
   animation: agent-type-badge-running-border 1.2s ease-in-out infinite alternate;
+}
+
+/* 对话列表标题不显示省略号: 末尾保留一小段向内渐隐, 避免文字在时间
+ * 标签前突然截断。mask 只作用于标题文本, 不会覆盖 item 的背景或右侧操作。 */
+.agent-conversation-list__title {
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 0,
+    #000 calc(100% - 24px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    #000 0,
+    #000 calc(100% - 24px),
+    transparent 100%
+  );
 }
 
 /* 中间列“新建对话”菜单进入品牌色背景时, Agent 图标与 slash 菜单一致变白。 */

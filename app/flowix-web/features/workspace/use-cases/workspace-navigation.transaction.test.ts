@@ -16,11 +16,20 @@ const mocks = vi.hoisted(() => ({
       mocks.memoState.selectedNotebook = notebook;
       mocks.memoState.selectedNotebookId = notebook?.id ?? null;
     }),
-    setNotebooks: vi.fn((notebooks: Array<{ id: string; path: string }>) => {
+    setNotebooks: vi.fn((
+      notebooks: Array<{ id: string; path: string }>,
+      selectedNotebookId?: string | null,
+    ) => {
       mocks.memoState.notebooks = notebooks;
-      if (!notebooks.some((item) => item.id === mocks.memoState.selectedNotebookId)) {
+      const nextSelectedId = selectedNotebookId === undefined
+        ? mocks.memoState.selectedNotebookId
+        : selectedNotebookId;
+      if (!notebooks.some((item) => item.id === nextSelectedId)) {
         mocks.memoState.selectedNotebook = null;
         mocks.memoState.selectedNotebookId = null;
+      } else {
+        mocks.memoState.selectedNotebook = notebooks.find((item) => item.id === nextSelectedId) ?? null;
+        mocks.memoState.selectedNotebookId = nextSelectedId;
       }
     }),
     setMemos: vi.fn(),
@@ -66,6 +75,7 @@ vi.mock('@features/document/store/document-store', () => ({
 }));
 
 vi.mock('@platform/tauri/client', () => ({
+  agent: {},
   notebooks: { setCurrent: mocks.setCurrentNotebook },
 }));
 
@@ -130,7 +140,13 @@ describe('workspace navigation transaction', () => {
     mocks.memoState.loadMemos.mockResolvedValue(undefined);
   });
 
-  it('activates a matching browser-column memo without opening it in the third column', async () => {
+  it('opens a memo in work while retaining its existing browser tab', async () => {
+    mocks.openMemoDocument.mockImplementation(async (params) => {
+      mocks.documentState.activeMemoSession = {
+        memoId: params.memoId, path: params.path, notebookId: null,
+        notebookPath: null, transitionId: 1,
+      };
+    });
     useBrowserColumnStore.getState().openTab({
       id: 'memo:existing',
       title: 'Existing',
@@ -150,12 +166,13 @@ describe('workspace navigation transaction', () => {
       memo: memo('existing'),
     });
 
-    expect(mocks.openMemoDocument).not.toHaveBeenCalled();
+    expect(mocks.openMemoDocument).toHaveBeenCalledOnce();
+    expect(useWorkColumnStore.getState().navigation.target).toMatchObject({ kind: 'memo', memoId: 'existing' });
     expect(useBrowserColumnStore.getState()).toMatchObject({
       visible: true,
       activeTabId: 'memo:existing',
     });
-    expect(useWorkspaceFocusStore.getState().focusedHostId).toBe('browser-column');
+    expect(useWorkspaceFocusStore.getState().focusedHostId).toBe('main-third');
   });
 
   it('rolls back memo selection and retains the previous target on failure', async () => {
@@ -173,7 +190,7 @@ describe('workspace navigation transaction', () => {
       phase: 'failed',
       pendingTarget: { kind: 'memo', memoId: 'new' },
       previousTarget: { kind: 'empty' },
-      failure: { message: 'save refused', retryToken: 'navigation-retry-1' },
+      failure: { message: 'save refused', retryToken: expect.stringMatching(/^navigation-retry-\d+$/) },
     });
   });
 
@@ -485,6 +502,10 @@ describe('workspace navigation transaction', () => {
     await reconcileDeletedNotebook(deletedNotebook.id, [remainingNotebook]);
 
     expect(mocks.clearDocument).toHaveBeenCalledOnce();
+    expect(mocks.memoState.setNotebooks).toHaveBeenCalledWith(
+      [remainingNotebook],
+      remainingNotebook.id,
+    );
     expect(mocks.setCurrentNotebook).toHaveBeenCalledWith(remainingNotebook.id);
     expect(mocks.memoState.selectedNotebook?.id).toBe(remainingNotebook.id);
     expect(mocks.memoState.selectedMemo).toBeNull();

@@ -13,7 +13,7 @@ import {
 } from '@features/document';
 import { getDocumentInstanceKey } from '@/lib/path';
 import { toast } from '@/lib/toast';
-import { openPath } from '@platform/tauri/opener';
+import { product } from '@platform/tauri/client/desktop';
 import {
   initialDocumentContainerState,
   type DocumentContainerProps,
@@ -30,12 +30,17 @@ import { useMemoDocumentChangeWatch } from '@features/document/components/sessio
 import { LazyDocumentEditor } from '@features/document/components/lazy-document-editor';
 import { LazyCodeEditor } from '@features/document/components/lazy-code-editor';
 import { NotePropertiesDialog } from '@features/document/components/note-properties-dialog';
+import { MemoDocumentHeader } from '@features/document/components/memo-document-header';
+import type { MemoTitleEditorHandle } from '@features/document/components/memo-title-editor';
 import type { MarkdownEditorHandle } from '@features/editor/markdown-editor';
 import { isEditableTextFilePath, isImageFilePath } from '@features/editor/code-file';
-import backgroundImage from '@/assets/bg.document.png';
 import { useI18n } from '@/lib/i18n';
+import { WorkspaceEmptyState } from '@shared/ui/workspace-empty-state';
 import { clearWorkspaceDocument } from '@features/workspace/use-cases/workspace-navigation';
 import { removeBrowserColumnTabsByMemoId } from '@features/workspace/use-cases/browser-column-navigation';
+import { useWorkspaceFocusStore } from '@features/workspace/store/workspace-focus-store';
+import { getBuffer, subscribeDocumentBufferChanges } from '@features/document/store/buffer-registry';
+import { documentIdentityKey } from '@features/document/store/document-identity';
 
 export function DocumentContainer({
   filePath,
@@ -50,10 +55,15 @@ export function DocumentContainer({
   toolbarCollapsed = false,
   onToolbarCollapsedChange,
   documentSessionMode = 'main',
-  readOnly = false,
+  readOnly: forcedReadOnly = false,
+  initialFocus,
   onFlushReady,
 }: DocumentContainerProps) {
   const { t } = useI18n();
+  const hostId = documentSessionMode === 'isolated' ? 'browser-column' : 'main-third';
+  const focusedHostId = useWorkspaceFocusStore((store) => store.focusedHostId);
+  const readOnly = forcedReadOnly || focusedHostId !== hostId;
+  const containerRef = useRef<HTMLDivElement>(null);
   const documentInstanceKey = useMemo(
     () => memoId ? `memo:${memoId}` : getDocumentInstanceKey(filePath),
     [filePath, memoId]
@@ -72,6 +82,7 @@ export function DocumentContainer({
   const loadedDocumentInstanceKeyRef = useRef<string | null>(null);
   const prevFilePathRef = useRef<string | null>(null);
   const editorHandleRef = useRef<MarkdownEditorHandle | null>(null);
+  const titleEditorRef = useRef<MemoTitleEditorHandle | null>(null);
   // 切片订阅: 替代原来的 `useMemoStore()` 全量订阅 —— 任何 set 都会让本组件重渲,
   // 包括 doc 内容 / charCount 这些高频变化。切到 selector 后, 只在用到的
   // 仅订阅当前 memo 实体，避免按 memo 数组长度变化而重渲。
@@ -99,6 +110,7 @@ export function DocumentContainer({
   const {
     clearSaveTimer,
     flushDocument,
+    discardDocument,
     handleChange,
     saveDoc,
   } = useDocumentAutosave({
@@ -114,9 +126,48 @@ export function DocumentContainer({
   });
 
   useEffect(() => {
-    onFlushReady?.(flushDocument);
-    return () => onFlushReady?.(null);
-  }, [flushDocument, onFlushReady]);
+    const key = documentIdentityKey(documentIdentity);
+    const sync = () => {
+      const buffer = getBuffer(documentIdentity);
+      if (!buffer) return;
+      const content = buffer.content;
+      const textUnits = countTextUnits(extractBodyContent(content));
+      const tokenCount = Math.ceil(textUnits / 4);
+      setState((prev) => (
+        prev.fullContent === content
+        && prev.charCount === textUnits
+        && prev.tokenCount === tokenCount
+          ? prev
+          : {
+              ...prev,
+              fullContent: content,
+              charCount: textUnits,
+              tokenCount,
+            }
+      ));
+    };
+    const unsubscribeBuffer = subscribeDocumentBufferChanges((identity) => {
+      if (documentIdentityKey(identity) === key) sync();
+    });
+    const unsubscribeFocus = useWorkspaceFocusStore.subscribe((next, previous) => {
+      if (previous.focusedHostId === hostId && next.focusedHostId !== hostId) {
+        // Finish composition and publish the outgoing editor before React
+        // enables the incoming surface. Disk persistence remains debounced.
+        const active = document.activeElement;
+        if (active instanceof HTMLElement && containerRef.current?.contains(active)) active.blur();
+        flushPendingEditorChanges();
+      }
+    });
+    return () => {
+      unsubscribeBuffer();
+      unsubscribeFocus();
+    };
+  }, [documentIdentity, flushPendingEditorChanges, hostId, setState]);
+
+  useEffect(() => {
+    onFlushReady?.(flushDocument, discardDocument);
+    return () => onFlushReady?.(null, null);
+  }, [discardDocument, flushDocument, onFlushReady]);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [propertiesContentSnapshot, setPropertiesContentSnapshot] = useState<string | null>(null);
 
@@ -250,14 +301,16 @@ export function DocumentContainer({
     }
     prevFilePathRef.current = filePath;
 
-    // Switching to a different document must not carry the previous document's
-    // unsaved editor snapshot into the new load. The buffer for the new path
-    // was just (re)allocated inside reloadDocument -> setActiveDocumentPath, so its
-    // pendingContent is already null. clearSaveTimer is a defensive sweep
-    // for any stray timer from the previous document.
+    // Stop this surface's old timer before loading. The target identity may
+    // already have a live draft owned by the other column; preserve it below.
     clearSaveTimer();
 
-    reloadDocument(filePath, { preservePending: false, showLoading: true });
+    reloadDocument(filePath, {
+      // A second surface for the same identity shares this buffer. Preserve
+      // its live draft instead of replacing it with the disk snapshot.
+      preservePending: hasDocumentUnsavedChanges(documentIdentity),
+      showLoading: true,
+    });
   }, [filePath, documentIdentity, documentInstanceKey, documentSessionMode, isExternalDocument, memoId, reloadDocument, clearSaveTimer]);
 
   useExternalDocumentChangeWatch({
@@ -295,18 +348,7 @@ export function DocumentContainer({
   }, [filePath, metaInfo, onMetainfoData]);
 
   if (!filePath) {
-    return (
-      <div className="relative w-full h-full flex items-center justify-center">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-no-repeat bg-bottom bg-[length:auto_800px] opacity-[0.32]"
-          style={{ backgroundImage: `url(${backgroundImage})` }}
-        />
-        <span className="relative text-center text-[var(--muted-foreground)] text-sm">
-          {t("document.empty")}
-        </span>
-      </div>
-    );
+    return <WorkspaceEmptyState tone="document" message={t('shell.emptyDocument')} />;
   }
 
   if (state.error) {
@@ -357,8 +399,20 @@ export function DocumentContainer({
   }
 
   return (
-    <div className="document-container h-full w-full min-w-0 flex flex-col bg-transparent relative overflow-hidden">
+    <div ref={containerRef} onFocusCapture={() => useWorkspaceFocusStore.getState().focusHost(hostId)} onPointerDownCapture={() => useWorkspaceFocusStore.getState().focusHost(hostId)} className="document-container h-full w-full min-w-0 flex flex-col bg-transparent relative overflow-hidden">
       <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
+        {state.isLoading && (
+          <div
+            role="status"
+            aria-label="Loading"
+            className="flex h-full w-full items-center justify-center"
+          >
+            <div
+              aria-hidden="true"
+              className="h-5 w-5 animate-spin rounded-full border-2 border-[color-mix(in_oklch,var(--muted-foreground)_26%,transparent)] border-t-[var(--brand)]"
+            />
+          </div>
+        )}
         {!state.isLoading && isImagePreview && (
           <ImageFilePreview filePath={filePath} scopePath={externalScopePath} />
         )}
@@ -378,21 +432,39 @@ export function DocumentContainer({
         )}
         {!state.isLoading && !usesCodeEditor && state.fullContent && (
           <LazyDocumentEditor
+            memoId={memoId ?? undefined}
             ref={editorHandleRef}
             key={documentInstanceKey}
             content={state.fullContent}
+            header={!isExternalDocument && memoId && activeMemo ? (
+              <MemoDocumentHeader
+                titleRef={titleEditorRef}
+                memoId={memoId}
+                filename={activeMemo.filename}
+                updatedAt={state.updatedAtDate ?? (activeMemo.updatedAt ? new Date(activeMemo.updatedAt) : null)}
+                editable={!readOnly}
+                autoFocus={initialFocus === 'title'}
+                onMoveToBody={({ trailingContent, insertEmptyLine }) => {
+                  if (!insertEmptyLine) {
+                    editorHandleRef.current?.focusStart?.();
+                    return;
+                  }
+                  editorHandleRef.current?.moveTitleToBody?.(trailingContent ?? '');
+                }}
+              />
+            ) : null}
             editable={!readOnly}
             onChange={(content) => {
               handleChange(content);
-              if (state.isNewlyCreated) setState(prev => ({ ...prev, isNewlyCreated: false }));
             }}
             className=""
             onEditorScroll={(scrollTop) => setState(prev => ({ ...prev, isScrolled: scrollTop > 90 }))}
             onEditingFinished={() => {
               flushPendingEditorChanges();
             }}
-            autoFocus={state.isNewlyCreated}
-            editorStorageUpdatedAt={state.updatedAtDate ?? (activeMemo?.updatedAt ? new Date(activeMemo.updatedAt) : null)}
+            onFocusTitle={() => titleEditorRef.current?.focusEnd()}
+            onAppendToTitle={(title) => titleEditorRef.current?.appendBodyLine(title)}
+            autoFocus={initialFocus === 'body'}
             searchPanelOpen={searchPanelOpen}
             onSearchPanelOpenChange={onSearchPanelOpenChange}
             toolbarCollapsed={toolbarCollapsed}
@@ -442,20 +514,17 @@ function UnavailableFileView({ filePath }: { filePath: string }) {
       <span>{t('document.file.unavailable')}</span>
       <button
         type="button"
-        onClick={() => void openPath(parentDirectory(filePath))}
+        onClick={() => {
+          void product.revealInFileManager(filePath).catch(() => {
+            toast.error(t('memo.fileTree.openFailed'));
+          });
+        }}
         className="inline-flex h-8 items-center rounded-lg border border-[var(--border)] px-3 text-xs text-[var(--foreground)] transition-colors hover:bg-[var(--muted)]"
       >
         {t('document.file.reveal')}
       </button>
     </div>
   );
-}
-
-function parentDirectory(path: string): string {
-  const normalized = path.replace(/[\\/]+$/, '');
-  const separator = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'));
-  if (separator > 0) return normalized.slice(0, separator);
-  return normalized.startsWith('/') ? '/' : normalized;
 }
 
 function ImageFilePreview({ filePath, scopePath }: { filePath: string; scopePath: string | null }) {

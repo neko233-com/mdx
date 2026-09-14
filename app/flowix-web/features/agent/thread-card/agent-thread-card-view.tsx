@@ -18,14 +18,16 @@ import { translate, type AppLanguage, type I18nKey, type I18nParams } from "@/li
 import { createLogger } from "@/lib/logger";
 import { errorMessage } from "@/lib/error-message";
 import type { AgentTypeKey } from "@/types/agent";
+import type { WorkspaceHostId } from "@features/workspace/store/workspace-focus-store";
 import { deriveThreadTitleFromPrompt, defaultThreadTitle } from "@features/agent/store/thread-titles";
 import { toast } from "@/lib/toast";
+import { useMemoStore } from "@features/memo/store/memo-store";
 import { openNoteByDeepLink } from "@features/memo/use-cases/open-by-target";
 import { agent } from "@platform/tauri/client/agent";
 import { normalizePlainLinkHref } from "@features/editor/extensions/markdown-link";
 import { isEditableTextFilePath } from "@features/editor/code-file";
 import { normalizeAgentTypeKey } from "@/lib/agent-types";
-import { useUserSettingsStore } from "@features/preferences/store/user-settings-store";
+import { getCurrentAppLanguage } from "@features/preferences/public/runtime-api";
 import type { AgentRuntimeSettingKind } from "@features/agent/runtime/agent-runtime-spec";
 import { buildInitialInstanceRuntimeConfig } from "@features/agent/store/initial-runtime-config";
 import {
@@ -41,12 +43,21 @@ import {
   listDshSkills,
 } from "@features/agent/services/dsh-command-service";
 import {
+  beginCodexSlashCommand,
+  createCodexCommandLifecycle,
+  executeCodexSlashCommand,
+  finishCodexSlashCommand,
+  hasPendingCodexCommand,
+  listCodexSkills,
+} from "@features/agent/services/codex-slash-command-service";
+import {
   createArrowBendDownRightIcon,
   createFullscreenIcon,
 } from "@features/agent/thread-card/agent-thread-card-icons";
 import { createAgentThreadCardDom } from "@features/agent/thread-card/view/agent-thread-card-dom-factory";
 import { AgentThreadCardChromeController } from "@features/agent/thread-card/chrome";
 import { ExternalAgentSettingsController } from "@features/agent/thread-card/settings/external-agent-settings-controller";
+import { CodexSettingsDialogController } from "@features/agent/thread-card/settings/codex-settings-dialog";
 import { AgentRolePickerController } from "@features/agent/thread-card/role/agent-role-picker-controller";
 import { FullscreenLayoutController } from "@features/agent/thread-card/fullscreen/fullscreen-layout-controller";
 import {
@@ -66,6 +77,7 @@ import { AgentConversationSurfaceController } from "@features/agent/thread-card/
 import { getAgentConversationRuntimeCwd } from "@features/agent/conversation-presentation";
 import { selectAndOpenAgentConversation } from "@features/workspace/use-cases/agent-conversation-navigation";
 import {
+  openBrowserColumnFileBrowser,
   openBrowserColumnText,
   openBrowserColumnWebpage,
 } from "@features/workspace/use-cases/browser-column-navigation";
@@ -90,7 +102,7 @@ import {
   selectAgentThreadCardRuntimeView,
 } from "@features/agent/thread-card/agent-thread-card-selectors";
 import {
-  agentFileScopePath,
+  agentFileScopePathForRuntime,
   localFilePathFromAgentHref,
 } from "@features/agent/thread-card/link-navigation";
 
@@ -176,6 +188,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
   private externalSettingsLoadedTypeKey: AgentTypeKey | null = null;
   private agentRolePicker: AgentRolePickerController;
   private composerAddMenu: ComposerAddMenuController;
+  private codexSettingsDialog = new CodexSettingsDialogController();
   private isCreating = false;
   private isDestroyed = false;
   // Guards late async completions (thread creation / role loading) from
@@ -190,26 +203,39 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
   private fullscreenRestoreFrame: number | null = null;
   private badgePositionFrame: number | null = null;
   /** 文档引用注入回调 (旧 quick-phrases 弹窗入参已废弃, 这里留给将来扩展)。 */
-  private boundHandleBodyScroll = (): void => {
+  private boundHandleBodyScroll = (event: Event): void => {
+    const body = event.currentTarget;
+    if (body instanceof HTMLElement) {
+      body.classList.toggle(
+        "agent-thread-card__body--scrolled",
+        body.scrollTop > SCROLL_DELTA_EPSILON_PX,
+      );
+    }
     this.messages.handleScroll();
   };
   private boundHandleRequestFullscreen = (event: Event): void => {
     const detail = (event as CustomEvent<{
       element?: HTMLElement;
       threadId?: string | null;
+      host?: WorkspaceHostId;
       exitOthers?: boolean;
       persist?: boolean;
     }>).detail;
+    // This request is deliberately host-scoped. Ignore legacy/unscoped
+    // broadcasts so a missing host can never turn into a cross-column exit.
+    const hostMatches =
+      detail?.host !== undefined && detail.host === this.workspaceHost;
     const isTarget =
-      detail?.element === this.dom ||
-      (!!detail?.threadId && detail.threadId === this.threadId);
+      hostMatches &&
+      (detail?.element === this.dom ||
+        (!!detail?.threadId && detail.threadId === this.threadId));
 
     if (isTarget) {
       this.setFullscreen(true, { persist: detail?.persist });
       return;
     }
 
-    if (detail?.exitOthers !== false && this.isFullscreen) {
+    if (hostMatches && detail?.exitOthers !== false && this.isFullscreen) {
       this.setFullscreen(false, { persist: detail?.persist });
     }
   };
@@ -253,7 +279,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
   /** 当前 AppLanguage ── NodeView 不在 React 树里, 不能用 useI18n,
    *  走 user-settings-store 读最新值 (跨窗口同步跟 I18nProvider 一致)。 */
   private get language(): AppLanguage {
-    return useUserSettingsStore.getState().settings.language;
+    return getCurrentAppLanguage();
   }
 
   /** 翻译: NodeView 内部所有面向用户的字符串走这里, 切换语言时由
@@ -298,6 +324,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
       },
       onBodyClick: (event) => this.handleBodyClick(event),
       onBodyScroll: this.boundHandleBodyScroll,
+      onBodyWheel: (event) => this.messages.handleUserScrollIntent(event.deltaY),
       // composer 空区域 → 输入框 focus 已由 createAgentComposerDom
       // 工厂内部挂的 pointerdown 委托统一处理 (详见
       // composer-dom-factory.ts COMPOSER_FOCUS_INTERACTIVE_SELECTOR),
@@ -437,6 +464,11 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
       images: this.composerImages,
       t: (key) => this.t(key),
       isDestroyed: () => this.isDestroyed,
+      getAgentType: () => this.typeKey,
+      openCodexSettings: () => {
+        const notebookPath = this.cwd ?? useMemoStore.getState().selectedNotebook?.path;
+        if (notebookPath) this.codexSettingsDialog.open(notebookPath);
+      },
     });
     this.runtime = new AgentThreadCardRuntimeController({
       getCurrentThreadId: () => this.threadId,
@@ -504,11 +536,21 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
           : wantStop
             ? this.t("editor.threadCard.stop")
             : this.t("editor.threadCard.send"),
-      getSendButtonWantsStop: () =>
-        this.currentRuntimeView().sendButtonWantsStop &&
-        !((this.typeKey === "codex" || this.typeKey === "deepseek-harness") &&
-          !!this.composerController?.getPrompt().trim()),
-      getSendButtonRunning: () => this.currentRuntimeView().isDshCommandRunning,
+      getSendButtonWantsStop: () => {
+        const runtime = this.currentRuntimeView();
+        // A running Codex `/goal` owns the stop button. Keep this branch ahead
+        // of the draft check so typing a follow-up prompt cannot turn the
+        // termination control back into Send.
+        if (runtime.isCodexCommandStoppable) return true;
+        return runtime.isModelRunning &&
+          !((this.typeKey === "codex" || this.typeKey === "deepseek-harness") &&
+            !!this.composerController?.getPrompt().trim());
+      },
+      getSendButtonRunning: () => {
+        const runtime = this.currentRuntimeView();
+        return runtime.isDshCommandRunning ||
+          (runtime.isCodexCommandRunning && !runtime.isCodexCommandStoppable);
+      },
       getHasAttachments: () => this.composerImages.hasImages,
       getHasPendingAttachments: () => this.composerImages.hasPending,
       agentType: this.typeKey,
@@ -520,7 +562,13 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
           runtimeConfig: ensured.runtimeConfig,
         });
       },
-      onDshModelSelect: () => {
+      listCodexSkills: async () => {
+        if (this.typeKey !== "codex") return [];
+        const ensured = await this.ensureCodexCommandConversation("/skill");
+        const cwd = ensured.runtimeConfig.workspaceSnapshot?.cwd ?? ensured.runtimeConfig.cwd;
+        return listCodexSkills(cwd ?? "");
+      },
+      onModelSelect: () => {
         this.clearComposerAfterSlashCommand();
         this.externalAgentSettings.openComposerModelPicker();
       },
@@ -530,7 +578,11 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
       },
       onDirectCommand: (command) => {
         this.clearComposerAfterSlashCommand();
-          void this.runDshCommandFromCard(`/${command.name}`);
+        if (this.typeKey === "codex") {
+          void this.runCodexSlashCommandFromCard(`/${command.name}`);
+          return;
+        }
+        void this.runDshCommandFromCard(`/${command.name}`);
       },
       submit: () => {
         void this.submit();
@@ -667,17 +719,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
   }
 
   private scopePathForLocalFile(filePath: string): string | null {
-    const runtimeConfig = this.instance?.runtimeConfig;
-    const snapshotPaths = runtimeConfig?.workspaceState?.desired.workspacePaths
-      ?? runtimeConfig?.workspaceSnapshot?.workspacePaths
-      ?? [];
-    const legacyPaths = [
-      runtimeConfig?.cwd,
-      runtimeConfig?.files?.workspace,
-      ...(runtimeConfig?.files?.folders ?? []),
-      ...(runtimeConfig?.files?.notebooks ?? []),
-    ].filter((path): path is string => typeof path === "string");
-    return agentFileScopePath(filePath, [...snapshotPaths, ...legacyPaths]);
+    return agentFileScopePathForRuntime(filePath, this.instance?.runtimeConfig);
   }
 
   private ensureInstanceBinding(): void {
@@ -774,6 +816,12 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
 
   private get persistedFullscreen(): boolean {
     return !!this.node.attrs.fullscreen;
+  }
+
+  private get workspaceHost(): WorkspaceHostId | null {
+    const host = this.dom.closest<HTMLElement>("[data-workspace-host]")
+      ?.dataset.workspaceHost;
+    return host === "main-third" || host === "browser-column" ? host : null;
   }
 
   private get inputDraft(): string {
@@ -1316,6 +1364,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
       activeRunId: projection.runs.activeRunId,
       runs: projection.runs.runs,
       dshCommand: projection.runs.dshCommand,
+      codexCommand: projection.runs.codexCommand,
       pendingAssistantId: projection.pending.assistantId,
       pendingReasoningId: projection.pending.reasoningId,
       lastRun: projection.runs.lastRun,
@@ -1374,18 +1423,19 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     const rawHref = a.getAttribute("href");
     const localPath = localFilePathFromAgentHref(rawHref);
     if (localPath) {
-      if (isEditableTextFilePath(localPath)) {
-        const scopePath = localPath.replace(/[\\/][^\\/]*$/, '') || localPath;
-        void Promise.resolve(openBrowserColumnText(localPath, scopePath)).catch((error) => {
-          logger.error("Failed to open Markdown link", { error });
+      const scopePath = this.scopePathForLocalFile(localPath);
+      if (scopePath) {
+        void Promise.resolve(openBrowserColumnFileBrowser(scopePath, localPath)).catch((error) => {
+          logger.error("Failed to open workspace file link", { error });
           toast.error(this.t("agent.link.openLocalFileFailed"));
         });
         return;
       }
-      const scopePath = this.scopePathForLocalFile(localPath);
-      if (scopePath) {
-        void Promise.resolve(openBrowserColumnText(localPath, scopePath)).catch((error) => {
-          logger.error("Failed to open text file link", { error });
+
+      if (isEditableTextFilePath(localPath)) {
+        const parentPath = localPath.replace(/[\\/][^\\/]*$/, '') || localPath;
+        void Promise.resolve(openBrowserColumnText(localPath, parentPath)).catch((error) => {
+          logger.error("Failed to open standalone text file link", { error });
           toast.error(this.t("agent.link.openLocalFileFailed"));
         });
         return;
@@ -1450,6 +1500,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     this.composerController.setSendButtonState();
     const queued = useAgentSessionStore.getState().pendingSteeringMessages[this.threadId ?? ""] ?? [];
     this.queuedMessages.hidden = queued.length === 0;
+    this.queuedMessages.setAttribute("aria-label", this.t("agent.backgroundTerminals.queued"));
     this.queuedMessages.replaceChildren(
       ...queued.map((message) => {
         const row = document.createElement("div");
@@ -1566,6 +1617,35 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     });
   }
 
+  private async ensureCodexCommandConversation(command: string) {
+    if (this.typeKey !== "codex") {
+      throw new Error("This slash command is only available for Codex");
+    }
+    return ensureAgentThreadCardConversation({
+      prompt: command,
+      fallbackTitle: this.t("editor.threadCard.title"),
+      typeKey: this.typeKey,
+      currentThreadId: this.threadId,
+      currentInstanceId: this.instanceId,
+      currentTitle: this.instance?.title ?? "",
+      runtimeHandleId: this.runtimeHandleId,
+      source: getCurrentThreadCardSource(),
+      role: {
+        memoId: this.agentRoleMemoId,
+        name: this.agentRoleName,
+      },
+      buildTitle,
+      onThreadBound: (binding) => {
+        if (this.isDestroyed) return;
+        this.updateAttrs({
+          instanceId: binding.instanceId,
+          threadId: binding.threadId,
+          typeKey: binding.typeKey,
+        });
+      },
+    });
+  }
+
   private async runDshCommandFromCard(command: string, imagePaths: string[] = []): Promise<void> {
     if (this.isDestroyed || this.typeKey !== "deepseek-harness") return;
     await runDshCommand({
@@ -1592,6 +1672,39 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     });
   }
 
+  private async runCodexSlashCommandFromCard(command: string): Promise<void> {
+    let lifecycle: ReturnType<typeof createCodexCommandLifecycle> | undefined;
+    let commandThreadId: string | null = null;
+    try {
+      if (this.isDestroyed || this.typeKey !== "codex") return;
+      if (hasPendingCodexCommand(this.threadId)) return;
+      const ensured = await this.ensureCodexCommandConversation(command);
+      const cwd = ensured.runtimeConfig.workspaceSnapshot?.cwd ?? ensured.runtimeConfig.cwd;
+      commandThreadId = ensured.threadId;
+      lifecycle = createCodexCommandLifecycle(ensured.threadId);
+      beginCodexSlashCommand(ensured.threadId, command, lifecycle);
+      await executeCodexSlashCommand(ensured.threadId, command, cwd, lifecycle);
+      // The command row is a Flowix live event. Reading the provider snapshot
+      // and rendering it directly here would replace that row because Codex
+      // does not persist `/compact` or `/goal` as ordinary userMessage items.
+      // Merge through the session store so the live command overlay survives
+      // the history refresh (and is reconciled when a provider turn exists).
+      await useAgentSessionStore.getState().loadMessages("codex", ensured.threadId);
+    } catch (error) {
+      if (lifecycle && commandThreadId) {
+        finishCodexSlashCommand(
+          commandThreadId,
+          command,
+          lifecycle,
+          "error",
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      toast.error(error instanceof Error ? error.message : String(error));
+      logger.error("Failed to execute Codex slash command", { error });
+    }
+  }
+
   private async submit(): Promise<void> {
     // 落盘待写草稿 ── 提交时 input 即将被清空, 之前的 debounce 必须
     // 立刻写入 ProseMirror attr, 否则卡片重新挂载会丢稿。
@@ -1610,6 +1723,15 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
       void this.runDshCommandFromCard(rawPrompt, imagePaths);
       return;
     }
+    if (
+      this.typeKey === "codex" &&
+      /^\/(?:compact|goal)(?:\s|$)/iu.test(rawPrompt)
+    ) {
+      if (hasPendingCodexCommand(this.threadId)) return;
+      this.clearComposerAfterSlashCommand();
+      void this.runCodexSlashCommandFromCard(rawPrompt);
+      return;
+    }
 
     // 运行期 (thread state isLoading / 正在创建 thread) 阻止发送 ──
     // 输入框保持可用 (允许用户继续输入 / 改稿), 但 Enter 与 send 按钮
@@ -1624,6 +1746,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
       this.typeKey !== "deepseek-harness"
     ) return;
     if (this.typeKey === "deepseek-harness" && hasPendingDshCommand(this.threadId)) return;
+    if (this.typeKey === "codex" && hasPendingCodexCommand(this.threadId)) return;
 
     // 提取全文档作为隐藏 LLM 上下文 ── 跳过本卡 (agentThreadCard), 避免把
     // LLM 自己之前的回答 / 工具结果当成'笔记内容'再喂回去造成循环。
@@ -1800,6 +1923,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     this.externalAgentSettings.dispose();
     this.agentRolePicker.dispose();
     this.composerAddMenu.dispose();
+    this.codexSettingsDialog.close();
     this.fullscreenLayout.dispose();
     this.composerImages.dispose();
   }

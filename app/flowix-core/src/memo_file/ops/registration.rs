@@ -7,7 +7,8 @@ impl MemoFile {
     /// Rename/reconcile 入口: 如果文件 frontmatter 里已有 `key: <id>` 字段, 以磁盘
     /// key 为真相修复 memo index。
     ///
-    /// - key 命中已有 entry 且 filename 不同: 视为物理 rename, 保留 id 并更新 filename。
+    /// - key 命中已有 entry 且 filename 不同: 旧路径仍存在时视为复制并生成新 id;
+    ///   旧路径不存在时视为物理 rename, 保留 id 并更新 filename。
     /// - key 不在 memo index: 用磁盘 key 重建 entry, 用于启动/切换 notebook 对账。
     /// - 无 key: 生成新 id 并写入 frontmatter。
     ///
@@ -22,13 +23,11 @@ impl MemoFile {
         if !abs_path.exists() {
             return Err(format!("file not found: {}", abs_path.display()));
         }
-        let filename = abs_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("invalid path: {}", abs_path.display()))?
-            .to_string();
+        let base = self.get_memo_base();
+        let relative_path = notebook_relative_path(&base, abs_path)?;
+        let filename = filename_from_notebook_relative_path(&relative_path);
 
-        if let Some(memo) = self.find_memo_by_filename(&filename) {
+        if let Some(memo) = self.find_memo_by_relative_path(&relative_path) {
             return self.reload_memo_inner_locked(memo);
         }
 
@@ -43,13 +42,18 @@ impl MemoFile {
         let content = fs::read_to_string(abs_path).map_err(|e| e.to_string())?;
         if let Some(existing_id) = super::super::frontmatter::extract_frontmatter_key(&content) {
             if let Some(existing_memo) = self.read_current_memo(&existing_id) {
-                if existing_memo.filename != filename {
-                    // (a) 走 rename_memo_file 改 entry.filename, id 保留
+                if existing_memo.relative_path != relative_path {
+                    let old_path =
+                        notebook_path_from_relative(&base, &existing_memo.relative_path)?;
+                    if old_path.exists() {
+                        // The old file is still present, so this is a copy.
+                        // The copied file must receive a fresh globally unique id.
+                        return self.register_existing_file_as_new_locked(abs_path);
+                    }
+                    // The old path disappeared, so this is a rename observed
+                    // after the original Remove event. Preserve the id.
                     drop(_index_io_guard);
-                    return self.rename_memo_file(
-                        &self.get_memo_base().join(&existing_memo.filename),
-                        abs_path,
-                    );
+                    return self.rename_memo_file(&old_path, abs_path);
                 }
                 // (b) filename 一致: 幂等 no-op, 不重新生成
                 return Ok(existing_memo);
@@ -71,6 +75,7 @@ impl MemoFile {
             let mut memo = Memo {
                 id: id.clone(),
                 filename: filename.clone(),
+                relative_path: relative_path.clone(),
                 preview: String::new(),
                 thumbnail: None,
                 tags: vec![],
@@ -89,7 +94,7 @@ impl MemoFile {
             return Ok(memo);
         }
 
-        let id = self.generate_memo_id();
+        let id = self.generate_global_memo_id();
         let now = chrono::Utc::now().timestamp_millis();
 
         // 把生成的 key 就地注入到 frontmatter 块: 有 key 行就替换,
@@ -102,6 +107,7 @@ impl MemoFile {
         let mut memo = Memo {
             id: id.clone(),
             filename: filename.clone(),
+            relative_path: relative_path.clone(),
             preview: String::new(),
             thumbnail: None,
             tags: vec![],
@@ -140,18 +146,16 @@ impl MemoFile {
         if !abs_path.exists() {
             return Err(format!("file not found: {}", abs_path.display()));
         }
-        let filename = abs_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("invalid path: {}", abs_path.display()))?
-            .to_string();
+        let base = self.get_memo_base();
+        let relative_path = notebook_relative_path(&base, abs_path)?;
+        let filename = filename_from_notebook_relative_path(&relative_path);
 
-        if let Some(memo) = self.find_memo_by_filename(&filename) {
+        if let Some(memo) = self.find_memo_by_relative_path(&relative_path) {
             return self.reload_memo_inner_locked(memo);
         }
 
         let content = fs::read_to_string(abs_path).map_err(|e| e.to_string())?;
-        let id = self.generate_memo_id();
+        let id = self.generate_global_memo_id();
         let now = chrono::Utc::now().timestamp_millis();
         let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();
         let stamped = merge_frontmatter(&content, &overrides);
@@ -160,6 +164,7 @@ impl MemoFile {
         let mut memo = Memo {
             id: id.clone(),
             filename,
+            relative_path,
             preview: String::new(),
             thumbnail: None,
             tags: vec![],
@@ -179,6 +184,17 @@ impl MemoFile {
     }
 
     pub fn register_existing_file_for_notebook_id(
+        &self,
+        notebook_id: &str,
+        abs_path: &Path,
+    ) -> Result<Memo, String> {
+        let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
+        self.register_existing_file_for_notebook_id_locked(notebook_id, abs_path)
+    }
+
+    /// Compatibility alias for the former no-frontmatter import API.
+    /// All imported Markdown files now receive a Flowix frontmatter `key`.
+    pub fn register_existing_file_for_notebook_id_without_frontmatter(
         &self,
         notebook_id: &str,
         abs_path: &Path,
@@ -207,13 +223,13 @@ impl MemoFile {
         if !abs_path.exists() {
             return Err(format!("file not found: {}", abs_path.display()));
         }
-        let filename = abs_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("invalid path: {}", abs_path.display()))?
-            .to_string();
+        let base = self.memo_base_for_notebook_id_result(notebook_id)?;
+        let relative_path = notebook_relative_path(&base, abs_path)?;
+        let filename = filename_from_notebook_relative_path(&relative_path);
 
-        if let Some(memo) = self.find_memo_by_filename_for_notebook_id(notebook_id, &filename) {
+        if let Some(memo) =
+            self.find_memo_by_relative_path_for_notebook_id(notebook_id, &relative_path)
+        {
             return self.reload_memo_inner_for_notebook_id_locked(notebook_id, memo);
         }
 
@@ -227,6 +243,7 @@ impl MemoFile {
         let mut memo = Memo {
             id: id.clone(),
             filename,
+            relative_path,
             preview: String::new(),
             thumbnail: None,
             tags: vec![],
@@ -256,24 +273,31 @@ impl MemoFile {
         if !abs_path.exists() {
             return Err(format!("file not found: {}", abs_path.display()));
         }
-        let filename = abs_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("invalid path: {}", abs_path.display()))?
-            .to_string();
+        let base = self.memo_base_for_notebook_id_result(notebook_id)?;
+        let relative_path = notebook_relative_path(&base, abs_path)?;
+        let filename = filename_from_notebook_relative_path(&relative_path);
 
-        if let Some(memo) = self.find_memo_by_filename_for_notebook_id(notebook_id, &filename) {
+        if let Some(memo) =
+            self.find_memo_by_relative_path_for_notebook_id(notebook_id, &relative_path)
+        {
             return self.reload_memo_inner_for_notebook_id_locked(notebook_id, memo);
         }
 
         let content = fs::read_to_string(abs_path).map_err(|e| e.to_string())?;
         if let Some(existing_id) = super::super::frontmatter::extract_frontmatter_key(&content) {
             if let Some(existing_memo) = self.read_memo_for_notebook_id(notebook_id, &existing_id) {
-                if existing_memo.filename != filename {
-                    let base = self.memo_base_for_notebook_id_result(notebook_id)?;
+                if existing_memo.relative_path != relative_path {
+                    let old_path =
+                        notebook_path_from_relative(&base, &existing_memo.relative_path)?;
+                    if old_path.exists() {
+                        return self.register_existing_file_as_new_for_notebook_id_locked(
+                            notebook_id,
+                            abs_path,
+                        );
+                    }
                     return self.rename_memo_file_for_notebook_id_locked(
                         notebook_id,
-                        &base.join(&existing_memo.filename),
+                        &old_path,
                         abs_path,
                     );
                 }
@@ -294,6 +318,7 @@ impl MemoFile {
             let mut memo = Memo {
                 id: id.clone(),
                 filename: filename.clone(),
+                relative_path: relative_path.clone(),
                 preview: String::new(),
                 thumbnail: None,
                 tags: vec![],
@@ -315,12 +340,13 @@ impl MemoFile {
         let id = self.generate_global_memo_id();
         let now = chrono::Utc::now().timestamp_millis();
         let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();
-        let stamped = merge_frontmatter(&content, &overrides);
-        atomic_write_bytes(abs_path, stamped.as_bytes()).map_err(|e| e.to_string())?;
+        let content_for_index = merge_frontmatter(&content, &overrides);
+        atomic_write_bytes(abs_path, content_for_index.as_bytes()).map_err(|e| e.to_string())?;
 
         let mut memo = Memo {
             id: id.clone(),
             filename: filename.clone(),
+            relative_path: relative_path.clone(),
             preview: String::new(),
             thumbnail: None,
             tags: vec![],
@@ -333,7 +359,7 @@ impl MemoFile {
             colors: vec![],
             properties: serde_json::json!({}),
         };
-        apply_derived_memo_fields(&mut memo, &stamped);
+        apply_derived_memo_fields(&mut memo, &content_for_index);
         MemoFile::sync_index_on_write_for_notebook_id_locked(self, notebook_id, &memo)
             .map_err(|e| format!("sync memo index failed: {e}"))?;
         Ok(memo)
@@ -361,22 +387,20 @@ impl MemoFile {
         if !abs_path.exists() {
             return Err(format!("file not found: {}", abs_path.display()));
         }
-        let filename = abs_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("invalid path: {}", abs_path.display()))?
-            .to_string();
+        let base = self.get_memo_base();
+        let relative_path = notebook_relative_path(&base, abs_path)?;
+        let filename = filename_from_notebook_relative_path(&relative_path);
 
         let content = fs::read_to_string(abs_path).map_err(|e| e.to_string())?;
         if let Some(existing_id) = super::super::frontmatter::extract_frontmatter_key(&content) {
             if let Some(existing_memo) = self.read_current_memo(&existing_id) {
-                // 调用方已保证 filename 不在 memo index; 如果这里命中 read_memo,
-                // 说明 entry 的 filename 跟当前不一致 (inode-tracker 漏命中场景),
-                // 走 rename_memo_file_locked 保留 id, 改 entry.filename 为当前 filename。
-                return self.rename_memo_file_locked(
-                    &self.get_memo_base().join(&existing_memo.filename),
-                    abs_path,
-                );
+                let old_path = notebook_path_from_relative(&base, &existing_memo.relative_path)?;
+                if old_path.exists() {
+                    // The original path still exists: this is a copied file.
+                    return self.register_existing_file_as_new_locked(abs_path);
+                }
+                // The original path disappeared: this is a rename.
+                return self.rename_memo_file_locked(&old_path, abs_path);
             }
             if self
                 .resolve_memo_location(&existing_id)
@@ -392,6 +416,7 @@ impl MemoFile {
             let mut memo = Memo {
                 id: id.clone(),
                 filename: filename.clone(),
+                relative_path: relative_path.clone(),
                 preview: String::new(),
                 thumbnail: None,
                 tags: vec![],
@@ -410,7 +435,7 @@ impl MemoFile {
             return Ok(memo);
         }
 
-        let id = self.generate_memo_id();
+        let id = self.generate_global_memo_id();
         let now = chrono::Utc::now().timestamp_millis();
 
         let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();
@@ -420,6 +445,7 @@ impl MemoFile {
         let mut memo = Memo {
             id: id.clone(),
             filename: filename.clone(),
+            relative_path: relative_path.clone(),
             preview: String::new(),
             thumbnail: None,
             tags: vec![],
@@ -441,25 +467,16 @@ impl MemoFile {
     /// 无锁版本的 [`Self::rename_memo_file`]。调用方**必须**已持有
     /// `current_index_io` 锁。
     fn rename_memo_file_locked(&self, old_path: &Path, new_path: &Path) -> Result<Memo, String> {
-        let old_filename = old_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("invalid old path: {}", old_path.display()))?
-            .to_string();
-        let new_filename = new_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| format!("invalid new path: {}", new_path.display()))?
-            .to_string();
-
-        let mut memo = match self.find_memo_by_filename(&old_filename) {
+        let base = self.get_memo_base();
+        let old_relative_path = notebook_relative_path(&base, old_path)?;
+        let new_relative_path = notebook_relative_path(&base, new_path)?;
+        let mut memo = match self.find_memo_by_relative_path(&old_relative_path) {
             Some(m) => m.clone(),
-            None => return Err(format!("old filename not in memo index: {old_filename}")),
+            None => return Err(format!("old path not in memo index: {old_relative_path}")),
         };
         let id = memo.id.clone();
 
-        let base = self.get_memo_base();
-        let expected_old_abs = base.join(&old_filename);
+        let expected_old_abs = notebook_path_from_relative(&base, &old_relative_path)?;
         if normalize_for_compare(&expected_old_abs) != normalize_for_compare(old_path) {
             return Err(format!(
                 "old path not under notebook base: {}",
@@ -471,7 +488,7 @@ impl MemoFile {
             return Err(format!("new path is not markdown: {}", new_path.display()));
         }
 
-        if let Some(existing) = self.find_memo_by_filename(&new_filename) {
+        if let Some(existing) = self.find_memo_by_relative_path(&new_relative_path) {
             if existing.id != id {
                 return Err(format!(
                     "new filename already occupied by another memo (id={})",
@@ -480,8 +497,9 @@ impl MemoFile {
             }
         }
 
-        memo.filename = new_filename.clone();
-        let new_abs = base.join(&new_filename);
+        memo.filename = filename_from_notebook_relative_path(&new_relative_path);
+        memo.relative_path = new_relative_path;
+        let new_abs = notebook_path_from_relative(&base, &memo.relative_path)?;
         let content = std::fs::read_to_string(&new_abs)
             .map_err(|e| format!("failed to read new path {}: {e}", new_abs.display()))?;
         apply_derived_memo_fields(&mut memo, &content);

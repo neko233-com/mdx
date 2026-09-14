@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { CalendarBlankIcon } from '@phosphor-icons/react';
 import { Popover, PopoverContent, PopoverTrigger } from '@shared/ui/popover';
-import { translate, useI18n, type AppLanguage, type I18nKey, type I18nParams } from '@/lib/i18n';
-import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
+import { translate, useI18n, type AppLanguage } from '@/lib/i18n';
+import { useAppLanguage } from '@features/preferences/public/runtime-api';
 import { cn } from '@/lib/utils';
 
 function getWeekdayKeys(): Array<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'> {
@@ -50,8 +49,8 @@ function getMonthDays(viewMonth: Date): Array<{ date: Date; inMonth: boolean }> 
   });
 }
 
-function getMonthTitle(t: (key: I18nKey, params?: I18nParams) => string, date: Date): string {
-  return t('document.properties.monthTitle', {
+function getMonthTitle(language: AppLanguage, date: Date): string {
+  return translate(language, 'document.properties.monthTitle', {
     year: date.getFullYear(),
     month: date.getMonth() + 1,
   });
@@ -68,7 +67,7 @@ export function DateValueInput({
   onChange: (value: string) => void;
 }) {
   const { t, language } = useI18n();
-  const settingsLanguage = useUserSettingsStore((store) => store.settings.language);
+  const settingsLanguage = useAppLanguage();
   // 同步当前 user settings 语言; 跟 i18n provider 同源 ── 即便 Provider
   // 因为 react 批处理有微小延迟, 这里也能拿到最新值。
   const effectiveLanguage = (settingsLanguage ?? language) as AppLanguage;
@@ -113,17 +112,11 @@ export function DateValueInput({
           type="button"
           disabled={disabled}
           className={cn(
-            'group flex h-8 w-full items-center gap-2 rounded-lg border border-input bg-background px-2.5 text-left text-sm transition-colors',
-            'hover:bg-[var(--muted)]/40 focus-visible:border-[var(--primary)] focus-visible:outline-none',
-            open && 'border-[var(--primary)]',
+            'frontmatter-property__date-picker-trigger group flex h-8 w-full items-center gap-0 rounded-lg border-0 bg-transparent px-0 text-left text-sm transition-colors',
+            'hover:bg-transparent focus-visible:outline-none focus-visible:ring-0',
             disabled && 'cursor-not-allowed opacity-50'
           )}
         >
-          <CalendarBlankIcon
-            className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]"
-            weight="regular"
-            aria-hidden="true"
-          />
           <span className={cn('min-w-0 flex-1 truncate', value ? 'text-[var(--foreground)]' : 'text-[var(--muted-foreground)]')}>
             {value || t('document.properties.selectDate')}
           </span>
@@ -143,7 +136,7 @@ export function DateValueInput({
       <PopoverContent
         align="start"
         sideOffset={6}
-        className="w-[272px] rounded-xl border border-[var(--border-popup)] bg-[var(--card)] p-2 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]"
+        className="frontmatter-property__date-picker-popover w-[272px] rounded-xl border border-[var(--border-popup)] bg-[var(--card)] p-2 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]"
       >
         <div className="rounded-lg bg-[var(--card)]">
           <div className="mb-2 flex items-center justify-between px-1">
@@ -156,7 +149,7 @@ export function DateValueInput({
               <ChevronLeft className="h-4 w-4" />
             </button>
             <div className="text-sm font-medium text-[var(--foreground)]">
-              {getMonthTitle(t, viewMonth)}
+              {getMonthTitle(effectiveLanguage, viewMonth)}
             </div>
             <button
               type="button"
@@ -186,6 +179,7 @@ export function DateValueInput({
                 <button
                   key={dateValue}
                   type="button"
+                  data-date={dateValue}
                   onClick={() => selectDate(date)}
                   className={cn(
                     'flex h-8 items-center justify-center rounded-md text-sm transition-colors',
@@ -205,4 +199,3 @@ export function DateValueInput({
     </Popover>
   );
 }
-

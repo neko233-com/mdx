@@ -8,6 +8,7 @@ import { useI18n } from '@/lib/i18n';
 import { PRESETS, PROPERTY_KINDS, resolvePreset, type PropertyPreset } from '@features/document/properties/presets';
 import type { PropertyFieldConfig } from '@/lib/constants';
 import { cn } from '@/lib/utils';
+import { useComposingValue } from '@shared/hooks/use-composing-value';
 import type { PropertyRow, PropertyType } from './property-row-model';
 
 export type PopoverAnchor = { top: number; left: number; width: number; height: number };
@@ -29,7 +30,8 @@ function getPropertyTypeLabelKey(kind: PropertyType) {
     | 'document.properties.type.url'
     | 'document.properties.type.icon'
     | 'document.properties.type.select'
-    | 'document.properties.type.multiSelect';
+    | 'document.properties.type.multiSelect'
+    | 'document.properties.type.list';
 }
 
 /**
@@ -74,6 +76,7 @@ function AddFieldPanel({
   const [draftName, setDraftName] = useState(initialName);
   const [draftType, setDraftType] = useState<PropertyType>(initialType);
   const [draftOptions, setDraftOptions] = useState<string[]>(initialOptions);
+  const nameInput = useComposingValue(draftName, setDraftName);
 
   // mode 或 initial props 变化时重置 draft (例如 add 打开 → 关闭 →
   // 改以 edit 打开同一行 / 不同行)。 注: initialName 是只读的触发条件,
@@ -134,9 +137,12 @@ function AddFieldPanel({
           {t('document.properties.addFieldPanel.input')}
         </span>
         <Input
-          value={draftName}
-          onChange={(event) => setDraftName(event.target.value)}
+          value={nameInput.value}
+          onChange={nameInput.onChange}
+          onCompositionStart={nameInput.onCompositionStart}
+          onCompositionEnd={nameInput.onCompositionEnd}
           onKeyDown={(event) => {
+            if (nameInput.isComposingKeyboardEvent(event.nativeEvent)) return;
             if (event.key === 'Enter' && canSubmit) {
               event.preventDefault();
               handleSubmit();
@@ -261,7 +267,7 @@ function PropertyTypePicker({
       <DropdownMenuContent
         align="start"
         sideOffset={6}
-        className="z-[1500] min-w-[120px] rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]"
+        className="z-[150] min-w-[120px] rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]"
       >
         {PROPERTY_KINDS.map((kind) => (
           <DropdownMenuItem
@@ -303,6 +309,7 @@ function OptionsChipsInput({
   label?: string;
 }) {
   const [draft, setDraft] = useState('');
+  const draftInput = useComposingValue(draft, setDraft);
   const commitDraft = () => {
     const next = draft.trim();
     if (!next) return;
@@ -339,11 +346,14 @@ function OptionsChipsInput({
           </span>
         ))}
         <input
-          value={draft}
+          value={draftInput.value}
           placeholder={value.length === 0 ? placeholder : ''}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={draftInput.onChange}
+          onCompositionStart={draftInput.onCompositionStart}
+          onCompositionEnd={draftInput.onCompositionEnd}
           onBlur={commitDraft}
           onKeyDown={(event) => {
+            if (draftInput.isComposingKeyboardEvent(event.nativeEvent)) return;
             if (event.key === 'Enter' || event.key === ',') {
               event.preventDefault();
               commitDraft();
@@ -475,7 +485,7 @@ export function AnchoredPropertyPopover({
   return createPortal(
     <>
       <div
-        className="fixed inset-0 z-[1500]"
+        className="fixed inset-0 z-[150]"
         onClick={handleRequestClose}
         aria-hidden="true"
       />

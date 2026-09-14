@@ -67,6 +67,17 @@ pub struct AgentRuntimeConfig {
     pub deepseek_harness: Option<RuntimePathConfig>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentMessageAttachment {
+    pub r#type: String,
+    pub path: String,
+    pub name: String,
+    pub mime_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentUserMessage {
@@ -92,6 +103,51 @@ pub struct AgentUserMessage {
 }
 
 impl AgentUserMessage {
+    pub fn message_attachments(&self) -> Vec<AgentMessageAttachment> {
+        self.image_paths
+            .iter()
+            .enumerate()
+            .map(|(index, path)| {
+                let name = std::path::Path::new(path)
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("image-{}", index + 1));
+                let mime_type = match std::path::Path::new(path)
+                    .extension()
+                    .and_then(|value| value.to_str())
+                    .map(str::to_ascii_lowercase)
+                    .as_deref()
+                {
+                    Some("jpg" | "jpeg") => "image/jpeg",
+                    Some("webp") => "image/webp",
+                    Some("gif") => "image/gif",
+                    Some("png") => "image/png",
+                    Some("pdf") => "application/pdf",
+                    Some("doc") => "application/msword",
+                    Some("docx") => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    Some("xls") => "application/vnd.ms-excel",
+                    Some("xlsx") => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    Some("ppt") => "application/vnd.ms-powerpoint",
+                    Some("pptx") => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    _ => "application/octet-stream",
+                };
+                AgentMessageAttachment {
+                    r#type: if mime_type.starts_with("image/") {
+                        "input_image".to_string()
+                    } else {
+                        "input_file".to_string()
+                    },
+                    path: path.clone(),
+                    name,
+                    mime_type: mime_type.to_string(),
+                    detail: (mime_type.starts_with("image/")).then(|| "high".to_string()),
+                }
+            })
+            .collect()
+    }
+
     /// 共享 accessor ── 所有 dispatch 方法都从这里取该 runtime 的配置。
     /// 早期实现是 7 个方法各自 match typeKey, 现在统一一处。
     fn runtime_config_for(&self, runtime: &str) -> Option<&RuntimePathConfig> {
@@ -244,6 +300,8 @@ pub enum AgentChunk {
         id: String,
         text: String,
         timestamp: i64,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        attachments: Vec<AgentMessageAttachment>,
     },
     /// 助手流式回答 (普通 content)
     Text { thread_id: String, text: String },
@@ -273,6 +331,19 @@ pub enum AgentChunk {
         id: String,
         name: String,
         args: String,
+        status: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        result: Option<String>,
+        timestamp: i64,
+    },
+    /// Codex-native slash command lifecycle. Codex handles `/compact` and
+    /// `/goal` as protocol operations, so they do not appear as ordinary
+    /// `userMessage` transcript items. This product-owned row keeps the
+    /// command visible and drives the composer busy state.
+    CodexCommand {
+        thread_id: String,
+        id: String,
+        command: String,
         status: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         result: Option<String>,
@@ -345,6 +416,7 @@ impl AgentChunk {
             Self::ToolCall { .. } => "tool_call",
             Self::ToolResult { .. } => "tool_result",
             Self::DshCommand { .. } => "dsh_command",
+            Self::CodexCommand { .. } => "codex_command",
             Self::Error { .. } => "error",
             Self::StreamStart { .. } => "stream_start",
             Self::StreamEnd { .. } => "stream_end",
@@ -362,6 +434,7 @@ impl AgentChunk {
             | Self::ToolCall { thread_id, .. }
             | Self::ToolResult { thread_id, .. }
             | Self::DshCommand { thread_id, .. }
+            | Self::CodexCommand { thread_id, .. }
             | Self::Error { thread_id, .. }
             | Self::StreamStart { thread_id, .. }
             | Self::StreamEnd { thread_id, .. }

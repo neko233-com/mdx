@@ -7,9 +7,12 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async () => () => {}),
 }));
 
-function createController(typeKey: AgentTypeKey) {
-  const body = document.createElement("div");
-  const loadingIndicator = document.createElement("div");
+function createController(
+  typeKey: AgentTypeKey,
+  existing?: { body: HTMLElement; loadingIndicator: HTMLDivElement },
+) {
+  const body = existing?.body ?? document.createElement("div");
+  const loadingIndicator = existing?.loadingIndicator ?? document.createElement("div");
   loadingIndicator.className = "agent-thread-card__loading";
   /*
    * 4 个 cell 的内联 --cell-step 对应 DOM 顺序 0..3。若不写,
@@ -25,7 +28,7 @@ function createController(typeKey: AgentTypeKey) {
     '<span class="agent-thread-card__loading-cell" style="--cell-step:3"></span>' +
     '</span>' +
     '<span class="agent-thread-card__loading-text"></span>';
-  body.append(loadingIndicator);
+  if (loadingIndicator.parentNode !== body) body.append(loadingIndicator);
 
   const messageViewport = new MessageViewportController({
     body,
@@ -62,7 +65,12 @@ function createController(typeKey: AgentTypeKey) {
     createExternalAgentEmptySettings,
   });
 
-  return { body, controller, createExternalAgentEmptySettings };
+  return {
+    body,
+    loadingIndicator,
+    controller,
+    createExternalAgentEmptySettings,
+  };
 }
 
 describe("ThreadMessageRenderController empty settings", () => {
@@ -277,6 +285,28 @@ describe("ThreadMessageRenderController empty settings", () => {
     ).toHaveLength(1);
   });
 
+  it("removes an empty settings card left by a previous controller instance", () => {
+    const first = createController("codex");
+    const input = {
+      messages: [],
+      isLoading: false,
+      shouldRenderMessages: true,
+      isThreadCachePresentationHidden: false,
+      isThreadCacheLoading: false,
+    };
+
+    first.controller.render(input);
+    first.controller.dispose();
+
+    const second = createController("codex", first);
+    second.controller.render(input);
+
+    expect(
+      first.body.querySelectorAll(".agent-thread-card__empty--codex-settings"),
+    ).toHaveLength(1);
+    second.controller.dispose();
+  });
+
   it("removes the empty settings card when the first message renders", () => {
     const { body, controller } = createController("codex");
 
@@ -450,8 +480,8 @@ describe("ThreadMessageRenderController run-end re-parse", () => {
   });
 });
 
-describe("ThreadMessageRenderController tool batch previews", () => {
-  it("starts with in-flight tools, replaces the preview with each new batch, and folds it on assistant input", () => {
+describe("ThreadMessageRenderController tool group regions", () => {
+  it("keeps completed tools in the details region and running tools in the trailing region", () => {
     vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
       cb(0);
       return undefined as unknown as number;
@@ -478,10 +508,29 @@ describe("ThreadMessageRenderController tool batch previews", () => {
         isThreadCachePresentationHidden: false,
         isThreadCacheLoading: false,
       });
-      expect(body.querySelectorAll(".agent-thread-card__tool-group-preview"))
-        .toHaveLength(1);
-      expect(body.querySelector(".agent-thread-card__tool-group-preview")?.textContent)
+      expect(body.querySelectorAll(
+        ".agent-thread-card__tool-group-completed-tools > .agent-thread-card__message",
+      )).toHaveLength(0);
+      expect(body.querySelectorAll(
+        ".agent-thread-card__tool-group-running-tools > .agent-thread-card__message",
+      )).toHaveLength(1);
+      expect(body.querySelector(".agent-thread-card__tool-group-running-tool")?.textContent)
         .toContain("t2.md");
+
+      body.querySelector<HTMLButtonElement>(
+        ".agent-thread-card__tool-group-header",
+      )?.click();
+      expect(body.querySelectorAll(
+        ".agent-thread-card__tool-group-completed-tools > .agent-thread-card__message",
+      )).toHaveLength(1);
+      expect(body.querySelectorAll(
+        ".agent-thread-card__tool-group-running-tools > .agent-thread-card__message",
+      )).toHaveLength(1);
+      expect(
+        (body.querySelector(".agent-thread-card__tool-group-completed-tools")?.compareDocumentPosition(
+          body.querySelector(".agent-thread-card__tool-group-running-tools") as Node,
+        ) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
 
       const t3 = tool("t3", true);
       controller.render({
@@ -491,11 +540,11 @@ describe("ThreadMessageRenderController tool batch previews", () => {
         isThreadCachePresentationHidden: false,
         isThreadCacheLoading: false,
       });
-      const newestPreview = body.querySelectorAll(
-        ".agent-thread-card__tool-group-preview",
-      );
-      expect(newestPreview).toHaveLength(1);
-      expect(newestPreview[0].textContent).toContain("t3.md");
+      expect(body.querySelectorAll(
+        ".agent-thread-card__tool-group-running-tools > .agent-thread-card__message",
+      )).toHaveLength(2);
+      expect(body.querySelector(".agent-thread-card__tool-group-running-tools")?.textContent)
+        .toContain("t3.md");
 
       controller.render({
         messages: [t1, t2, { ...t3, content: "still running" }],
@@ -504,13 +553,14 @@ describe("ThreadMessageRenderController tool batch previews", () => {
         isThreadCachePresentationHidden: false,
         isThreadCacheLoading: false,
       });
-      expect(body.querySelectorAll(".agent-thread-card__tool-group-preview"))
-        .toHaveLength(1);
-      expect(body.querySelector(".agent-thread-card__tool-group-preview")?.textContent)
+      expect(body.querySelectorAll(
+        ".agent-thread-card__tool-group-running-tools > .agent-thread-card__message",
+      )).toHaveLength(2);
+      expect(body.querySelector(".agent-thread-card__tool-group-running-tools")?.textContent)
         .toContain("t3.md");
 
       controller.render({
-        messages: [t1, t2, { ...t3, content: "done", isLoading: false }, {
+        messages: [t1, { ...t2, content: "done", isLoading: false }, { ...t3, content: "done", isLoading: false }, {
           id: "assistant-1",
           role: "assistant",
           content: "next step",
@@ -521,23 +571,16 @@ describe("ThreadMessageRenderController tool batch previews", () => {
         isThreadCachePresentationHidden: false,
         isThreadCacheLoading: false,
       });
-      expect(body.querySelectorAll(".agent-thread-card__tool-group-preview"))
-        .toHaveLength(0);
-      expect(body.querySelectorAll(".agent-thread-card__tool-group-tools > .agent-thread-card__message"))
-        .toHaveLength(0);
-      body.querySelector<HTMLButtonElement>(
-        ".agent-thread-card__tool-group-header",
-      )?.click();
-      expect(body.querySelectorAll(".agent-thread-card__tool-group-tools > .agent-thread-card__message"))
-        .toHaveLength(2);
+      expect(body.querySelectorAll(
+        ".agent-thread-card__tool-group-running-tools > .agent-thread-card__message",
+      )).toHaveLength(0);
       controller.dispose();
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it("keeps a completed preview visible through its 800ms exit timeline", () => {
-    vi.useFakeTimers();
+  it("moves a tool from the running region into completed details", () => {
     vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
       cb(0);
       return undefined as unknown as number;
@@ -564,43 +607,29 @@ describe("ThreadMessageRenderController tool batch previews", () => {
         isThreadCacheLoading: false,
       });
 
+      expect(body.querySelectorAll(
+        ".agent-thread-card__tool-group-running-tools > .agent-thread-card__message",
+      )).toHaveLength(1);
+
       controller.render({
-        messages: [tool("done", false), tool("running", false), {
-          id: "assistant-1",
-          role: "assistant",
-          content: "next",
-          timestamp: "2026-09-03T00:00:00.000Z",
-        }],
-        isLoading: true,
+        messages: [tool("done", false), tool("running", false)],
+        isLoading: false,
         shouldRenderMessages: true,
         isThreadCachePresentationHidden: false,
         isThreadCacheLoading: false,
       });
 
-      expect(body.querySelectorAll(".agent-thread-card__tool-group-preview"))
-        .toHaveLength(0);
       expect(body.querySelectorAll(
-        ".agent-thread-card__tool-group-preview--exiting",
-      )).toHaveLength(1);
-
-      vi.advanceTimersByTime(499);
-      expect(body.querySelectorAll(
-        ".agent-thread-card__tool-group-preview--exiting",
-      )).toHaveLength(1);
-      vi.advanceTimersByTime(300);
-      expect(body.querySelectorAll(
-        ".agent-thread-card__tool-group-preview--exiting",
-      )).toHaveLength(1);
-      vi.advanceTimersByTime(1);
-      expect(body.querySelectorAll(
-        ".agent-thread-card__tool-group-preview--exiting",
+        ".agent-thread-card__tool-group-running-tools > .agent-thread-card__message",
       )).toHaveLength(0);
+      body.querySelector<HTMLButtonElement>(
+        ".agent-thread-card__tool-group-header",
+      )?.click();
       expect(body.querySelectorAll(
-        ".agent-thread-card__tool-group-preview",
-      )).toHaveLength(0);
+        ".agent-thread-card__tool-group-completed-tools > .agent-thread-card__message",
+      )).toHaveLength(2);
       controller.dispose();
     } finally {
-      vi.useRealTimers();
       vi.unstubAllGlobals();
     }
   });
@@ -667,7 +696,7 @@ describe("ThreadMessageRenderController tool batch previews", () => {
         isThreadCacheLoading: false,
       });
 
-      expect(body.querySelectorAll(".agent-thread-card__tool-group-preview"))
+      expect(body.querySelectorAll(".agent-thread-card__tool-group-running-tools > .agent-thread-card__message"))
         .toHaveLength(0);
       controller.dispose();
     } finally {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArchiveIcon, PencilSimpleIcon, PlusIcon, StarIcon, TrashSimpleIcon } from '@phosphor-icons/react';
 import { Loader2 } from 'lucide-react';
 import { MoreHorizontal } from 'lucide-react';
@@ -12,12 +12,20 @@ import { useWorkspaceRestoreStore } from '@features/workspace/store/workspace-re
 import { selectAndOpenAgentConversation } from '@features/workspace/use-cases/agent-conversation-navigation';
 import { useMemoStore } from '@features/memo';
 import { agentClient } from '@features/agent/store/agent-client';
+import { isAgentConversationRunning } from '@features/agent/store/conversation-run-index';
+import { useAgentRuntimeStore } from '@features/agent/store/agent-runtime-store';
 import {
-  isAgentConversationRunning,
-} from '@features/agent/store/conversation-run-index';
-import { AGENT_TYPES, getAgentType, isAgentTypeSelectable } from '@/lib/agent-types';
+  AGENT_TYPES,
+  getAgentType,
+  isAgentTypeSelectable,
+  isAlwaysVisibleNewConversationAgent,
+} from '@/lib/agent-types';
 import type { AgentTypeKey } from '@/types/agent';
 import type { AgentConversationCursor } from '@platform/tauri/client/agent';
+import {
+  isAgentRuntimeInstalledState,
+  normalizeAgentRuntimeStatus,
+} from '@features/agent/runtime/agent-runtime-status';
 import { formatTimeAgo } from '@/lib/format-time-ago';
 import { createLogger } from '@/lib/logger';
 import { toast } from '@/lib/toast';
@@ -80,6 +88,11 @@ const CONVERSATION_GROUP_LABEL_KEY = {
 const logger = createLogger('agent-conversation-list');
 const CONVERSATION_PAGE_SIZE = 30;
 
+interface AgentConversationListProps {
+  /** Keep durable list state while closing transient UI when hidden. */
+  isActive?: boolean;
+}
+
 /** OpenCode history listing previously materialized provider-only sessions as
  * `legacy-ses_...` instances. They have no Flowix-owned conversation and must
  * not be shown alongside real conversation cards. */
@@ -90,7 +103,7 @@ function isSyntheticOpenCodeHistoryInstance(instance: AgentConversationInstance)
     && instance.threadId.startsWith('ses_');
 }
 
-export function AgentConversationList() {
+export function AgentConversationList({ isActive = true }: AgentConversationListProps) {
   const { t } = useI18n();
   const instances = useAgentSessionStore((state) => state.conversationRegistry.instances);
   const threadTombstones = useAgentSessionStore((state) => state.threadTombstones);
@@ -99,8 +112,11 @@ export function AgentConversationList() {
   // Rows can therefore read their running state in O(1) without rebuilding an
   // index by scanning every loaded conversation.
   const conversationRunIndex = useAgentSessionStore((state) => state.threadRunSignatures);
+  const agentRuntimeStatusByType = useAgentRuntimeStore((state) => state.statusByType);
+  const agentRuntimeIsChecking = useAgentRuntimeStore((state) => state.isChecking);
+  const refreshAgentRuntimeIfStale = useAgentRuntimeStore((state) => state.refreshIfStale);
   const currentNotebookId = useMemoStore((state) => state.selectedNotebook?.id ?? null);
-  const activeFilter = useMemoStore((state) => state.activeFilter);
+  const middleColumnView = useMemoStore((state) => state.middleColumnView);
   const setActiveFilter = useMemoStore((state) => state.setActiveFilter);
   const selectedInstanceId = useWorkspaceRestoreStore(
     (state) => state.agentConversation.selectedInstanceId,
@@ -134,9 +150,34 @@ export function AgentConversationList() {
     }
   });
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [newConversationMenuOpen, setNewConversationMenuOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<AgentConversationInstance | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [renameSaving, setRenameSaving] = useState(false);
+
+  useLayoutEffect(() => {
+    if (isActive) return;
+    // Keep list data, filters, and scroll position alive, but never leave a
+    // portal-backed menu or dialog visible after this surface is hidden.
+    setOpenMenuId(null);
+    setNewConversationMenuOpen(false);
+    setRenameTarget(null);
+    setRenameDraft('');
+    setRenameSaving(false);
+    setShowScrollTopHint(false);
+    setJustEndedIds((current) => (current.size === 0 ? current : new Set()));
+  }, [isActive]);
+
+  useEffect(() => {
+    const handleOpenCreateMenu = () => setNewConversationMenuOpen(true);
+    window.addEventListener('flowix:open-agent-create-menu', handleOpenCreateMenu);
+    return () => window.removeEventListener('flowix:open-agent-create-menu', handleOpenCreateMenu);
+  }, []);
+
+  useEffect(() => {
+    if (!newConversationMenuOpen) return;
+    void refreshAgentRuntimeIfStale();
+  }, [newConversationMenuOpen, refreshAgentRuntimeIfStale]);
 
   const toggleFavorite = useCallback((instanceId: string) => {
     setFavoriteIds((current) => {
@@ -300,7 +341,7 @@ export function AgentConversationList() {
     for (const instance of Object.values(instances)) {
       if (filterType && instance.agentType !== filterType) continue;
       const notebookId = instance.source?.notebookId;
-      if (currentNotebookId && notebookId && notebookId !== currentNotebookId) continue;
+      if (currentNotebookId && notebookId !== currentNotebookId) continue;
       merged = mergeLiveConversation(merged, instance);
     }
     return merged.orderedIdentities
@@ -363,15 +404,13 @@ export function AgentConversationList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversations, conversationDetailOpen, conversationRunIndex, selectedInstanceId]);
 
-  // 按当前笔记本圈定对话列表 —— 与中间列 MemoList 同口径。归属当前笔记本的对话
-  // 全部展示；没有笔记本归属 (source.notebookId 为空，例如从独立对话面板发起，或
-  // 本变更之前创建的历史对话) 的对话始终展示，避免它们在任何笔记本下都消失。
-  // 未选中笔记本时退化为全量。
+  // 按当前笔记本严格圈定对话列表 —— 只有归属当前笔记本的会话可见。
+  // 未归属笔记本的历史数据不应出现在任何笔记本列表中；未选中笔记本时退化为全量。
   const scopedConversations = useMemo(() => {
     if (!currentNotebookId) return conversations;
     return conversations.filter((instance) => {
       const notebookId = instance.source?.notebookId;
-      return !notebookId || notebookId === currentNotebookId;
+      return notebookId === currentNotebookId;
     });
   }, [conversations, currentNotebookId]);
 
@@ -486,6 +525,18 @@ export function AgentConversationList() {
   const displayName = (type: (typeof AGENT_TYPES)[number]): string =>
     type.nameKey ? t(type.nameKey as Parameters<typeof t>[0]) : type.name;
 
+  const newConversationAgentTypes = useMemo(
+    () => AGENT_TYPES.filter((type) => {
+      if (!isAgentTypeSelectable(type.key)) return false;
+      if (isAlwaysVisibleNewConversationAgent(type.key)) return true;
+      return isAgentRuntimeInstalledState(normalizeAgentRuntimeStatus(
+        agentRuntimeStatusByType[type.key],
+        agentRuntimeIsChecking,
+      ));
+    }),
+    [agentRuntimeIsChecking, agentRuntimeStatusByType],
+  );
+
   const revealConversation = useCallback(async (instance: AgentConversationInstance) => {
     // 第一次访问: 立即清掉该对话的"刚结束"灰色 dot, 做到"看见一次就消失"。
     if (justEndedIds.has(instance.instanceId)) {
@@ -549,7 +600,7 @@ export function AgentConversationList() {
       <div className="flex items-center justify-between px-3 pb-2 gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <MemoListViewTabs
-              activeTab={activeFilter === 'agents' ? 'conversations' : 'notes'}
+              activeTab={middleColumnView === 'conversations' ? 'conversations' : 'notes'}
               onChange={(tab) => setActiveFilter(tab === 'conversations' ? 'agents' : 'all')}
             />
             <span className="min-w-0 truncate text-[15px] font-medium text-[var(--foreground)]">
@@ -590,14 +641,17 @@ export function AgentConversationList() {
             )}
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <DropdownMenu>
+            <DropdownMenu
+              open={newConversationMenuOpen}
+              onOpenChange={setNewConversationMenuOpen}
+            >
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
                   disabled={!currentNotebookId}
                   aria-label={t('agent.chat.newThread')}
                   title={currentNotebookId ? t('agent.chat.newThread') : t('memo.list.selectNotebook')}
-                  className="group flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-transparent bg-[var(--primary)] p-0 text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="group flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-transparent bg-[var(--primary)] p-0 text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <PlusIcon
                     className="h-4 w-4 transition-[filter] duration-150 group-hover:brightness-105"
@@ -610,17 +664,30 @@ export function AgentConversationList() {
                 <DropdownMenuLabel className="flex items-center gap-1.5 px-[0.375rem] pb-[0.35rem] pt-[0.35rem] text-xs font-normal leading-[1.2] text-[var(--muted-foreground)]">
                   {t('agent.chat.newThread')}
                 </DropdownMenuLabel>
-                {AGENT_TYPES.filter((type) => isAgentTypeSelectable(type.key)).map((type) => (
-                  <DropdownMenuItem
-                    key={type.key}
-                    disabled={!currentNotebookId}
-                    onClick={() => createConversation(type.key)}
-                    className="agent-conversation-new-agent-item group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
-                  >
-                    <AgentIcon typeKey={type.key} alt="" className="h-4 w-4 shrink-0 object-contain" />
-                    <span className="min-w-0 flex-1 truncate">{displayName(type)}</span>
-                  </DropdownMenuItem>
-                ))}
+                {newConversationAgentTypes.map((type) => {
+                  const runtimeStatus = normalizeAgentRuntimeStatus(
+                    agentRuntimeStatusByType[type.key],
+                    agentRuntimeIsChecking,
+                  );
+                  const showNotInstalled = isAlwaysVisibleNewConversationAgent(type.key)
+                    && runtimeStatus.state === 'not-installed';
+                  return (
+                    <DropdownMenuItem
+                      key={type.key}
+                      disabled={!currentNotebookId}
+                      onClick={() => createConversation(type.key)}
+                      className="agent-conversation-new-agent-item group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
+                    >
+                      <AgentIcon typeKey={type.key} alt="" className="h-4 w-4 shrink-0 object-contain" />
+                      <span className="min-w-0 flex-1 truncate">{displayName(type)}</span>
+                      {showNotInstalled && (
+                        <span className="shrink-0 text-xs text-[var(--muted-foreground)] group-hover:text-[var(--primary-foreground)]">
+                          {t('agent.status.notInstalled')}
+                        </span>
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -641,7 +708,7 @@ export function AgentConversationList() {
         >
           {isLoading ? (
             <div
-              className="flex min-h-0 flex-1 items-center justify-center gap-2 px-4 text-center text-sm text-[var(--muted-foreground)]"
+              className="flex h-full min-h-0 w-full items-center justify-center gap-2 px-4 text-center text-sm text-[var(--muted-foreground)]"
               role="status"
               aria-live="polite"
             >
@@ -649,7 +716,7 @@ export function AgentConversationList() {
               <span>{t('status.agent.loadingConversations')}</span>
             </div>
           ) : scopedConversations.length === 0 ? (
-            <div className="flex min-h-0 flex-1 items-center justify-center px-4 text-center text-sm text-[var(--muted-foreground)]">
+            <div className="flex h-full w-full items-center justify-center px-4 text-center text-sm text-[var(--muted-foreground)]">
               {t('status.agent.noConversations')}
             </div>
           ) : (
@@ -724,7 +791,7 @@ export function AgentConversationList() {
                           // 灰色: 刚跑完、本次会话内用户还没点进去过
                           <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--muted-foreground)]" />
                         ) : null}
-                        <span className="min-w-0 flex-1 select-none truncate text-sm font-normal">
+                        <span className="agent-conversation-list__title min-w-0 flex-1 select-none text-sm font-normal">
                           {instance.title?.trim() || t('common.untitled')}
                         </span>
                         <time className="shrink-0 text-xs text-[var(--muted-foreground)] group-hover:hidden" dateTime={new Date(instance.updatedAt).toISOString()}>

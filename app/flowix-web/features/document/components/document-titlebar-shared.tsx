@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronRight, Ellipsis, Loader2, Palette, Search } from 'lucide-react';
+import { Check, ChevronRight, Ellipsis, Loader2, Palette } from 'lucide-react';
 import {
   LinkSimpleIcon,
   CopyIcon,
@@ -12,7 +12,6 @@ import {
   ClockIcon,
   TrashSimpleIcon,
   SwatchesIcon,
-  StackSimpleIcon,
 } from '@phosphor-icons/react';
 import {
   DropdownMenu,
@@ -66,6 +65,7 @@ export const DOCUMENT_TITLEBAR_ICON_BUTTON_WIN =
   'w-8 h-8 flex enabled:!cursor-pointer disabled:!cursor-not-allowed items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--foreground)] rounded-lg transition-colors';
 
 export interface DocumentTitlebarProps {
+  reserveWindowsControls?: boolean;
   document: {
     currentMemo: MemoItem | null;
     externalFilePath?: string | null;
@@ -85,18 +85,14 @@ export interface DocumentTitlebarProps {
     visible?: boolean;
   };
   contentCapabilities: {
-    search: boolean;
-    properties: boolean;
     copyFullText: boolean;
     exportContent: boolean;
     saveAsTemplate: boolean;
     versionHistory: boolean;
   };
   actions: {
-    onOpenSearch: () => void;
     onCopyLink: () => void;
     onCopyFullText: () => void;
-    onOpenProperties: () => void;
     onTogglePin: () => void;
     onExportMarkdown: () => void;
     onSaveAsTemplate: () => void;
@@ -399,7 +395,7 @@ export function AgentThreadCardFullscreenExitButton({
         type="button"
         onClick={() => {
           window.dispatchEvent(new CustomEvent(AGENT_THREAD_CARD_REQUEST_FULLSCREEN_EVENT, {
-            detail: { exitOthers: true },
+            detail: { host, exitOthers: true },
           }));
         }}
         aria-label={t('editor.threadCard.exitFullscreen')}
@@ -427,6 +423,8 @@ export function AgentThreadCardFullscreenIdentity({
 } = {}) {
   const { t } = useI18n();
   const info = useFullscreenAgentThreadCardInfo(host);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
   // 用 selector 而不是 getState() ── session/runtime store 更新时让组件
   // 重新 render, 否则外部 session id / cwd 注入后不会反映到 popup 内容。
   const instance = useAgentSessionStore((state) =>
@@ -437,6 +435,20 @@ export function AgentThreadCardFullscreenIdentity({
   );
 
   if (!info) return null;
+
+  const title = instance?.title?.trim() || info.title || t('common.untitled');
+  const commitTitle = () => {
+    const nextTitle = titleDraft.trim();
+    if (nextTitle && nextTitle !== title) {
+      void useAgentSessionStore.getState().renameAgentConversation({
+        instanceId: info.instanceId,
+        threadId: instance?.threadId ?? info.threadId,
+        title: nextTitle,
+        typeKey: info.typeKey,
+      });
+    }
+    setIsEditingTitle(false);
+  };
 
   // Document titlebar 自身在 data-tauri-drag-region 容器里, badge wrapper + trigger
   // 都必须显式 [-webkit-app-region:no-drag], 否则 Radix HoverCard 的 hover 会被
@@ -475,22 +487,44 @@ export function AgentThreadCardFullscreenIdentity({
           <AgentIcon typeKey={info.typeKey} alt="" className="agent-type-badge__icon" />
         </span>
       </span>
-      <span className="min-w-0 truncate text-sm font-semibold leading-none text-[var(--foreground)] [-webkit-app-region:no-drag]">
-        {info.title || t('common.untitled')}
-      </span>
+      {isEditingTitle ? (
+        <div className="min-w-0 flex-[0_1_auto] truncate rounded px-0.5 py-1 text-sm font-semibold leading-none text-[var(--foreground)] transition-colors hover:bg-[var(--muted)] focus-within:bg-[var(--muted)] [-webkit-app-region:no-drag]">
+          <input
+            autoFocus
+            value={titleDraft}
+            aria-label="重命名会话"
+            onChange={(event) => setTitleDraft(event.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && (event.nativeEvent.isComposing || event.keyCode === 229)) return;
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                commitTitle();
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                setIsEditingTitle(false);
+              }
+            }}
+            className="agent-thread-card__title-input h-auto max-w-full min-w-0 border-0 bg-transparent p-0 font-inherit leading-none text-[var(--foreground)] shadow-none outline-none ring-0 focus:border-0 focus:bg-transparent focus:outline-none focus:ring-0 [-webkit-app-region:no-drag]"
+          />
+        </div>
+      ) : (
+        <span
+          className="min-w-0 flex-[0_1_auto] truncate rounded px-0.5 py-1 text-sm font-semibold leading-none text-[var(--foreground)] transition-colors hover:bg-[var(--muted)] [-webkit-app-region:no-drag]"
+          onDoubleClick={() => {
+            setTitleDraft(title);
+            setIsEditingTitle(true);
+          }}
+        >
+          {title}
+        </span>
+      )}
     </div>
   );
 }
 
-function withoutHoverClasses(className: string): string {
-  return className
-    .split(/\s+/)
-    .filter((token) => token && !token.startsWith('hover:'))
-    .join(' ');
-}
-
 // =====================================================================
-// Memo action group — color + search + ellipsis dropdown
+// Memo action group — color + ellipsis dropdown
 // iconButtonClass (size / radius / bg / border) supplied by caller
 // =====================================================================
 
@@ -587,7 +621,7 @@ function VersionHistorySubmenu({
       </button>
 
       {open && (
-        <div className="absolute right-full top-0 z-[1501] w-[300px] rounded-xl border border-[var(--border-popup)] bg-[var(--card)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]">
+        <div className="absolute right-full top-0 z-[151] w-[300px] rounded-xl border border-[var(--border-popup)] bg-[var(--card)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]">
           <div
             className="flex items-center justify-between"
             style={{ padding: '0.15rem 0.375rem 0.35rem' }}
@@ -660,18 +694,14 @@ function VersionHistorySubmenu({
 export function MemoActions({
   memo,
   iconButtonClass,
-  onOpenSearch,
   onCopyLink,
   onCopyFullText,
-  onOpenProperties,
   onTogglePin,
   onExportMarkdown,
   onSaveAsTemplate,
   onExportWord,
   onRequestDeleteMemo,
   onColorsChange,
-  canSearch,
-  canEditProperties,
   canCopyFullText,
   canExportContent,
   canSaveAsTemplate,
@@ -679,18 +709,14 @@ export function MemoActions({
 }: {
   memo: MemoItem;
   iconButtonClass: string;
-  onOpenSearch: () => void;
   onCopyLink: () => void;
   onCopyFullText: () => void;
-  onOpenProperties: () => void;
   onTogglePin: () => void;
   onExportMarkdown: () => void;
   onSaveAsTemplate: () => void;
   onExportWord: () => void;
   onRequestDeleteMemo: () => void;
   onColorsChange: (next: MemoColor[]) => void;
-  canSearch: boolean;
-  canEditProperties: boolean;
   canCopyFullText: boolean;
   canExportContent: boolean;
   canSaveAsTemplate: boolean;
@@ -701,10 +727,6 @@ export function MemoActions({
   const [confirmVersion, setConfirmVersion] = useState<MemoVersionMeta | null>(null);
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
   const [versionRefreshKey, setVersionRefreshKey] = useState(0);
-  const isAgentThreadCardFullscreen = useAgentThreadCardFullscreenActive();
-  const searchButtonClass = isAgentThreadCardFullscreen
-    ? `${withoutHoverClasses(iconButtonClass)} cursor-not-allowed opacity-45`
-    : iconButtonClass;
 
   const handleConfirmRestoreVersion = async () => {
     if (!confirmVersion || restoringVersionId) return;
@@ -767,25 +789,6 @@ export function MemoActions({
         iconButtonClass={iconButtonClass}
         onChange={onColorsChange}
       />
-      {canSearch && (
-        <Tooltip
-          content={t("document.titlebar.searchTooltip")}
-          shortcut="editor.find"
-          disabled={isAgentThreadCardFullscreen}
-        >
-          <button
-            type="button"
-            disabled={isAgentThreadCardFullscreen}
-            aria-disabled={isAgentThreadCardFullscreen}
-            onClick={() => {
-              if (!isAgentThreadCardFullscreen) onOpenSearch();
-            }}
-            className={searchButtonClass}
-          >
-            <Search className="w-4 h-4" />
-          </button>
-        </Tooltip>
-      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Tooltip content={t("document.titlebar.moreTooltip")}>
@@ -807,14 +810,6 @@ export function MemoActions({
               className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
             >
               <CopyIcon className="w-4 h-4 mr-2" /> {t("document.action.copyFullText")}
-            </DropdownMenuItem>
-          )}
-          {canEditProperties && (
-            <DropdownMenuItem
-              onClick={onOpenProperties}
-              className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
-            >
-              <StackSimpleIcon className="w-4 h-4 mr-2" /> {t("document.action.properties")}
             </DropdownMenuItem>
           )}
           <DropdownMenuItem

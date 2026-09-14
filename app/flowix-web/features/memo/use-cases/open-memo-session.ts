@@ -12,13 +12,19 @@ import { getPluginNoteInfo } from '@features/plugin/plugin-note';
 
 const logger = createLogger('memo-session');
 
+export interface OpenMemoSessionOptions {
+  initialFocus?: 'title' | 'body';
+}
+
 export function resolveMemoSessionPath(memo: MemoItem, notebook: Notebook | null): string | null {
-  return notebook?.path ? joinNotebookMemoPath(notebook.path, memo.filename) : memo.filename ?? null;
+  const relativePath = memo.relativePath || memo.filename;
+  return notebook?.path ? joinNotebookMemoPath(notebook.path, relativePath) : relativePath ?? null;
 }
 
 export async function openMemoSession(
   memo: MemoItem,
   notebook: Notebook | null,
+  options?: OpenMemoSessionOptions,
 ): Promise<WorkspaceContentLocation | null> {
   try {
     const pluginNote = getPluginNoteInfo(memo);
@@ -40,6 +46,7 @@ export async function openMemoSession(
       notebookPath: notebook?.path ?? null,
       memo,
       notebook,
+      initialFocus: options?.initialFocus,
     });
   } catch (error) {
     logger.error('open document failed', { error, memoId: memo.id });

@@ -2,7 +2,7 @@ import { defineAction } from '@/lib/shortcuts/registry';
 import { invokeHandler } from '@/lib/shortcuts/handler-registry';
 import { windows } from '@platform/tauri/client';
 import { useSettingsStore } from '@/lib/store/settings-store';
-import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
+import { getThemePreference, setThemePreference } from '@features/preferences/public/runtime-api';
 import { navigateDocumentHistory } from '@features/document/use-cases/document-navigation';
 import { resolveSystemTheme, type ResolvedThemeId, type ThemeId } from '@features/theme';
 
@@ -24,6 +24,7 @@ import { resolveSystemTheme, type ResolvedThemeId, type ThemeId } from '@feature
  * 当前 action 清单 (按 group 排序):
  *
  *   editor
+ *     editor.selectAll         ⌘A          editor  — 全选当前编辑器
  *     editor.find              ⌘F          window  — 打开 / 关闭编辑器搜索替换面板
  *     editor.undo              ⌘Z          editor  — 撤销
  *     editor.redo              ⌘⇧Z         editor  — 重做
@@ -80,6 +81,26 @@ function nextVisibleTheme(current: ThemeId, prefersDark: boolean): ThemeId {
 
 // ── 编辑 ─────────────────────────────────────────────────
 
+defineAction({
+  id: 'editor.selectAll',
+  titleKey: 'preferences.shortcuts.action.editor.selectAll.title',
+  descriptionKey: 'preferences.shortcuts.action.editor.selectAll.description',
+  group: 'editor',
+  scope: 'editor',
+  defaultBinding: {
+    mac: 'Mod+A',
+    windows: 'Mod+A',
+    linux: 'Mod+A',
+  },
+  alternateBindings: {
+    mac: ['Ctrl+A'],
+  },
+  // Tauri WebView 可能隐藏或错误报告 navigator.platform；全选明确兼容两者，
+  // 但不放宽其它 Mod 快捷键的系统语义。
+  acceptEitherMod: true,
+  run: () => invokeHandler('editor.selectAll'),
+});
+
 /**
  * Tiptap 编辑器 — 打开搜索替换面板。
  *
@@ -100,8 +121,7 @@ defineAction({
     linux: 'Mod+F',
   },
   run: () => {
-    invokeHandler('editor.find');
-    return true;
+    return invokeHandler('editor.find');
   },
 });
 
@@ -437,11 +457,10 @@ defineAction({
     linux: 'Mod+Alt+T',
   },
   run: () => {
-    const state = useUserSettingsStore.getState();
-    const current = state.settings.theme;
+    const current = getThemePreference();
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const next = nextVisibleTheme(current, prefersDark);
-    void state.updateSettings({ theme: next });
+    void setThemePreference(next);
   },
 });
 

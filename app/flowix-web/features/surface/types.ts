@@ -25,6 +25,14 @@ export type WorkColumnSurfaceCapability =
 
 export type WorkColumnSurfaceChrome = 'document' | 'agent';
 
+export type WorkColumnEmptyReason =
+  | 'no-target'
+  | 'stale-context'
+  | 'invalid-target'
+  | 'invalid-artifact';
+
+export type WorkColumnEmptyStateTone = 'document' | 'agent';
+
 interface SurfaceBase {
   instanceKey: string;
 }
@@ -78,11 +86,6 @@ export interface WebSurface extends SurfaceBase {
   url: string;
 }
 
-export interface EmptySurface extends SurfaceBase {
-  kind: 'empty';
-  message: string;
-}
-
 export type WorkColumnSurface =
   | MarkdownSurface
   | MindmapSurface
@@ -92,10 +95,21 @@ export type WorkColumnSurface =
   | PluginArtifactSurface
   | AgentConversationSurface
   | PluginWorkbenchSurface
-  | WebSurface
-  | EmptySurface;
+  | WebSurface;
 
 export type WorkColumnSurfaceKind = WorkColumnSurface['kind'];
+
+export type WorkColumnContentPresentation =
+  | {
+      status: 'surface';
+      surface: WorkColumnSurface;
+    }
+  | {
+      status: 'empty';
+      reason: WorkColumnEmptyReason;
+      tone: WorkColumnEmptyStateTone;
+      message: string;
+    };
 
 export interface DocumentSurfaceContext {
   /** Identity captured from the document session, independent of props. */
@@ -127,7 +141,7 @@ export interface PluginWorkbenchContext {
   currentNoteContent: string;
 }
 
-export interface ResolveWorkColumnSurfaceInput {
+export interface ResolveWorkColumnContentInput {
   navigation: WorkColumnNavigationState;
   document?: DocumentSurfaceContext | null;
   pluginWorkbench?: PluginWorkbenchContext | null;

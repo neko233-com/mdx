@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 
-import backgroundImage from '@/assets/bg.document.png';
 import { DEFAULT_AGENT_TYPE_KEY } from '@/lib/agent-types';
 import type { AgentTypeKey } from '@/types/agent';
 import { useI18n } from '@/lib/i18n';
@@ -10,6 +9,7 @@ import { toast } from '@/lib/toast';
 import { createLogger } from '@/lib/logger';
 import { agent } from '@platform/tauri/client/agent';
 import { useAgentSessionStore } from '@features/agent/store/agent-session-store';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import { acquireThreadInterest } from '@features/agent/store/thread-interest';
 import type { ThreadState } from '@features/agent/store/thread-runtime-state';
 import {
@@ -27,6 +27,7 @@ import {
 } from '@features/agent/thread-card/composer';
 import { AgentRolePickerController } from '@features/agent/thread-card/role/agent-role-picker-controller';
 import { ExternalAgentSettingsController } from '@features/agent/thread-card/settings/external-agent-settings-controller';
+import { CodexSettingsDialogController } from '@features/agent/thread-card/settings/codex-settings-dialog';
 import { AgentConversationSurfaceController } from '@features/agent/thread-card/surface/agent-conversation-surface-controller';
 import { createExternalAgentRuntimeHandle } from '@features/agent/services/external-agent-runtime-service';
 import { ensureAgentConversationDetailThread } from '@features/agent/components/agent-conversation-detail-submit';
@@ -38,11 +39,33 @@ import { defaultThreadTitle } from '@features/agent/store/thread-titles';
 import { selectAndOpenAgentConversation } from '@features/workspace/use-cases/agent-conversation-navigation';
 import { openPath, openUrl } from '@platform/tauri/opener';
 import { dialogs } from '@platform/tauri/client/desktop';
+import { isEditableTextFilePath } from '@features/editor/code-file';
+import { openNoteByDeepLink } from '@features/memo/use-cases/open-by-target';
+import {
+  agentFileScopePathForRuntime,
+  localFilePathFromAgentHref,
+} from '@features/agent/thread-card/link-navigation';
+import {
+  openBrowserColumnFileBrowser,
+  openBrowserColumnText,
+  openBrowserColumnWebpage,
+} from '@features/workspace/use-cases/browser-column-navigation';
 import {
   runDshCommand,
   hasPendingDshCommand,
   listDshSkills,
 } from '@features/agent/services/dsh-command-service';
+import {
+  beginCodexSlashCommand,
+  createCodexCommandLifecycle,
+  executeCodexSlashCommand,
+  finishCodexSlashCommand,
+  hasPendingCodexCommand,
+  listCodexSkills,
+} from '@features/agent/services/codex-slash-command-service';
+import { isCodexGoalCommand } from '@features/agent/thread-card/agent-thread-card-selectors';
+import { getAgentConversationRuntimeCwd } from '@features/agent/conversation-presentation';
+import { WorkspaceEmptyState } from '@shared/ui/workspace-empty-state';
 
 const BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const TOP_HISTORY_LOAD_THRESHOLD_PX = 48;
@@ -110,6 +133,10 @@ export function AgentConversationDetail({
   const messages = projection?.messages ?? EMPTY_MESSAGES;
   const isLoading = !!projection?.runs.isLoading;
   const isDshCommandRunning = projection?.runs.dshCommand?.status === 'pending';
+  const isCodexCommandRunning = projection?.runs.codexCommand?.status === 'pending';
+  const isCodexCommandStoppable =
+    isCodexCommandRunning && isCodexGoalCommand(projection?.runs.codexCommand?.command);
+  const isCommandRunning = isDshCommandRunning || isCodexCommandRunning;
   const pendingSteeringMessages = useAgentSessionStore((state) =>
     threadId
       ? state.pendingSteeringMessages[threadId] ?? EMPTY_PENDING_CODEX_MESSAGES
@@ -132,6 +159,7 @@ export function AgentConversationDetail({
   const externalSettingsRef = useRef<ExternalAgentSettingsController | null>(null);
   const rolePickerRef = useRef<AgentRolePickerController | null>(null);
   const addMenuRef = useRef<ComposerAddMenuController | null>(null);
+  const codexSettingsDialogRef = useRef<CodexSettingsDialogController | null>(null);
   const surfaceRef = useRef<AgentConversationSurfaceController | null>(null);
   const draftRef = useRef<string | null>(null);
   const destroyedRef = useRef(false);
@@ -140,6 +168,8 @@ export function AgentConversationDetail({
   const messagesRef = useRef(messages);
   const isLoadingRef = useRef(isLoading);
   const isDshCommandRunningRef = useRef(isDshCommandRunning);
+  const isCodexCommandRunningRef = useRef(isCodexCommandRunning);
+  const isCodexCommandStoppableRef = useRef(isCodexCommandStoppable);
   const instanceRef = useRef(instance);
   const threadIdRef = useRef(threadId);
   const runtimeHandleRef = useRef<string | null>(null);
@@ -183,6 +213,8 @@ export function AgentConversationDetail({
   messagesRef.current = messages;
   isLoadingRef.current = isLoading;
   isDshCommandRunningRef.current = isDshCommandRunning;
+  isCodexCommandRunningRef.current = isCodexCommandRunning;
+  isCodexCommandStoppableRef.current = isCodexCommandStoppable;
   instanceRef.current = instance;
   threadIdRef.current = threadId;
   languageRef.current = language;
@@ -224,6 +256,35 @@ export function AgentConversationDetail({
     return { threadId: currentThreadId, runtimeConfig };
   }, []);
 
+  const ensureCodexCommandConversation = useCallback(async (command: string) => {
+    if (typeKeyRef.current !== 'codex') {
+      throw new Error('This slash command is only available for Codex');
+    }
+    const currentInstance = instanceRef.current;
+    if (!currentInstance) throw new Error('Agent session instance was not found');
+    let currentThreadId = threadIdRef.current;
+    if (!currentThreadId) {
+      if (!runtimeHandleRef.current) {
+        runtimeHandleRef.current = createExternalAgentRuntimeHandle();
+      }
+      const ensured = await ensureAgentConversationDetailThread({
+        instanceId: currentInstance.instanceId,
+        typeKey: 'codex',
+        prompt: command,
+        runtimeHandleId: runtimeHandleRef.current,
+      });
+      currentThreadId = ensured.threadId;
+      threadIdRef.current = currentThreadId;
+      return {
+        threadId: currentThreadId,
+        runtimeConfig: ensured.runtimeConfig,
+      };
+    }
+    const runtimeConfig = ensureConversationWorkspaceSnapshot(currentInstance.instanceId);
+    markConversationWorkspaceStarted(currentInstance.instanceId);
+    return { threadId: currentThreadId, runtimeConfig };
+  }, []);
+
   const runDshCommandFromDetail = useCallback(async (command: string, imagePaths: string[] = []) => {
     if (destroyedRef.current || typeKeyRef.current !== 'deepseek-harness') return;
     await runDshCommand({
@@ -250,6 +311,52 @@ export function AgentConversationDetail({
     });
   }, [ensureDshCommandConversation]);
 
+  const runCodexSlashCommandFromDetail = useCallback(async (command: string) => {
+    if (destroyedRef.current || typeKeyRef.current !== 'codex') return;
+    if (hasPendingCodexCommand(threadIdRef.current)) return;
+    let lifecycle: ReturnType<typeof createCodexCommandLifecycle> | undefined;
+    let commandThreadId: string | null = null;
+    try {
+      let currentThreadId = threadIdRef.current;
+      let cwd = getAgentConversationRuntimeCwd(instanceRef.current);
+      if (!currentThreadId) {
+        const currentInstance = instanceRef.current;
+        if (!currentInstance) throw new Error('Agent session instance was not found');
+        if (!runtimeHandleRef.current) {
+          runtimeHandleRef.current = createExternalAgentRuntimeHandle();
+        }
+        const ensured = await ensureAgentConversationDetailThread({
+          instanceId: currentInstance.instanceId,
+          typeKey: 'codex',
+          prompt: command,
+          runtimeHandleId: runtimeHandleRef.current,
+        });
+        currentThreadId = ensured.threadId;
+        threadIdRef.current = currentThreadId;
+        cwd = ensured.runtimeConfig.workspaceSnapshot?.cwd ?? ensured.runtimeConfig.cwd ?? cwd;
+      }
+      commandThreadId = currentThreadId;
+      lifecycle = createCodexCommandLifecycle(currentThreadId);
+      beginCodexSlashCommand(currentThreadId, command, lifecycle);
+      await executeCodexSlashCommand(currentThreadId, command, cwd, lifecycle);
+      await useAgentSessionStore.getState().loadMessages('codex', currentThreadId);
+    } catch (error) {
+      if (lifecycle && commandThreadId) {
+        finishCodexSlashCommand(
+          commandThreadId,
+          command,
+          lifecycle,
+          'error',
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      logger.error('Failed to execute Codex slash command', { error });
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (!destroyedRef.current) composerControllerRef.current?.focus();
+    }
+  }, []);
+
   const submit = useCallback(async () => {
     // 线程绑定是异步的; submittingRef 挡住"创建中"期间的重入。Codex
     // 和 DSH 已有运行时允许本次提交转入当前 turn 的 steering 队列，
@@ -258,7 +365,10 @@ export function AgentConversationDetail({
     if (submittingRef.current || (isLoadingRef.current && !isSteerable)) return;
     const composerController = composerControllerRef.current;
     const currentInstance = instanceRef.current;
-    if (typeKeyRef.current === 'deepseek-harness' && hasPendingDshCommand(currentInstance?.threadId)) return;
+    if (
+      (typeKeyRef.current === 'deepseek-harness' && hasPendingDshCommand(currentInstance?.threadId)) ||
+      (typeKeyRef.current === 'codex' && hasPendingCodexCommand(currentInstance?.threadId))
+    ) return;
     const content = composerController?.getPrompt().trim() ?? '';
     const imagePaths = composerImagesControllerRef.current?.readyImages.map((image) => image.path) ?? [];
     if (!composerController || (!content && imagePaths.length === 0) || !currentInstance) return;
@@ -269,6 +379,11 @@ export function AgentConversationDetail({
     ) {
       clearComposerAfterSlashCommand();
       void runDshCommandFromDetail(content, imagePaths);
+      return;
+    }
+    if (typeKeyRef.current === 'codex' && /^\/(?:compact|goal)(?:\s|$)/iu.test(content)) {
+      clearComposerAfterSlashCommand();
+      void runCodexSlashCommandFromDetail(content);
       return;
     }
 
@@ -325,7 +440,7 @@ export function AgentConversationDetail({
     } finally {
       submittingRef.current = false;
     }
-  }, [clearComposerAfterSlashCommand, runDshCommandFromDetail]);
+  }, [clearComposerAfterSlashCommand, runCodexSlashCommandFromDetail, runDshCommandFromDetail]);
   submitRef.current = submit;
 
   useEffect(() => {
@@ -383,28 +498,32 @@ export function AgentConversationDetail({
         );
         const href = normalizePlainLinkHref(rawHref);
         if (!href) return;
+        if (href.startsWith('flowix://')) {
+          await openNoteByDeepLink(href);
+          return;
+        }
         if (/^https?:\/\//i.test(href)) {
-          const { openBrowserColumnWebpage } = await import(
-            '@features/workspace/use-cases/browser-column-navigation'
-          );
           await openBrowserColumnWebpage(href);
           return;
         }
-        const { localFilePathFromAgentHref } = await import(
-          '@features/agent/thread-card/link-navigation'
-        );
         const localPath = localFilePathFromAgentHref(rawHref);
         if (!localPath) {
           await openUrl(href);
           return;
         }
-        const { isEditableTextFilePath } = await import('@features/editor/code-file');
+
+        const scopePath = agentFileScopePathForRuntime(
+          localPath,
+          instanceRef.current?.runtimeConfig,
+        );
+        if (scopePath) {
+          await openBrowserColumnFileBrowser(scopePath, localPath);
+          return;
+        }
+
         if (isEditableTextFilePath(localPath)) {
-          const scopePath = localPath.replace(/[\\/][^\\/]*$/, '') || localPath;
-          const { openBrowserColumnText } = await import(
-            '@features/workspace/use-cases/browser-column-navigation'
-          );
-          await openBrowserColumnText(localPath, scopePath);
+          const parentPath = localPath.replace(/[\\/][^\\/]*$/, '') || localPath;
+          await openBrowserColumnText(localPath, parentPath);
           return;
         }
         await openPath(localPath);
@@ -422,7 +541,7 @@ export function AgentConversationDetail({
       getLanguage: () => languageRef.current,
       t: (key) => tRef.current(key),
       isDestroyed: () => destroyedRef.current,
-      isRunning: () => isLoadingRef.current || isDshCommandRunningRef.current || submittingRef.current,
+      isRunning: () => isLoadingRef.current || isDshCommandRunningRef.current || isCodexCommandRunningRef.current || submittingRef.current,
     });
     externalSettingsRef.current = externalSettings;
     const composerModelButton = externalSettings.createComposerModelButton();
@@ -484,7 +603,7 @@ export function AgentConversationDetail({
         renderThreadState: () => {
           messageController.render({
             messages: messagesRef.current,
-            isLoading: isLoadingRef.current || isDshCommandRunningRef.current,
+            isLoading: isLoadingRef.current || isDshCommandRunningRef.current || isCodexCommandRunningRef.current,
             shouldRenderMessages: true,
             isInitialHistoryLoading: shouldShowInitialHistorySkeleton(
               renderThreadIdRef.current,
@@ -519,11 +638,19 @@ export function AgentConversationDetail({
         getSendLabel: (wantStop, isRunning) => isRunning
           ? tRef.current('editor.threadCard.running')
           : tRef.current(wantStop ? 'editor.threadCard.stop' : 'editor.threadCard.send'),
-        getSendButtonWantsStop: () =>
-          isLoadingRef.current &&
-          !((typeKeyRef.current === 'codex' || typeKeyRef.current === 'deepseek-harness') &&
-            !!composerControllerRef.current?.getPrompt().trim()),
-        getSendButtonRunning: () => isDshCommandRunningRef.current,
+        getSendButtonWantsStop: () => {
+          // `/goal` is the one native Codex command that exposes a real stop
+          // action. It must win over the draft/steering condition below.
+          if (isCodexCommandStoppableRef.current) return true;
+          return isLoadingRef.current &&
+            !isDshCommandRunningRef.current &&
+            !isCodexCommandRunningRef.current &&
+            !((typeKeyRef.current === 'codex' || typeKeyRef.current === 'deepseek-harness') &&
+              !!composerControllerRef.current?.getPrompt().trim());
+        },
+        getSendButtonRunning: () =>
+          isDshCommandRunningRef.current ||
+          (isCodexCommandRunningRef.current && !isCodexCommandStoppableRef.current),
         getHasAttachments: () => composerImagesController.hasImages,
         getHasPendingAttachments: () => composerImagesController.hasPending,
         agentType: typeKeyRef.current,
@@ -535,7 +662,13 @@ export function AgentConversationDetail({
             runtimeConfig: ensured.runtimeConfig,
           });
         },
-        onDshModelSelect: () => {
+        listCodexSkills: async () => {
+          if (typeKeyRef.current !== 'codex') return [];
+          const ensured = await ensureCodexCommandConversation('/skill');
+          const cwd = ensured.runtimeConfig.workspaceSnapshot?.cwd ?? ensured.runtimeConfig.cwd;
+          return listCodexSkills(cwd ?? '');
+        },
+        onModelSelect: () => {
           clearComposerAfterSlashCommand();
           externalSettings.openComposerModelPicker();
         },
@@ -545,6 +678,10 @@ export function AgentConversationDetail({
         },
         onDirectCommand: (command) => {
           clearComposerAfterSlashCommand();
+          if (typeKeyRef.current === 'codex') {
+            void runCodexSlashCommandFromDetail(`/${command.name}`);
+            return;
+          }
           void runDshCommandFromDetail(`/${command.name}`);
         },
         submit: () => submitRef.current(),
@@ -586,6 +723,17 @@ export function AgentConversationDetail({
       images: composerImagesController,
       t: (key) => tRef.current(key),
       isDestroyed: () => destroyedRef.current,
+      getAgentType: () => typeKeyRef.current,
+      openCodexSettings: () => {
+        const runtimeConfig = instanceRef.current?.runtimeConfig;
+        const notebookPath = runtimeConfig?.workspaceSnapshot?.cwd
+          ?? runtimeConfig?.cwd
+          ?? useMemoStore.getState().selectedNotebook?.path;
+        if (notebookPath) {
+          codexSettingsDialogRef.current ??= new CodexSettingsDialogController();
+          codexSettingsDialogRef.current.open(notebookPath);
+        }
+      },
     });
     rolePicker.refreshIcon();
     messagesControllerRef.current = messageController;
@@ -601,7 +749,7 @@ export function AgentConversationDetail({
     // and the skeleton.
     messageController.render({
       messages: messagesRef.current,
-      isLoading: isLoadingRef.current,
+      isLoading: isLoadingRef.current || isDshCommandRunningRef.current || isCodexCommandRunningRef.current,
       shouldRenderMessages: true,
       isInitialHistoryLoading: shouldShowInitialHistorySkeleton(
         renderThreadIdRef.current,
@@ -622,6 +770,8 @@ export function AgentConversationDetail({
       rolePicker.dispose();
       addMenu.dispose();
       externalSettings.dispose();
+      codexSettingsDialogRef.current?.close();
+      codexSettingsDialogRef.current = null;
       externalSettingsRef.current = null;
       disposeAgentComposerDom(composerParts);
       inputRef.current = null;
@@ -637,30 +787,24 @@ export function AgentConversationDetail({
   useEffect(() => {
     messagesControllerRef.current?.render({
       messages,
-      isLoading: isLoading || isDshCommandRunning,
+      isLoading: isLoading || isCommandRunning,
       shouldRenderMessages: true,
       isInitialHistoryLoading,
     });
     composerControllerRef.current?.setSendButtonState();
     rolePickerRef.current?.refreshIcon();
-  }, [isInitialHistoryLoading, isLoading, isDshCommandRunning, messages]);
+  }, [isInitialHistoryLoading, isLoading, isCommandRunning, messages]);
 
   useEffect(() => {
     externalSettingsRef.current?.refreshEmptySettings();
-  }, [instance?.threadId, isLoading, isDshCommandRunning]);
+  }, [instance?.threadId, isLoading, isCommandRunning]);
 
   if (!instance) {
     return (
-      <div className="relative flex h-full w-full items-center justify-center bg-[var(--editor-block-bg,var(--document-bg))]">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-no-repeat bg-bottom bg-[length:auto_800px] opacity-[0.32]"
-          style={{ backgroundImage: `url(${backgroundImage})` }}
-        />
-        <span className="relative text-center text-sm text-[var(--muted-foreground)]">
-          {t('status.agent.conversationNotFound')}
-        </span>
-      </div>
+      <WorkspaceEmptyState
+        tone="agent"
+        message={t('status.agent.conversationNotFound')}
+      />
     );
   }
 
@@ -676,6 +820,9 @@ export function AgentConversationDetail({
               const target = event.currentTarget;
               setShowScrollTopHint(target.scrollTop > SCROLL_DELTA_EPSILON_PX);
               messagesControllerRef.current?.handleScroll();
+            }}
+            onWheel={(event) => {
+              messagesControllerRef.current?.handleUserScrollIntent(event.deltaY);
             }}
           >
             <div ref={loadingIndicatorRef} className="agent-thread-card__loading-indicator" role="status" aria-live="polite">

@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   applyLoadedDocumentContent,
+  discardDocumentDraft,
+  getActiveDocumentDraft,
+  getDocumentBuffer,
+  rebaseActiveDocumentPath,
   recordDocumentEdit,
+  hasDocumentUnsavedChanges,
 } from './document-session-service';
 import { subscribeDocumentBufferChanges } from './buffer-registry';
 
@@ -32,5 +37,35 @@ describe('document buffer change notifications', () => {
     recordDocumentEdit(identity, 'ignored edit');
 
     expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('rebases a renamed memo path without changing the unsaved content baseline', () => {
+    const identity = { kind: 'memo' as const, id: 'memo-path-rebase' };
+    applyLoadedDocumentContent(identity, '/notes/old.md', 'saved body');
+    recordDocumentEdit(identity, 'unsaved body');
+
+    rebaseActiveDocumentPath(identity, '/notes/new.md');
+
+    expect(getActiveDocumentDraft()).toMatchObject({ path: '/notes/new.md', content: 'unsaved body' });
+    expect(getDocumentBuffer(identity)).toMatchObject({
+      content: 'unsaved body',
+      pendingContent: 'unsaved body',
+      lastSavedContent: 'saved body',
+    });
+  });
+
+  it('clears the dirty barrier when a missing source is explicitly discarded', () => {
+    const identity = { kind: 'memo' as const, id: 'memo-missing-source' };
+    applyLoadedDocumentContent(identity, '/notes/deleted.md', 'saved body');
+    recordDocumentEdit(identity, 'unsaved body');
+
+    discardDocumentDraft(identity);
+
+    expect(hasDocumentUnsavedChanges(identity)).toBe(false);
+    expect(getDocumentBuffer(identity)).toMatchObject({
+      content: 'unsaved body',
+      pendingContent: null,
+      lastSavedContent: 'unsaved body',
+    });
   });
 });

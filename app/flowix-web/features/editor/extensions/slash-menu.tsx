@@ -11,8 +11,13 @@ import {
   type AgentThreadSlashMenuItemId,
   type SlashMenuItem,
 } from '@features/editor/components/slash-menu-dropdown';
-import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
+import {
+  getCurrentAppLanguage,
+  isAgentTypeEnabled,
+  subscribeEditorRuntimePreferences,
+} from '@features/preferences/public/runtime-api';
 import { useAgentRuntimeStore } from '@features/agent/store/agent-runtime-store';
+import { normalizeAgentRuntimeStatus } from '@features/agent/public/runtime-status-api';
 import { windows } from '@platform/tauri/client';
 import { translate } from '@/lib/i18n';
 import type { AgentTypeKey } from '@/types/agent';
@@ -65,11 +70,12 @@ function isAgentThreadSlashMenuItemId(id: SlashMenuItem['id']): id is AgentThrea
 
 function isAgentRuntimeAvailable(typeKey: AgentTypeKey): boolean {
   if (isAgentTypeComingSoon(typeKey)) return false;
-  return useAgentRuntimeStore.getState().statusByType[typeKey]?.available === true;
+  const runtime = useAgentRuntimeStore.getState();
+  return normalizeAgentRuntimeStatus(runtime.statusByType[typeKey], runtime.isChecking).state === 'ready';
 }
 
 function isAgentSlashEnabled(typeKey: AgentTypeKey): boolean {
-  return useUserSettingsStore.getState().settings.agents.enabledByType[typeKey] ?? true;
+  return isAgentTypeEnabled(typeKey);
 }
 
 function getAvailableSlashMenuItems(): SlashMenuItem[] {
@@ -87,7 +93,7 @@ function filterItems(query: string): SlashMenuItem[] {
   const availableItems = getAvailableSlashMenuItems();
   if (!normalizedQuery) return availableItems;
 
-  const language = useUserSettingsStore.getState().settings.language;
+  const language = getCurrentAppLanguage();
 
   return availableItems.filter((item) => {
     const labelText = getSlashMenuItemLabel(item, language);
@@ -351,7 +357,7 @@ function renderMenu(view: EditorView) {
 
   root.render(
     <SlashMenuDropdown
-      language={useUserSettingsStore.getState().settings.language}
+      language={getCurrentAppLanguage()}
       items={instance.items}
       selectedIndex={instance.selectedIndex}
       scrollSelectedItem={instance.scrollSelectedItem}
@@ -413,13 +419,7 @@ function openMenu(view: EditorView, editor: Editor, triggerFrom: number, deleteF
     if (!isCurrentMenuView(view, openId) || activeEditor !== editor) return;
     refreshMenuFromEditor(view);
   });
-  unsubscribeUserSettings = useUserSettingsStore.subscribe((state, previous) => {
-    if (
-      state.settings.agents === previous.settings.agents &&
-      state.settings.language === previous.settings.language
-    ) {
-      return;
-    }
+  unsubscribeUserSettings = subscribeEditorRuntimePreferences(() => {
     if (!isCurrentMenuView(view, openId) || activeEditor !== editor) return;
     refreshMenuFromEditor(view);
   });
@@ -447,7 +447,7 @@ function memoTitleFromFilename(filename: string): string {
   const stripped = filename.replace(/\.md$/i, '').trim();
   if (stripped) return stripped;
   // 同步命名兜底走当前语言的 memo.untitled (zh-CN "未命名的笔记" / en-US "Untitled memo")。
-  const language = useUserSettingsStore.getState().settings.language;
+  const language = getCurrentAppLanguage();
   return translate(language, 'memo.untitled');
 }
 
@@ -536,16 +536,20 @@ function handleSelect(item: SlashMenuItem): void {
 
   if (isAgentThreadSlashMenuItemId(item.id)) {
     const agentThreadType = AGENT_THREAD_TYPE_BY_SLASH_ID[item.id];
-    const runtimeStatus = useAgentRuntimeStore.getState().statusByType[agentThreadType];
+    const runtime = useAgentRuntimeStore.getState();
+    const runtimeState = normalizeAgentRuntimeStatus(
+      runtime.statusByType[agentThreadType],
+      runtime.isChecking,
+    ).state;
     // DSH is always discoverable in the slash menu. Until availability is
     // positively confirmed (including while status is still loading), guide
     // the user to installation/model setup instead of inserting a dead card.
-    if (agentThreadType === 'deepseek-harness' && runtimeStatus?.available !== true) {
+    if (agentThreadType === 'deepseek-harness' && runtimeState !== 'ready') {
       closeMenu();
       void windows.openPreferences('dsh');
       return;
     }
-    if (runtimeStatus?.available === false) {
+    if (runtimeState === 'not-installed' || runtimeState === 'not-ready') {
       closeMenu();
       return;
     }

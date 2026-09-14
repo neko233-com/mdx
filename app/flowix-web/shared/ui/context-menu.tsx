@@ -14,6 +14,7 @@ interface ContextMenuContextValue {
 }
 
 const ContextMenuContext = React.createContext<ContextMenuContextValue | null>(null);
+const CONTEXT_MENU_OPEN_EVENT = "flowix:context-menu-open";
 
 function useContextMenuContext() {
 	const context = React.useContext(ContextMenuContext);
@@ -25,23 +26,44 @@ function useContextMenuContext() {
 
 interface ContextMenuProps {
 	children: React.ReactNode;
+	onOpenChange?: (open: boolean) => void;
 }
 
-function ContextMenu({ children }: ContextMenuProps) {
+function ContextMenu({ children, onOpenChange }: ContextMenuProps) {
 	const [open, setOpen] = React.useState(false);
 	const [position, setPosition] = React.useState<{ x: number; y: number } | null>(null);
+	const ownerRef = React.useRef({});
+	const updateOpen = React.useCallback((nextOpen: boolean) => {
+		setOpen(nextOpen);
+		onOpenChange?.(nextOpen);
+	}, [onOpenChange]);
+
+	// Context menus are rendered independently (for example, one per file-tree
+	// row), so coordinate them through a document-level event. Opening one menu
+	// closes any other menu and also clears its consumer's active state.
+	React.useEffect(() => {
+		const handleAnotherMenuOpen = (event: Event) => {
+			const owner = (event as CustomEvent<object>).detail;
+			if (owner !== ownerRef.current) updateOpen(false);
+		};
+		document.addEventListener(CONTEXT_MENU_OPEN_EVENT, handleAnotherMenuOpen);
+		return () => document.removeEventListener(CONTEXT_MENU_OPEN_EVENT, handleAnotherMenuOpen);
+	}, [updateOpen]);
 
 	const openAt = React.useCallback((x: number, y: number) => {
+		document.dispatchEvent(new CustomEvent(CONTEXT_MENU_OPEN_EVENT, {
+			detail: ownerRef.current,
+		}));
 		setPosition({ x, y });
-		setOpen(true);
-	}, []);
+		updateOpen(true);
+	}, [updateOpen]);
 
 	const close = React.useCallback(() => {
-		setOpen(false);
+		updateOpen(false);
 		// Keep the last position until the menu finishes its close animation; the
 		// content is unmounted when open is false so position becomes invisible
 		// to the user either way.
-	}, []);
+	}, [updateOpen]);
 
 	return (
 		<ContextMenuContext.Provider value={{ open, position, setOpen: close, openAt }}>
@@ -93,21 +115,43 @@ function ContextMenuContent({ children, className, style }: ContextMenuContentPr
 	const { open, position, setOpen } = useContextMenuContext();
 	const contentRef = React.useRef<HTMLDivElement>(null);
 
-	// Clamp the position so the menu never spills off-screen. We measure the
-	// content after the first paint (the menu mounts hidden, so we can't read
-	// its dimensions synchronously).
-	React.useLayoutEffect(() => {
+	// Clamp the position so the menu never spills off-screen. The content can
+	// change size after opening (for example, a tree menu first renders a
+	// loading item and then replaces it with the full memo actions), so this is
+	// deliberately a reusable measurement pass rather than a one-time effect.
+	const clampToViewport = React.useCallback(() => {
 		if (!open || !contentRef.current || !position) return;
 		const el = contentRef.current;
-		const rect = el.getBoundingClientRect();
 		const margin = 4;
-		const maxX = window.innerWidth - rect.width - margin;
-		const maxY = window.innerHeight - rect.height - margin;
+		const viewportWidth = window.innerWidth;
+		const viewportHeight = window.innerHeight;
+
+		// A very tall menu must become internally scrollable. Otherwise a menu
+		// larger than the viewport has no valid top coordinate that can keep it
+		// inside the window.
+		el.style.maxWidth = `${Math.max(0, viewportWidth - margin * 2)}px`;
+		el.style.maxHeight = `${Math.max(0, viewportHeight - margin * 2)}px`;
+		el.style.overflowY = 'auto';
+
+		const rect = el.getBoundingClientRect();
+		const maxX = Math.max(margin, viewportWidth - rect.width - margin);
+		const maxY = Math.max(margin, viewportHeight - rect.height - margin);
 		const x = Math.max(margin, Math.min(position.x, maxX));
 		const y = Math.max(margin, Math.min(position.y, maxY));
 		el.style.left = `${x}px`;
 		el.style.top = `${y}px`;
 	}, [open, position]);
+
+	// ResizeObserver keeps the menu aligned when asynchronous content changes
+	// its height, while the layout effect handles the initial open before paint.
+	React.useLayoutEffect(() => {
+		clampToViewport();
+		if (!open || !contentRef.current || typeof ResizeObserver === 'undefined') return;
+
+		const observer = new ResizeObserver(() => clampToViewport());
+		observer.observe(contentRef.current);
+		return () => observer.disconnect();
+	}, [clampToViewport, open]);
 
 	// Close on any pointerdown outside the menu content.
 	// 听 `pointerdown` 而不是 `mousedown`: tag / notebook 行上挂了
@@ -168,7 +212,7 @@ function ContextMenuContent({ children, className, style }: ContextMenuContentPr
 			// these values once the element's true size is known.
 			style={{ left: position?.x ?? 0, top: position?.y ?? 0, ...style }}
 			className={cn(
-				"fixed z-[1500] min-w-[160px] bg-[var(--card)] border border-[var(--border-popup)] rounded-lg shadow-lg py-1 animate-in fade-in-0 zoom-in-95",
+				"fixed z-[150] min-w-[160px] bg-[var(--card)] border border-[var(--border-popup)] rounded-lg shadow-lg py-1 animate-in fade-in-0 zoom-in-95",
 				className
 			)}
 		>
@@ -179,6 +223,7 @@ function ContextMenuContent({ children, className, style }: ContextMenuContentPr
 }
 
 interface ContextMenuItemProps {
+	"aria-describedby"?: string;
 	children: React.ReactNode;
 	className?: string;
 	onClick?: () => void;
@@ -188,6 +233,7 @@ interface ContextMenuItemProps {
 }
 
 function ContextMenuItem({
+	"aria-describedby": ariaDescribedBy,
 	children,
 	className,
 	onClick,
@@ -209,6 +255,7 @@ function ContextMenuItem({
 		<button
 			type="button"
 			role="menuitem"
+			aria-describedby={ariaDescribedBy}
 			disabled={disabled}
 			onClick={handleClick}
 			onMouseDown={(e) => {

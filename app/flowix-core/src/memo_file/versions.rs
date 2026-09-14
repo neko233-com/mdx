@@ -1,5 +1,6 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -9,6 +10,9 @@ use super::MemoFile;
 
 pub const MEMO_AUTO_VERSION_INTERVAL_MS: i64 = 60 * 60 * 1000;
 pub const MEMO_VERSION_LIMIT: usize = 20;
+/// Unknown version directories are retained for this long before cleanup.
+/// This protects against transient sync visibility and delayed watcher events.
+pub const MEMO_ORPHAN_VERSION_RETENTION: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -117,13 +121,129 @@ impl MemoFile {
             .join(format!("{version_id}.md"))
     }
 
+    /// Remove all history belonging to a memo. The caller must pass the
+    /// notebook root resolved before the memo index row is deleted.
+    pub(super) fn remove_memo_versions_for_notebook(
+        &self,
+        notebook_root: &Path,
+        memo_id: &str,
+    ) -> std::io::Result<()> {
+        if !is_safe_memo_id(memo_id) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("invalid memo id for version cleanup: {memo_id}"),
+            ));
+        }
+        for root in [
+            notebook_root.join(".flowix").join("versions"),
+            notebook_root.join(".metadata").join("versions"),
+        ] {
+            let dir = root.join(memo_id);
+            if dir.exists() {
+                fs::remove_dir_all(dir)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Reconcile version directories with the global memo index.
+    ///
+    /// A live ID found under another notebook is moved to that notebook. An
+    /// unknown ID is removed only after the retention period, so a temporary
+    /// missing index row cannot destroy recoverable history.
+    pub fn cleanup_orphan_memo_versions(
+        &self,
+        notebook_id: &str,
+        now: SystemTime,
+    ) -> std::io::Result<super::types::MemoVersionCleanupReport> {
+        let _guard = self.current_index_io.lock().expect("index_io poisoned");
+        let Some(notebook) = self.get_notebook_config_by_id(notebook_id) else {
+            return Ok(Default::default());
+        };
+        let source_root = PathBuf::from(&notebook.path);
+        let mut report = super::types::MemoVersionCleanupReport::default();
+        for versions_root in [
+            source_root.join(".flowix").join("versions"),
+            source_root.join(".metadata").join("versions"),
+        ] {
+            let entries = match fs::read_dir(&versions_root) {
+                Ok(entries) => entries,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(_) => {
+                    report.failed += 1;
+                    continue;
+                }
+            };
+            for entry in entries.flatten() {
+                let file_type = match entry.file_type() {
+                    Ok(value) => value,
+                    Err(_) => {
+                        report.failed += 1;
+                        continue;
+                    }
+                };
+                if !file_type.is_dir() {
+                    continue;
+                }
+                let memo_id = entry.file_name().to_string_lossy().into_owned();
+                if !is_safe_memo_id(&memo_id) {
+                    report.failed += 1;
+                    continue;
+                }
+                let Some(location) = self.resolve_memo_location(&memo_id)? else {
+                    if is_older_than(&entry.path(), now, MEMO_ORPHAN_VERSION_RETENTION) {
+                        match fs::remove_dir_all(entry.path()) {
+                            Ok(()) => report.removed += 1,
+                            Err(_) => report.failed += 1,
+                        }
+                    } else {
+                        report.retained_recent += 1;
+                    }
+                    continue;
+                };
+                let destination = PathBuf::from(location.notebook.path)
+                    .join(".flowix")
+                    .join("versions")
+                    .join(&memo_id);
+                let is_legacy_root = versions_root.ends_with(Path::new(".metadata/versions"));
+                if location.notebook.id == notebook_id && !is_legacy_root {
+                    continue;
+                }
+                if destination.exists() {
+                    // Never merge or overwrite two histories automatically.
+                    // Keeping both makes the conflict observable and allows a
+                    // later repair tool to compare manifests safely.
+                    report.failed += 1;
+                    continue;
+                }
+                if let Some(parent) = destination.parent() {
+                    if let Err(_) = fs::create_dir_all(parent) {
+                        report.failed += 1;
+                        continue;
+                    }
+                }
+                match fs::rename(entry.path(), destination) {
+                    Ok(()) => report.moved += 1,
+                    Err(_) => report.failed += 1,
+                }
+            }
+        }
+        Ok(report)
+    }
+
     pub fn list_memo_versions(&self, memo_id: &str) -> Vec<MemoVersionMeta> {
+        if !is_safe_memo_id(memo_id) {
+            return Vec::new();
+        }
         let mut versions = self.read_version_manifest(memo_id).versions;
         versions.sort_by_key(|v| std::cmp::Reverse(v.created_at));
         versions
     }
 
     pub fn read_memo_version(&self, memo_id: &str, version_id: &str) -> Option<String> {
+        if !is_safe_memo_id(memo_id) || !is_safe_version_id(version_id) {
+            return None;
+        }
         let manifest = self.read_version_manifest(memo_id);
         if !manifest.versions.iter().any(|v| v.id == version_id) {
             return None;
@@ -146,6 +266,9 @@ impl MemoFile {
         content: &str,
         source: MemoVersionSource,
     ) -> std::io::Result<Option<MemoVersionMeta>> {
+        if !is_safe_memo_id(memo_id) {
+            return Ok(None);
+        }
         let memo = match self.read_memo_global(memo_id) {
             Some(memo) => memo,
             None => return Ok(None),
@@ -199,6 +322,9 @@ impl MemoFile {
         memo_id: &str,
         content: &str,
     ) -> std::io::Result<Option<MemoVersionMeta>> {
+        if !is_safe_memo_id(memo_id) {
+            return Ok(None);
+        }
         let manifest = self.read_version_manifest(memo_id);
         let now = chrono::Utc::now().timestamp_millis();
         let last_auto = manifest
@@ -217,14 +343,32 @@ impl MemoFile {
     }
 
     pub fn delete_memo_version(&self, memo_id: &str, version_id: &str) -> bool {
+        if !is_safe_memo_id(memo_id) || !is_safe_version_id(version_id) {
+            return false;
+        }
         let mut manifest = self.read_version_manifest(memo_id);
         let before = manifest.versions.len();
         manifest.versions.retain(|version| version.id != version_id);
         if manifest.versions.len() == before {
             return false;
         }
-        let _ = fs::remove_file(self.memo_version_path(memo_id, version_id));
-        self.write_version_manifest(memo_id, &manifest).is_ok()
+        for root in [
+            self.versions_root_for_memo(memo_id),
+            self.legacy_versions_root_for_memo(memo_id),
+        ] {
+            let path = root.join(memo_id).join(format!("{version_id}.md"));
+            if path.exists() && fs::remove_file(path).is_err() {
+                return false;
+            }
+        }
+        if self.write_version_manifest(memo_id, &manifest).is_err() {
+            return false;
+        }
+        if manifest.versions.is_empty() {
+            let _ = fs::remove_file(self.memo_versions_manifest_path(memo_id));
+            let _ = fs::remove_dir(self.memo_versions_dir(memo_id));
+        }
+        true
     }
 
     fn prune_memo_versions(
@@ -239,6 +383,44 @@ impl MemoFile {
         }
         Ok(())
     }
+}
+
+fn is_safe_memo_id(value: &str) -> bool {
+    // Six-character IDs are accepted for pre-v3 histories; new IDs use eight.
+    matches!(value.len(), 6 | super::MEMO_ID_LENGTH)
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
+}
+
+fn is_safe_version_id(value: &str) -> bool {
+    (3..=128).contains(&value.len())
+        && value.starts_with("v_")
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-'))
+}
+
+fn is_older_than(path: &Path, now: SystemTime, retention: Duration) -> bool {
+    let modified = fs::read_to_string(path.join("manifest.json"))
+        .ok()
+        .and_then(|content| serde_json::from_str::<MemoVersionManifest>(&content).ok())
+        .and_then(|manifest| {
+            manifest
+                .versions
+                .iter()
+                .map(|version| version.created_at)
+                .max()
+        })
+        .and_then(|millis| {
+            if millis < 0 {
+                return None;
+            }
+            SystemTime::UNIX_EPOCH.checked_add(Duration::from_millis(millis as u64))
+        })
+        .or_else(|| fs::metadata(path).and_then(|meta| meta.modified()).ok())
+        .unwrap_or(now);
+    now.duration_since(modified).unwrap_or_default() >= retention
 }
 
 fn sha256_hex(content: &str) -> String {

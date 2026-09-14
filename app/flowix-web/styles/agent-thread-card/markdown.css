@@ -745,7 +745,7 @@
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 1050;
+  z-index: 105;
   /* 模型/权限等设置下拉：基准宽度扩大 20%，给较长模型名留出空间。 */
   width: 212px;
   max-height: 280px;
@@ -769,6 +769,12 @@
   max-height: min(520px, calc(100vh - 16px));
 }
 
+/* The Codex model picker owns a right-hand hover submenu, like the memo
+ * sorting menu. Keep the outer popover from clipping that submenu. */
+.agent-thread-card__codex-settings-popover--has-submenu {
+  overflow: visible;
+}
+
 .agent-thread-card__codex-settings-popover:not([hidden]) {
   opacity: 1;
   transform: scale(1);
@@ -790,6 +796,77 @@
   color: var(--muted-foreground);
   font-size: 0.75rem;
   line-height: 1.2;
+}
+
+/* Codex model -> reasoning effort submenu.  This is intentionally scoped to
+ * model groups so Claude / OpenCode keep their flat model picker. */
+.agent-thread-card__codex-settings-model-group {
+  position: relative;
+  display: block;
+  margin: 0 0 2px;
+}
+
+.agent-thread-card__codex-settings-item--submenu {
+  gap: 6px;
+}
+
+.agent-thread-card__codex-settings-item--submenu
+  .agent-thread-card__chevron-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: currentColor;
+  opacity: 0.72;
+}
+
+.agent-thread-card__codex-settings-submenu {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 4px);
+  z-index: 106;
+  display: grid;
+  gap: 2px;
+  width: min(212px, calc(100vw - 16px));
+  max-height: min(280px, calc(100vh - 16px));
+  overflow-y: auto;
+  padding: 0.25rem;
+  border: 1px solid var(--border-popup);
+  border-radius: 0.75rem;
+  background: var(--card);
+  color: var(--agent-foreground);
+  box-shadow: 0 4px 24px -3px rgb(0 0 0 / 24%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-4px) scale(0.98);
+  transform-origin: top left;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    visibility 120ms ease;
+  visibility: hidden;
+}
+
+.agent-thread-card__codex-settings-model-group:hover
+  .agent-thread-card__codex-settings-submenu,
+.agent-thread-card__codex-settings-model-group:focus-within
+  .agent-thread-card__codex-settings-submenu,
+.agent-thread-card__codex-settings-model-group[data-submenu-open="true"]
+  .agent-thread-card__codex-settings-submenu {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0) scale(1);
+  visibility: visible;
+}
+
+.agent-thread-card__codex-settings-submenu
+  .agent-thread-card__codex-settings-item {
+  min-height: 26px;
+  padding-left: 8px;
+  font-size: calc(var(--app-font-size, 15px) * 0.86);
+}
+
+.agent-thread-card__codex-settings-submenu[data-submenu-side="left"] {
+  transform-origin: top right;
 }
 
 .agent-thread-card__codex-settings-divider {
@@ -821,6 +898,25 @@
 .agent-thread-card__codex-settings-item:hover,
 .agent-thread-card__codex-settings-item:focus-visible {
   background: var(--brand);
+  color: var(--primary-foreground);
+}
+
+.agent-thread-card__codex-settings-item--readonly {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.agent-thread-card__codex-settings-item--readonly:hover,
+.agent-thread-card__codex-settings-item--readonly:focus-visible {
+  background: var(--brand);
+  color: var(--primary-foreground);
+  outline: none;
+}
+
+.agent-thread-card__codex-settings-item--readonly:hover
+  .agent-thread-card__codex-settings-item-selected-label,
+.agent-thread-card__codex-settings-item--readonly:focus-visible
+  .agent-thread-card__codex-settings-item-selected-label {
   color: var(--primary-foreground);
 }
 
@@ -856,6 +952,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.agent-thread-card__codex-settings-item-selected-label {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.2;
 }
 
 .agent-thread-card__codex-settings-item-content {

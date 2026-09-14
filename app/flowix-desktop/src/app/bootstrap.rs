@@ -16,13 +16,14 @@ use crate::config::user as user_config;
 use crate::config::AgentAccessStore;
 use crate::config::SecurityBookmarkStore;
 use crate::events as dispatcher;
+use crate::memo_events::{self, MemoChangeSource, MemoDerivedChanged, MemoEvent};
 use crate::open_target;
 use crate::plugin;
 use crate::runtime_log;
 use crate::system_data::SystemData;
 use crate::watcher::MemoWatcher;
 use flowix_core::search::{BigramTokenizer, MemoIndex};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tauri::{Emitter, Listener, Manager};
@@ -81,7 +82,8 @@ pub fn run() {
     // 首�?�??时建表�?这里不需要任何�?盘迁�?── �?`notebook.json` �?��已废�?
     let memo_file = flowix_core::memo_file::MemoFile::new(user_config_dir.clone());
 
-    // System metadata goes under ~/.flowix/boot/system.json.
+    // Legacy system metadata remains available as a migration source; new
+    // notebook tag state is persisted under each notebook's `.flowix/`.
     let system_data_path = user_config_dir.join("boot").join("system.json");
     let system_data = match SystemData::new(system_data_path.clone()) {
         Ok(store) => store,
@@ -200,7 +202,7 @@ pub fn run() {
     // 实际绑定�?.setup() �?��里完成�?
     let memo_watcher = Arc::new(RwLock::new(MemoWatcher::new(memo_file_arc.clone())));
 
-    tauri::Builder::default()
+    crate::app::native_menu::configure(tauri::Builder::default())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             handle_second_instance(app, args);
         }))
@@ -209,10 +211,32 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(crate::browser_column::init())
         .manage(crate::app_update::AppUpdateState::default())
         .manage(memo_watcher.clone())
         .setup(move |app| {
+            // Structural data migrations are the startup gate. They complete
+            // before AppState, cloud polling, file watchers, or normal Webview
+            // initialization can begin. The Webview keeps its existing static
+            // loading spinner until the regular startup flow is ready.
+            let initial_notebooks = {
+                let memo_file = crate::lock_utils::read_lock(&memo_file_arc, "memo_file");
+                let notebooks = memo_file.read_notebook_configs()?;
+                for notebook in &notebooks {
+                    security_bookmarks_for_state
+                        .start_accessing_for_path(std::path::Path::new(&notebook.path));
+                }
+                let report = memo_file.run_pending_data_migrations()?;
+                if report.applied > 0 {
+                    tracing::info!(
+                        from_version = report.from_version,
+                        to_version = report.to_version,
+                        applied = report.applied,
+                        "startup data migrations completed"
+                    );
+                }
+                notebooks
+            };
+
             // 鈹€鈹€ 0) 鍚姩璁惧鐧昏 / last_seen 鍒锋柊 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
             //   不阻�? spawn 一�?fire-and-forget tokio 任务, �?��内部
             //   �?sleep 10s �?POST, 与产品更�?7s 检查错开。远�?��
@@ -231,6 +255,9 @@ pub fn run() {
             agent_external_config.run_startup_detect();
 
             let app_state = AppState {
+                upload_sessions: Default::default(),
+                document_access: Default::default(),
+                export_access: Default::default(),
                 user_config: user_config_for_state.clone(),
                 cloud_sync: cloud_sync_for_state.clone(),
                 system_data,
@@ -248,7 +275,9 @@ pub fn run() {
                 agent_access: agent_access_for_state.clone(),
                 security_bookmarks: security_bookmarks_for_state.clone(),
                 plugin_runs: crate::plugin::PluginRunCoordinator::default(),
+                notebook_imports: Default::default(),
             };
+            app_state.upload_sessions.start_cleanup();
             app.manage(app_state);
             crate::maintenance::spawn_startup_maintenance(
                 app.package_info().version.to_string(),
@@ -260,22 +289,33 @@ pub fn run() {
                 let cloud_sync = cloud_sync_for_state.clone();
                 let user_config = user_config_for_state.clone();
                 let app_handle = app.handle().clone();
+                let restore_generation = cloud_sync.session_restore_generation();
                 tauri::async_runtime::spawn(async move {
-                    match cloud_sync.restore(&refresh_token).await {
-                        Ok(outcome) => {
-                            if let Err(error) =
-                                user_config.save_cloud_refresh_token(&outcome.refresh_token)
+                    match cloud_sync.restore_at_generation(&refresh_token, restore_generation).await {
+                        Ok(_) => {
+                            if let Err(error) = cloud_sync.with_current_refresh_token(|token| {
+                                match token {
+                                    Some(token) => user_config.save_cloud_refresh_token(token),
+                                    None => Ok(()),
+                                }
+                            })
                             {
                                 tracing::warn!(
                                     "failed to persist rotated cloud refresh token: {error}"
                                 );
                             }
-                            let _ = app_handle.emit("cloud-state-changed", &outcome.state);
+                            if let Ok(state) = cloud_sync.state() {
+                                let _ = app_handle.emit("cloud-state-changed", state);
+                            }
                         }
                         Err(error) => {
                             tracing::warn!("failed to restore Flowix Cloud session: {error}");
                             if error.is_invalid_refresh_token() {
-                                let _ = user_config.delete_cloud_refresh_token();
+                                cloud_sync.with_current_refresh_token(|current| {
+                                    if current.is_none() && user_config.load_cloud_refresh_token().ok().flatten().as_deref() == Some(refresh_token.as_str()) {
+                                        let _ = user_config.delete_cloud_refresh_token();
+                                    }
+                                });
                             } else {
                                 tracing::warn!(
                                     "keeping the persisted cloud refresh token after a transient restore failure"
@@ -329,17 +369,6 @@ pub fn run() {
             app.manage(commands::file_browser_watch::FileBrowserWatchState::new(
                 app.handle().clone(),
             ));
-            // Watch every configured notebook. MCP/external tools may write to
-            // a background notebook, and those creates must still reach the
-            // main Webview so it can route the note into the browser column.
-            let initial_notebooks = {
-                let memo_file = crate::lock_utils::read_lock(&memo_file_arc, "memo_file");
-                memo_file.read_notebook_configs().unwrap_or_default()
-            };
-            for notebook in &initial_notebooks {
-                security_bookmarks_for_state
-                    .start_accessing_for_path(std::path::Path::new(&notebook.path));
-            }
             // Restore security-scoped access for user-selected reference
             // folders as well. External CLI children inherit the parent's
             // active extensions, so this must happen before any agent spawn.
@@ -352,6 +381,151 @@ pub fn run() {
                 security_bookmarks_for_state
                     .start_accessing_for_path(std::path::Path::new(&entry.path));
             }
+            // Every registered notebook is reconciled from Markdown at
+            // startup. SQLite is only a rebuildable cache, including when the
+            // app was closed while files or whole folders were copied in.
+            let current_notebook_id = crate::lock_utils::read_lock(&memo_file_arc, "memo_file")
+                .current_notebook_id_value();
+            for notebook in &initial_notebooks {
+                match memo_file_arc
+                    .read()
+                    .unwrap_or_else(|poisoned| {
+                        tracing::error!("memo_file read lock poisoned, recovering");
+                        poisoned.into_inner()
+                    })
+                    .reconcile_notebook_with_disk_bidirectional(&notebook.id)
+                {
+                    Ok(report) if report.added > 0 || report.removed > 0 => {
+                        runtime_log::record_event(
+                            "info",
+                            "startup.reconcile",
+                            format!(
+                                "notebook={} reconcile added={}, removed={}",
+                                notebook.id, report.added, report.removed
+                            ),
+                        );
+                        tracing::info!(
+                            "[startup] notebook {} reconcile: +{} added, -{} removed",
+                            notebook.id,
+                            report.added,
+                            report.removed
+                        );
+                        for removed in &report.removed_memos {
+                            let path = flowix_core::memo_file::notebook_path_from_relative(
+                                Path::new(&notebook.path),
+                                &removed.relative_path,
+                            )
+                            .unwrap_or_else(|_| {
+                                PathBuf::from(&notebook.path).join(&removed.filename)
+                            });
+                            memo_events::emit(
+                                app.handle(),
+                                MemoEvent::Deleted {
+                                    id: removed.id.clone(),
+                                    path: path.to_string_lossy().into_owned(),
+                                    notebook_id: notebook.id.clone(),
+                                    derived_changed: MemoDerivedChanged::from_deleted(removed),
+                                    source: MemoChangeSource::ExternalTool,
+                                },
+                            );
+                        }
+                        if report.removed_memos.len() != report.removed {
+                            tracing::warn!(
+                                notebook = %notebook.id,
+                                removed = report.removed,
+                                snapshots = report.removed_memos.len(),
+                                "startup reconcile removed count did not match tombstone snapshots"
+                            );
+                        }
+                    }
+                    Ok(_) => tracing::debug!(notebook = %notebook.id, "[startup] reconcile: no-op"),
+                    Err(e) => {
+                        runtime_log::record_event(
+                            "error",
+                            "startup.reconcile_failed",
+                            format!("notebook={} startup reconcile failed: {e}", notebook.id),
+                        );
+                        tracing::warn!(notebook = %notebook.id, "[startup] reconcile failed: {e}");
+                    }
+                }
+                match memo_file_arc
+                    .read()
+                    .unwrap_or_else(|poisoned| {
+                        tracing::error!("memo_file read lock poisoned, recovering");
+                        poisoned.into_inner()
+                    })
+                    .cleanup_orphan_memo_versions(
+                        &notebook.id,
+                        std::time::SystemTime::now(),
+                    ) {
+                    Ok(report) if report.moved > 0 || report.removed > 0 || report.failed > 0 => {
+                        tracing::info!(
+                            notebook = %notebook.id,
+                            moved = report.moved,
+                            removed = report.removed,
+                            retained_recent = report.retained_recent,
+                            failed = report.failed,
+                            "[startup] version maintenance"
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(error) => tracing::warn!(
+                        notebook = %notebook.id,
+                        "[startup] version maintenance failed: {error}"
+                    ),
+                }
+            }
+
+            if current_notebook_id.is_some() {
+                if let Some(notebook_id) = current_notebook_id.as_deref() {
+                    let notebook_path = {
+                        let memo_file = memo_file_arc
+                            .read()
+                            .unwrap_or_else(|poisoned| {
+                                tracing::error!("memo_file read lock poisoned, recovering");
+                                poisoned.into_inner()
+                            });
+                        match memo_file.ensure_notebook_migrations(notebook_id) {
+                            Ok(report) => {
+                                if report.moved_files > 0 || report.rebuilt_tags > 0 {
+                                    tracing::info!(
+                                        notebook = %notebook_id,
+                                        moved_files = report.moved_files,
+                                        rebuilt_tags = report.rebuilt_tags,
+                                        "current notebook migrations completed"
+                                    );
+                                }
+                                memo_file
+                                    .get_notebook_config_by_id(notebook_id)
+                                    .map(|notebook| notebook.path)
+                            }
+                            Err(error) => {
+                                tracing::warn!(
+                                    notebook = %notebook_id,
+                                    "current notebook migration failed: {error}"
+                                );
+                                None
+                            }
+                        }
+                    };
+                    if let Some(notebook_path) = notebook_path {
+                        if let Err(error) = crate::plugin::migrate_notebook_data(
+                            notebook_id,
+                            std::path::Path::new(&notebook_path),
+                            &memo_file_arc,
+                            Some(app.handle()),
+                        ) {
+                            tracing::warn!(
+                                notebook = %notebook_id,
+                                "plugin notebook migration failed: {error}"
+                            );
+                        }
+                    }
+                }
+            }
+
+            // Begin observing notebook changes only after migration and
+            // startup reconciliation have reached a consistent state.
             memo_watcher
                 .write()
                 .unwrap_or_else(|poisoned| {
@@ -359,92 +533,6 @@ pub fn run() {
                     poisoned.into_inner()
                 })
                 .rebind_all(app.handle().clone(), initial_notebooks.clone());
-
-            // Migrate notebook-owned versions and plugin outputs before the
-            // first reconciliation. The migration is file-level and failure
-            // tolerant, so a locked legacy file cannot block normal notes.
-            {
-                let memo_file = crate::lock_utils::read_lock(&memo_file_arc, "memo_file");
-                for notebook in &initial_notebooks {
-                    match memo_file.migrate_notebook_internal_data(&notebook.id) {
-                        Ok(report) => {
-                            if report.moved_files > 0 || !report.warnings.is_empty() {
-                                tracing::info!(
-                                    notebook = %notebook.id,
-                                    moved_files = report.moved_files,
-                                    completed = report.completed,
-                                    "notebook internal data migration finished"
-                                );
-                            }
-                            for warning in report.warnings {
-                                tracing::warn!(notebook = %notebook.id, "notebook internal migration: {warning}");
-                            }
-                        }
-                        Err(error) => tracing::warn!(
-                            notebook = %notebook.id,
-                            "notebook internal migration failed: {error}"
-                        ),
-                    }
-                }
-            }
-
-            // �?��已有 current notebook 时做�?��对账�?current=None �?            // `MemoFile` 会回退到默�?notebook �?��, �?macOS 上可能触�?            // Documents 权限弹窗�?
-            let current_notebook_id = crate::lock_utils::read_lock(&memo_file_arc, "memo_file")
-                .current_notebook_id_value();
-            if current_notebook_id.is_some() {
-                match memo_file_arc
-                    .read()
-                    .unwrap_or_else(|poisoned| {
-                        tracing::error!("memo_file read lock poisoned, recovering");
-                        poisoned.into_inner()
-                    })
-                    .reconcile_with_disk_bidirectional()
-                {
-                    Ok(report) if report.added > 0 || report.removed > 0 => {
-                        runtime_log::record_event(
-                            "info",
-                            "startup.reconcile",
-                            format!(
-                                "reconcile added={}, removed={}",
-                                report.added, report.removed
-                            ),
-                        );
-                        tracing::info!(
-                            "[startup] reconcile: +{} added, -{} removed",
-                            report.added,
-                            report.removed
-                        );
-                    }
-                    Ok(_) => tracing::debug!("[startup] reconcile: no-op"),
-                    Err(e) => {
-                        runtime_log::record_event(
-                            "error",
-                            "startup.reconcile_failed",
-                            format!("startup reconcile failed: {e}"),
-                        );
-                        tracing::warn!("[startup] reconcile failed: {e}");
-                    }
-                }
-
-                if let Some(notebook_id) = current_notebook_id.as_deref() {
-                    match memo_file_arc
-                        .read()
-                        .unwrap_or_else(|poisoned| {
-                            tracing::error!("memo_file read lock poisoned, recovering");
-                            poisoned.into_inner()
-                        })
-                        .ensure_tag_union_index_for_notebook_id(notebook_id)
-                    {
-                        Ok(updated) if updated > 0 => {
-                            tracing::info!("[startup] rebuilt union tags for {updated} memos");
-                        }
-                        Ok(_) => {}
-                        Err(error) => {
-                            tracing::warn!("[startup] tag union index upgrade failed: {error}");
-                        }
-                    }
-                }
-            }
 
             // �?��时把 preference.json::watcher 应用�?MemoWatcher;
             // 同时注册 user-config-changed 监听做热更新 (前�?�?            // update_watcher_config IPC �?settings::update_watcher_config
@@ -496,8 +584,13 @@ pub fn run() {
             commands::product::get_product_info,
             commands::product::get_diagnostics,
             commands::product::open_log_dir,
+            commands::product::reveal_in_file_manager,
             commands::plugin::plugin_list,
             commands::plugin::plugin_refresh,
+            commands::plugin::plugin_diagnostics,
+            commands::plugin::plugin_catalog,
+            commands::plugin::plugin_validate,
+            commands::plugin::plugin_set_enabled,
             commands::plugin::plugin_install,
             commands::plugin::plugin_uninstall,
             commands::plugin::plugin_get,
@@ -553,6 +646,8 @@ pub fn run() {
             // agent 鍙闂洰褰?(JSON, 璧?agent_access)
             commands::agent_access::get_agent_access,
             commands::agent_access::set_agent_access,
+            commands::agent_access::get_notebook_agent_configs,
+            commands::agent_access::set_notebook_agent_config,
             // System metadata (JSON, ~/.flowix/boot/system.json)
             commands::kv::get_tag_system_metadata,
             commands::kv::set_tag_system_layout,
@@ -578,7 +673,8 @@ pub fn run() {
             commands::memo::reads::search_memos,
             commands::memo::creates::add_document,
             commands::memo::creates::import_external_document_to_memo,
-            commands::memo::creates::update_memo_db,
+            commands::memo::creates::rename_memo_title,
+            commands::memo::creates::move_memo_to_directory,
             commands::memo::creates::favorite_memo,
             commands::memo::creates::unfavorite_memo,
             commands::memo::creates::set_memo_colors,
@@ -603,6 +699,8 @@ pub fn run() {
             commands::notebook::get_notebooks,
             commands::notebook::create_notebook,
             commands::notebook::create_notebook_from_cloud,
+            commands::notebook::start_notebook_import,
+            commands::notebook::get_notebook_import_status,
             commands::notebook::update_notebook,
             commands::notebook::delete_notebook,
             commands::notebook::clear_notebooks,
@@ -614,7 +712,9 @@ pub fn run() {
             commands::file::read_file,
             commands::file::read_image_file,
             commands::file::write_file,
+            commands::file::rename_file,
             commands::file::delete_file,
+            commands::file::delete_folder,
             commands::file::create_folder,
             commands::file::create_document,
             // font cache
@@ -629,7 +729,12 @@ pub fn run() {
             commands::dialog::save_file_dialog,
             commands::dialog::write_export_file,
             commands::dialog::save_attachment,
-            commands::dialog::save_attachment_content,
+            commands::dialog::upload_journal::list_attachment_import_records,
+            commands::dialog::attachment_audit::scan_attachment_references,
+            commands::dialog::upload_sessions::begin_attachment_upload,
+            commands::dialog::upload_sessions::append_attachment_upload,
+            commands::dialog::upload_sessions::finish_attachment_upload,
+            commands::dialog::upload_sessions::cancel_attachment_upload,
             commands::dialog::copy_attachment_file,
             commands::dialog::open_attachment_file,
             commands::agent_access::add_agent_access_folder_from_picker,
@@ -653,6 +758,7 @@ pub fn run() {
             commands::agent::chat::agent_external_events,
             commands::agent::chat::codex_approval_respond,
             commands::agent::chat::codex_thread_settings_update,
+            commands::agent::chat::codex_slash_command,
             // thread
             commands::thread::thread_list,
             commands::thread::thread_create,
@@ -676,6 +782,13 @@ pub fn run() {
             commands::agent::model_catalog::codex_default_model,
             commands::agent::model_catalog::agent_supported_models,
             commands::agent::model_catalog::codex_runtime_info,
+            commands::agent::codex_catalog::codex_project_capabilities,
+            commands::agent::codex_catalog::codex_project_config_write,
+            commands::agent::codex_catalog::codex_skill_enabled_set,
+            commands::agent::codex_catalog::codex_plugin_installed_set,
+            commands::agent::codex_catalog::codex_mcp_reload,
+            commands::agent::codex_catalog::codex_project_mcp_upsert,
+            commands::agent::codex_catalog::codex_project_skill_write,
             commands::thread::claude_thread_list,
             commands::thread::claude_thread_get,
             commands::thread::claude_thread_get_page,
@@ -770,6 +883,11 @@ fn handle_cold_start_open_targets(app: &tauri::AppHandle) {
 
 fn emit_open_target_if_resolved(app: &tauri::AppHandle, raw: &str) {
     let state = app.state::<AppState>();
+    for path in commands::markdown_paths_from_args([raw.to_string()]) {
+        if let Ok(path) = dunce::canonicalize(path) {
+            state.document_access.grant("main", &path);
+        }
+    }
     if let Ok(target) = open_target::parse_open_target(raw) {
         if let Ok(resolved) = open_target::resolve_open_target(target, state.memo_file.as_ref()) {
             if let Some(window) = app.get_webview_window("main") {
@@ -783,6 +901,25 @@ fn emit_open_target_if_resolved(app: &tauri::AppHandle, raw: &str) {
 
 fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
     match event {
+        tauri::RunEvent::WindowEvent {
+            event: tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }),
+            label,
+            ..
+        } => {
+            let state = app.state::<AppState>();
+            for path in paths {
+                state.document_access.grant(&label, &path);
+            }
+        }
+        tauri::RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::Destroyed,
+            ..
+        } => {
+            app.state::<AppState>().export_access.revoke(&label);
+            app.state::<AppState>().document_access.revoke(&label);
+            app.state::<AppState>().upload_sessions.revoke(&label);
+        }
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Opened { urls } => {
             for url in urls {

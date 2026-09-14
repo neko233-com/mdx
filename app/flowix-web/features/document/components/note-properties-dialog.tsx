@@ -10,7 +10,7 @@ import {
 } from '@shared/ui/dialog';
 import { Input } from '@shared/ui/input';
 import { useI18n } from '@/lib/i18n';
-import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
+import { usePropertyFieldPreferences } from '@features/preferences/public/runtime-api';
 import type { PropertyPreset } from '@features/document/properties/presets';
 import { SelectValueInput } from '@features/document/properties/select-value-input';
 import { MultiSelectValueInput } from '@features/document/properties/multi-select-value-input';
@@ -53,8 +53,7 @@ export function NotePropertiesDialog({
   onSave,
 }: NotePropertiesDialogProps) {
   const { t } = useI18n();
-  const savedPropertyFields = useUserSettingsStore((store) => store.settings.properties.fields);
-  const updateUserSettings = useUserSettingsStore((store) => store.updateSettings);
+  const { fields: savedPropertyFields, saveFields } = usePropertyFieldPreferences();
   const frontmatter = useMemo(() => extractFrontmatter(content), [content]);
   const savedFieldsByKey = useMemo(() => {
     return new Map(savedPropertyFields.map((field) => [field.key, field]));
@@ -161,7 +160,7 @@ export function NotePropertiesDialog({
       ...savedPropertyFields.filter((item) => item.key !== key && item.key !== previousKey),
       definition,
     ];
-    void updateUserSettings({ properties: { fields: nextFields } });
+    void saveFields(nextFields);
   };
 
   // 自定义添加: name 是展示名, key 按固定 kebab-case 规则生成。
@@ -344,6 +343,15 @@ export function NotePropertiesDialog({
                         options={presetOptions}
                         disabled={isKeyField}
                         onChange={(value) => updateRow(row.id, { value })}
+                      />
+                    ) : row.type === 'List' ? (
+                      <textarea
+                        value={row.value}
+                        rows={3}
+                        onChange={(event) => updateRow(row.id, { value: event.target.value })}
+                        disabled={isKeyField}
+                        className="min-h-8 w-full resize-y rounded-lg border border-input bg-background px-2 py-1.5 text-sm outline-none transition-colors focus-visible:border-[var(--primary)]"
+                        aria-label={row.key}
                       />
                     ) : (
                       <Input

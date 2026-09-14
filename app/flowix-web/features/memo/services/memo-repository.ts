@@ -24,7 +24,8 @@ export const memoRepository = {
     limit?: number;
   }): Promise<MemoListPage> => memos.getMemos(params),
   listPluginNotes: (pluginId: string, notebookId: string) => plugins.listNotes(pluginId, notebookId),
-  create: (tag?: string, notebookId?: string) => memos.addDocument(tag, notebookId),
+  create: (tag?: string, notebookId?: string, parentRelativePath?: string) =>
+    memos.addDocument(tag, notebookId, parentRelativePath),
   delete: (id: string) => memos.deleteMemo(id),
   favorite: (id: string) => memos.favoriteMemo(id),
   unfavorite: (id: string) => memos.unfavoriteMemo(id),
@@ -37,6 +38,8 @@ export const notebookRepository = {
     notebooks.create(name, path, icon),
   createFromCloud: (id: string, name: string, path: string, icon?: string | null) =>
     notebooks.createFromCloud(id, name, path, icon),
+  startImport: (notebookId: string) => notebooks.startImport(notebookId),
+  getImportStatus: (notebookId: string) => notebooks.getImportStatus(notebookId),
   update: (id: string, name?: string, icon?: string | null) =>
     notebooks.update(id, name, icon),
   /**

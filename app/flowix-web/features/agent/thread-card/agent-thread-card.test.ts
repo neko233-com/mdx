@@ -39,6 +39,11 @@ const toastMock = vi.hoisted(() => ({
 vi.mock("@/lib/toast", () => ({ toast: toastMock }));
 
 vi.mock("@features/workspace/use-cases/browser-column-navigation", () => ({
+  openBrowserColumnFileBrowser: vi.fn(() => ({
+    host: 'browser-column',
+    tabId: 'file-browser:/Users/rop/Desktop/vibe/flowix-main',
+    alreadyOpen: false,
+  })),
   openBrowserColumnText: vi.fn(() => "file:/Users/rop/Documents/Outside Text.txt"),
   openBrowserColumnWebpage: vi.fn(() => ({
     host: 'browser-column',
@@ -577,6 +582,80 @@ describe("AgentThreadCard NodeView streaming", () => {
       "/Users/rop/Documents",
     );
     expect(openPath).not.toHaveBeenCalled();
+  });
+
+  it("opens a file inside the conversation workspace in the file browser", async () => {
+    const { AgentThreadCard } =
+      await import("@features/agent/thread-card");
+    const { useChatStore, useAgentConversationStore } = await import(
+      "@features/agent/store/agent-session-test-facade",
+    );
+    const { openBrowserColumnFileBrowser, openBrowserColumnText } = await import(
+      "@features/workspace/use-cases/browser-column-navigation",
+    );
+    const threadId = "thread-card-workspace-file-link";
+    const instance = useAgentConversationStore.getState().createInstance({
+      agentType: "codex",
+      title: "Workspace file link",
+      threadId,
+      runtimeConfig: {
+        workspaceSnapshot: {
+          version: 1,
+          cwd: "/Users/rop/Desktop/vibe/flowix-main",
+          workspacePaths: ["/Users/rop/Desktop/vibe/flowix-main"],
+          capturedAt: 1,
+        },
+      },
+      source: { kind: "thread-card" },
+    });
+    vi.mocked(openBrowserColumnFileBrowser).mockClear();
+    vi.mocked(openBrowserColumnText).mockClear();
+
+    const host = document.createElement("div");
+    document.body.append(host);
+    editor = new Editor({
+      element: host,
+      extensions: [StarterKit, AgentThreadCard],
+      content: {
+        type: "doc",
+        content: [{
+          type: "agentThreadCard",
+          attrs: {
+            threadId,
+            instanceId: instance.instanceId,
+            title: "Workspace file link",
+            typeKey: "codex",
+            collapsed: false,
+          },
+        }],
+      },
+    });
+
+    const store = useChatStore.getState();
+    store.bindThreadType(threadId, "codex");
+    store.dispatchAgentChunk({
+      kind: "stream_start",
+      thread_id: threadId,
+      agent_type: "codex",
+    });
+    store.dispatchAgentChunk({
+      kind: "text",
+      thread_id: threadId,
+      agent_type: "codex",
+      text: '<a href="/Users/rop/Desktop/vibe/flowix-main/src/main.ts:42">源文件</a>',
+    });
+    await flushStreamingRender();
+
+    host.querySelector<HTMLAnchorElement>(
+      '.agent-thread-card__message--assistant a[href]',
+    )?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(openBrowserColumnFileBrowser).toHaveBeenCalledWith(
+      "/Users/rop/Desktop/vibe/flowix-main",
+      "/Users/rop/Desktop/vibe/flowix-main/src/main.ts",
+    );
+    expect(openBrowserColumnText).not.toHaveBeenCalled();
   });
 
   it("uses thread runtime as the Thread Card footer running source", async () => {
@@ -1297,7 +1376,7 @@ describe("AgentThreadCard NodeView streaming", () => {
         runtimeConfig: {
           codex: expect.objectContaining({
             cwd: "D:\\workspace\\main",
-            workspacePaths: ["D:\\workspace\\main", "D:\\workspace\\extra"],
+            workspacePaths: ["D:\\workspace\\extra"],
           }),
         },
       }),
@@ -1953,6 +2032,114 @@ describe("AgentThreadCard NodeView streaming", () => {
 
     button?.click();
 
+    expect(editor.state.doc.firstChild?.attrs.fullscreen).toBe(false);
+  });
+
+  it("does not exit a Browser Column fullscreen card when main-third leaves agent view", async () => {
+    const { AgentThreadCard } =
+      await import("@features/agent/thread-card");
+    const workspaceHost = document.createElement("section");
+    workspaceHost.dataset.workspaceHost = "browser-column";
+    const host = document.createElement("div");
+    workspaceHost.append(host);
+    document.body.append(workspaceHost);
+
+    editor = new Editor({
+      element: host,
+      extensions: [StarterKit, AgentThreadCard],
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "agentThreadCard",
+            attrs: {
+              instanceId: "instance-browser-column-fullscreen",
+              threadId: "thread-browser-column-fullscreen",
+              title: "Browser Column conversation",
+              typeKey: "deepseek-harness",
+              collapsed: false,
+              fullscreen: false,
+            },
+          },
+        ],
+      },
+    });
+
+    host
+      .querySelector<HTMLButtonElement>(".agent-thread-card__fullscreen")
+      ?.click();
+
+    const card = host.querySelector<HTMLElement>(".agent-thread-card");
+    expect(card?.classList.contains("agent-thread-card--fullscreen")).toBe(true);
+    expect(editor.state.doc.firstChild?.attrs.fullscreen).toBe(true);
+
+    window.dispatchEvent(
+      new CustomEvent("flowix:agent-thread-card-request-fullscreen", {
+        detail: { host: "main-third", exitOthers: true, persist: true },
+      }),
+    );
+
+    expect(card?.classList.contains("agent-thread-card--fullscreen")).toBe(true);
+    expect(editor.state.doc.firstChild?.attrs.fullscreen).toBe(true);
+  });
+
+  it("persists a Work Column fullscreen exit and does not restore it on update", async () => {
+    const { AgentThreadCard } =
+      await import("@features/agent/thread-card");
+    const workspaceHost = document.createElement("section");
+    workspaceHost.dataset.workspaceHost = "main-third";
+    const host = document.createElement("div");
+    workspaceHost.append(host);
+    document.body.append(workspaceHost);
+
+    editor = new Editor({
+      element: host,
+      extensions: [StarterKit, AgentThreadCard],
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "agentThreadCard",
+            attrs: {
+              instanceId: "instance-work-column-fullscreen",
+              threadId: "thread-work-column-fullscreen",
+              title: "Work Column conversation",
+              typeKey: "deepseek-harness",
+              collapsed: false,
+              fullscreen: false,
+            },
+          },
+        ],
+      },
+    });
+
+    host
+      .querySelector<HTMLButtonElement>(".agent-thread-card__fullscreen")
+      ?.click();
+    const card = host.querySelector<HTMLElement>(".agent-thread-card");
+    expect(card?.classList.contains("agent-thread-card--fullscreen")).toBe(true);
+
+    window.dispatchEvent(
+      new CustomEvent("flowix:agent-thread-card-request-fullscreen", {
+        detail: { host: "main-third", exitOthers: true, persist: true },
+      }),
+    );
+
+    expect(card?.classList.contains("agent-thread-card--fullscreen")).toBe(false);
+    expect(editor.state.doc.firstChild?.attrs.fullscreen).toBe(false);
+
+    const currentNode = editor.state.doc.firstChild;
+    expect(currentNode).not.toBeNull();
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, {
+        ...currentNode?.attrs,
+        title: "Work Column conversation updated",
+      }),
+    );
+    await flushPromises();
+    await flushAnimationFrame();
+
+    expect(card?.classList.contains("agent-thread-card--fullscreen")).toBe(false);
     expect(editor.state.doc.firstChild?.attrs.fullscreen).toBe(false);
   });
 

@@ -1,14 +1,17 @@
+import { captureFileBrowserContext } from './file-browser-context';
+import type { FileBrowserTarget } from '../store/file-browser-target';
+import { canonicalPath } from '@/lib/path';
 import { displayTitleFromFilename } from '@/lib/utils';
 import { joinNotebookMemoPath } from '@/lib/path';
-import { canonicalUrl } from '@features/workspace/store/workspace-content-identity';
-import type { MemoItem, Notebook } from '@features/memo';
+import { canonicalUrl, contentIdentityKey } from '@features/workspace/store/workspace-content-identity';
+import type { MemoItem, Notebook } from '@features/memo/public/workspace-api';
 import { memos as memosClient } from '@platform/tauri/client';
 import {
   getPluginNoteInfo,
   type PluginArtifactRendererId,
-} from '@features/plugin/plugin-note';
+} from '@features/plugin/public/workspace-api';
 import {
-  BROWSER_COLUMN_FILE_TREE_DEFAULT_WIDTH,
+  canMoveBrowserColumnTargetToWorkColumn,
   useBrowserColumnStore,
   type BrowserColumnOpenDisposition,
   type BrowserColumnTab,
@@ -31,7 +34,6 @@ import {
   openExternalTarget,
   openMemoTarget,
   openWebTarget,
-  clearWorkspaceDocument,
   closeAgentTarget,
 } from './workspace-navigation';
 import { useWorkspaceFocusStore } from '@features/workspace/store/workspace-focus-store';
@@ -54,10 +56,9 @@ function targetTabTitle(target: BrowserColumnTarget): string {
 
   switch (target.kind) {
     case 'memo':
-    case 'file':
       return displayTitleFromFilename(filenameFromPath(target.filePath));
     case 'file-browser':
-      return filenameFromPath(target.folderPath) || '文件';
+      return displayTitleFromFilename(filenameFromPath(target.activeFilePath ?? target.folderPath ?? '')) || '文件';
     case 'web':
       try {
         return new URL(target.url).hostname || target.url;
@@ -92,10 +93,10 @@ export function openBrowserColumnTarget(
       : target.kind === 'web'
         ? `web:${canonicalUrl(target.url) ?? target.url}`
         : target.kind === 'file-browser'
-          ? `file-browser:${target.folderPath}`
+          ? target.activeFilePath ? `file:${canonicalPath(target.activeFilePath)}` : `file-browser:${target.folderPath}`
         : target.kind === 'artifact'
           ? `artifact:${target.pointerMemoId}`
-          : `file:${target.filePath}`;
+          : 'empty';
 
   return enqueueBrowserColumnNavigation(async () => {
     if (disposition === 'focus-existing') {
@@ -105,11 +106,50 @@ export function openBrowserColumnTarget(
         return openResult(existing);
       }
       if (existing?.host === 'browser-column') {
-        useBrowserColumnStore.getState().commitTab(existing.tabId);
+        const store = useBrowserColumnStore.getState();
+        if (target.kind === 'file-browser') {
+          const existingTab = store.tabs.find((candidate) => candidate.id === existing.tabId);
+          if (existingTab?.target.kind === 'file-browser') {
+            // Upgrade a standalone file tab to a file-browser tab in place.
+            // The tab identity stays stable while the resource context and
+            // tree preferences are added.
+            store.updateFileBrowserContext(existing.tabId, {
+              folderPath: target.folderPath,
+              notebookId: target.notebookId,
+              scopePath: target.scopePath,
+            });
+            if (target.activeFilePath) {
+              store.selectFileBrowserFile(existing.tabId, target.activeFilePath);
+            }
+          }
+        }
+        store.commitTab(existing.tabId);
         return { host: 'browser-column', tabId: existing.tabId, alreadyOpen: true };
       }
     }
 
+    if (disposition === 'open-in-column') {
+      const store = useBrowserColumnStore.getState();
+      const key = contentIdentityKey(browserColumnTargetIdentity(target));
+      const existing = store.tabs.find((tab) => contentIdentityKey(browserColumnTargetIdentity(tab.target)) === key);
+      if (existing) {
+        store.commitTab(existing.id);
+        return { host: 'browser-column', tabId: existing.id, alreadyOpen: true };
+      }
+    }
+    // Directory opens reuse their browsing tab after file-identity lookup.
+    // Independent file opens keep their own stable tabs.
+    if (target.kind === 'file-browser' && target.folderPath && disposition !== 'replace-active') {
+      const store = useBrowserColumnStore.getState();
+      const folderTab = store.tabs.find((tab) => tab.target.kind === 'file-browser'
+        && tab.target.folderPath && canonicalPath(tab.target.folderPath) === canonicalPath(target.folderPath!)
+        && tab.target.notebookId === target.notebookId);
+      if (folderTab) {
+        if (target.activeFilePath) store.selectFileBrowserFile(folderTab.id, target.activeFilePath);
+        store.commitTab(folderTab.id);
+        return { host: 'browser-column', tabId: folderTab.id, alreadyOpen: true };
+      }
+    }
     const tabId = useBrowserColumnStore.getState().openTab({
       id,
       title: targetTabTitle(target),
@@ -123,7 +163,7 @@ export function openBrowserColumnTarget(
 export function openBrowserColumnMemo(
   memo: MemoItem,
   notebook: Notebook | null,
-  disposition: BrowserColumnOpenDisposition = 'focus-existing',
+  disposition: BrowserColumnOpenDisposition = 'open-in-column',
 ): Promise<BrowserColumnOpenResult | null> {
   const pluginNote = getPluginNoteInfo(memo);
   if (pluginNote) {
@@ -135,8 +175,8 @@ export function openBrowserColumnMemo(
   }
 
   const filePath = notebook?.path
-    ? joinNotebookMemoPath(notebook.path, memo.filename) ?? memo.filename
-    : memo.filename;
+    ? joinNotebookMemoPath(notebook.path, memo.relativePath || memo.filename) ?? (memo.relativePath || memo.filename)
+    : memo.relativePath || memo.filename;
 
   return openBrowserColumnTarget({
     kind: 'memo',
@@ -147,14 +187,19 @@ export function openBrowserColumnMemo(
   }, disposition);
 }
 
-export async function openBrowserColumnMemoById(memoId: string): Promise<BrowserColumnOpenResult> {
+export async function openBrowserColumnMemoById(
+  memoId: string,
+  disposition: BrowserColumnOpenDisposition = 'focus-existing',
+): Promise<BrowserColumnOpenResult> {
   const identity = { kind: 'memo' as const, memoId };
-  const existing = await activateExistingWorkspaceContentAsync(identity);
-  if (!existing && findExistingWorkspaceContent(identity)) {
-    throw new Error(`Memo tab activation was cancelled: ${memoId}`);
+  if (disposition === 'focus-existing') {
+    const existing = await activateExistingWorkspaceContentAsync(identity);
+    if (!existing && findExistingWorkspaceContent(identity)) {
+      throw new Error(`Memo tab activation was cancelled: ${memoId}`);
+    }
+    const result = openResult(existing);
+    if (result) return result;
   }
-  const result = openResult(existing);
-  if (result) return result;
 
   // `MemoItem` deliberately has no notebook field. Resolving the path from
   // the selected notebook would open a background-created memo in the wrong
@@ -175,13 +220,33 @@ export async function openBrowserColumnMemoById(memoId: string): Promise<Browser
         notebookId: session.notebookId,
         notebookPath: session.notebookPath,
         filePath: session.path,
-      });
+      }, disposition);
   if (!opened) throw new Error(`Memo tab activation was cancelled: ${memoId}`);
   return opened;
 }
 
+export function createFileBrowserTarget(activeFilePath: string | null, scopePath: string | null = null, folderPath: string | null = null): FileBrowserTarget {
+  return { kind: 'file-browser', activeFilePath, ...captureFileBrowserContext(activeFilePath, scopePath, folderPath) };
+}
+
+/** All file changes in an existing tab share the save-before-switch barrier. */
+export function selectBrowserColumnFile(tabId: string, filePath: string | null, folderPath?: string): Promise<boolean | null> {
+  return enqueueBrowserColumnNavigation(() => {
+    const state = useBrowserColumnStore.getState();
+    const tab = state.tabs.find((candidate) => candidate.id === tabId);
+    if (!tab || tab.target.kind !== 'file-browser') return false;
+    const existing = filePath ? state.tabs.find((candidate) => candidate.id !== tabId
+      && candidate.target.kind === 'file-browser' && candidate.target.activeFilePath
+      && canonicalPath(candidate.target.activeFilePath) === canonicalPath(filePath)) : null;
+    if (existing) { state.commitTab(existing.id); return true; }
+    if (folderPath !== undefined) state.switchFileBrowserFolder(tabId, folderPath);
+    state.selectFileBrowserFile(tabId, filePath);
+    return true;
+  });
+}
+
 export function openBrowserColumnMarkdown(filePath: string): Promise<BrowserColumnOpenResult | null> {
-  return openBrowserColumnTarget({ kind: 'file', filePath, scopePath: null });
+  return openBrowserColumnTarget(createFileBrowserTarget(filePath));
 }
 
 export function openBrowserColumnArtifact(
@@ -192,17 +257,14 @@ export function openBrowserColumnArtifact(
 }
 
 export function openBrowserColumnText(filePath: string, scopePath: string): Promise<BrowserColumnOpenResult | null> {
-  return openBrowserColumnTarget({ kind: 'file', filePath, scopePath });
+  return openBrowserColumnTarget(createFileBrowserTarget(filePath, scopePath));
 }
 
-export function openBrowserColumnFileBrowser(folderPath: string): Promise<BrowserColumnOpenResult | null> {
-  return openBrowserColumnTarget({
-    kind: 'file-browser',
-    folderPath,
-    activeFilePath: null,
-    fileTreeVisible: true,
-    fileTreeWidth: BROWSER_COLUMN_FILE_TREE_DEFAULT_WIDTH,
-  });
+export function openBrowserColumnFileBrowser(
+  folderPath: string,
+  activeFilePath: string | null = null,
+): Promise<BrowserColumnOpenResult | null> {
+  return openBrowserColumnTarget(createFileBrowserTarget(activeFilePath, folderPath, folderPath));
 }
 
 export function openBrowserColumnWebpage(url: string): Promise<BrowserColumnOpenResult | null> {
@@ -235,7 +297,7 @@ export function openWorkColumnTargetInBrowserColumn(
           filePath: target.path,
         };
       case 'external':
-        return { kind: 'file', filePath: target.path, scopePath: target.scopePath };
+        return { ...createFileBrowserTarget(target.path, target.scopePath), ...target.fileBrowser };
       case 'artifact':
         return {
           kind: 'artifact',
@@ -262,7 +324,7 @@ export function openWorkColumnTargetInBrowserColumn(
           ? `web:${canonicalUrl(browserTarget.url) ?? browserTarget.url}`
           : browserTarget.kind === 'artifact'
             ? `artifact:${browserTarget.pointerMemoId}`
-            : `file:${browserTarget.filePath}`;
+            : browserTarget.kind === 'file-browser' ? browserTarget.activeFilePath ? `file:${canonicalPath(browserTarget.activeFilePath)}` : `file-browser:${browserTarget.folderPath}` : 'empty';
     const tabId = useBrowserColumnStore.getState().openTab({
       id,
       title: targetTabTitle(browserTarget),
@@ -271,8 +333,6 @@ export function openWorkColumnTargetInBrowserColumn(
     });
     if (target.kind === 'agent-conversation') {
       closeAgentTarget();
-    } else {
-      await clearWorkspaceDocument();
     }
     return { host: 'browser-column', tabId, alreadyOpen: false };
   });
@@ -309,6 +369,7 @@ export function openBrowserColumnTabInWorkColumn(tabId: string): Promise<boolean
     const originalIndex = before.tabs.findIndex((tab) => tab.id === tabId);
     if (originalIndex < 0) return false;
     const tab = before.tabs[originalIndex];
+    if (!canMoveBrowserColumnTargetToWorkColumn(tab.target)) return false;
     const originalActiveTabId = before.activeTabId;
 
     // Remove the tab before invoking the normal work-column navigation
@@ -326,15 +387,12 @@ export function openBrowserColumnTabInWorkColumn(tabId: string): Promise<boolean
             notebookPath: tab.target.notebookPath || null,
           });
           break;
-        case 'file':
-          await openExternalTarget(tab.target.filePath, {
-            scopePath: tab.target.scopePath,
-          });
-          break;
         case 'file-browser':
           if (tab.target.activeFilePath) {
             await openExternalTarget(tab.target.activeFilePath, {
-              scopePath: tab.target.folderPath,
+              destination: 'main-third',
+              scopePath: tab.target.scopePath,
+              fileBrowser: tab.target,
             });
           }
           break;

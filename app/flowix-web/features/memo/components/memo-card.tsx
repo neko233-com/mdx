@@ -3,7 +3,7 @@
 import { memo, useEffect, useState, type ReactNode } from 'react';
 import { displayTitleFromFilename } from '@/lib/utils';
 import { ListTodo, MoreHorizontal } from 'lucide-react';
-import { FileTextIcon, PushPin } from '@phosphor-icons/react';
+import { PushPin } from '@phosphor-icons/react';
 import { MEMO_COLOR_HEX, type MemoColor, type MemoItem } from '@features/memo';
 import { cn } from '@/lib/utils';
 import { getAgentType } from '@/lib/agent-types';
@@ -25,11 +25,9 @@ import {
 } from '@shared/ui/context-menu';
 import { MemoCardActions } from '@features/memo/components/memo-card-actions';
 import { assetUrl, decodeStorageKey } from '@features/editor/extensions/attachment-link/utils';
-import type { MemoCardVariant } from '@/lib/constants';
 
 interface MemoCardProps {
   memo: MemoItem;
-  variant?: MemoCardVariant;
   tagMap: Record<string, string>;
   isSelected: boolean;
   isDropdownOpen: boolean;
@@ -58,7 +56,6 @@ interface MemoCardBodyProps {
 
 interface MemoCardShellProps {
   memo: MemoItem;
-  variant: MemoCardVariant;
   isSelected: boolean;
   isDropdownOpen: boolean;
   moreLabel: string;
@@ -136,7 +133,6 @@ function ColorDots({ colors, limit, className }: { colors: MemoItem['colors']; l
 
 function MemoCardMoreMenu({
   memo,
-  variant,
   isDropdownOpen,
   moreLabel,
   onOpenDropdown,
@@ -146,7 +142,7 @@ function MemoCardMoreMenu({
   onColorsChange,
 }: Pick<
   MemoCardShellProps,
-  'memo' | 'variant' | 'isDropdownOpen' | 'moreLabel' | 'onOpenDropdown' | 'onOpenInWindow' | 'onFavoriteToggle' | 'onDelete' | 'onColorsChange'
+  'memo' | 'isDropdownOpen' | 'moreLabel' | 'onOpenDropdown' | 'onOpenInWindow' | 'onFavoriteToggle' | 'onDelete' | 'onColorsChange'
 >) {
   return (
     <div className="absolute right-3 top-2 z-100 shrink-0 items-center gap-1">
@@ -163,7 +159,6 @@ function MemoCardMoreMenu({
             aria-label={moreLabel}
             className={cn(
               'rounded p-1 text-[var(--muted-foreground)] opacity-0 transition-[opacity,color] group-hover:opacity-100 hover:text-[var(--foreground)]',
-              variant === 'compact' && 'bg-[var(--accent)]',
             )}
           >
             <MoreHorizontal className="h-4 w-4" />
@@ -209,7 +204,6 @@ function MemoCardMoreMenu({
 
 function MemoCardShell({
   memo,
-  variant,
   isSelected,
   isDropdownOpen,
   moreLabel,
@@ -228,8 +222,7 @@ function MemoCardShell({
           onClick={() => onSelect(memo)}
           className={cn(
             'group memo-card relative min-w-0 w-full cursor-pointer rounded-lg px-2 transition-all',
-            variant === 'compact' ? 'py-[9px]' : 'py-3',
-            variant === 'compact' && !isSelected && 'hover:bg-[var(--muted)]',
+            'py-3',
             isSelected && 'bg-[var(--accent)]',
           )}
         >
@@ -240,7 +233,6 @@ function MemoCardShell({
           </div>
           <MemoCardMoreMenu
             memo={memo}
-            variant={variant}
             isDropdownOpen={isDropdownOpen}
             moreLabel={moreLabel}
             onOpenDropdown={onOpenDropdown}
@@ -262,35 +254,6 @@ function MemoCardShell({
         />
       </ContextMenuContent>
     </ContextMenu>
-  );
-}
-
-function CompactMemoCardBody({
-  memo,
-  title,
-  hasTodos,
-  runningAgentType,
-}: MemoCardBodyProps) {
-  return (
-    <div className="flex h-5 w-full min-w-0 max-w-full items-center gap-1.5 overflow-hidden">
-      {runningAgentType && (
-        <AgentTodoIcons
-          hasTodos={false}
-          runningAgentType={runningAgentType}
-        />
-      )}
-      {memo.favorited && (
-        <PushPin weight="fill" className="h-3.5 w-3.5 shrink-0 text-[var(--foreground)]" />
-      )}
-      <FileTextIcon weight="duotone" className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
-      <h3 className="w-0 min-w-0 flex-1 truncate text-sm font-normal text-[var(--foreground)]">
-        {title}
-      </h3>
-      <ColorDots colors={memo.colors} limit={1} className="mr-1" />
-      {hasTodos && (
-        <ListTodo className="mr-1 h-3.5 w-3.5 shrink-0 text-[var(--muted-foreground)] transition-opacity group-hover:opacity-0" />
-      )}
-    </div>
   );
 }
 
@@ -386,7 +349,6 @@ function DetailedMemoCardBody({
 
 export function MemoCardImpl({
   memo,
-  variant = 'detailed',
   tagMap,
   isSelected,
   isDropdownOpen,
@@ -426,7 +388,6 @@ export function MemoCardImpl({
   return (
     <MemoCardShell
       memo={memo}
-      variant={variant}
       isSelected={isSelected}
       isDropdownOpen={isDropdownOpen}
       moreLabel={t('document.titlebar.moreTooltip')}
@@ -437,11 +398,7 @@ export function MemoCardImpl({
       onDelete={onDelete}
       onColorsChange={onColorsChange}
     >
-      {variant === 'compact' ? (
-        <CompactMemoCardBody {...bodyProps} />
-      ) : (
-        <DetailedMemoCardBody {...bodyProps} />
-      )}
+      <DetailedMemoCardBody {...bodyProps} />
     </MemoCardShell>
   );
 }

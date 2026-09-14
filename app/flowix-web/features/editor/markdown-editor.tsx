@@ -1,4 +1,6 @@
 import { Editor, Extension, renderNestedMarkdownContent } from '@tiptap/core';
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
+import { TextSelection } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 import Highlight from '@tiptap/extension-highlight';
 import { TaskList } from '@tiptap/extension-task-list';
@@ -9,7 +11,7 @@ import { Markdown } from '@tiptap/markdown';
 import Placeholder from '@tiptap/extension-placeholder';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallback } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useCallback, type ReactNode } from 'react';
 import { useShortcutScope, pushHandler } from '@features/shortcuts';
 import { AttachmentLink } from '@features/editor/extensions/attachment-link';
 import { TableBubbleMenu } from '@features/editor/extensions/table/table-bubble-menu';
@@ -22,15 +24,14 @@ import MarkdownPaste from '@features/editor/extensions/markdown-paste';
 import ManagedPasteRules from '@features/editor/extensions/paste-rules';
 import { LinkSelectionHighlight, MarkdownLink } from '@features/editor/extensions/markdown-link';
 import { NoteReference } from '@features/editor/extensions/note-link';
-import { NoteMention } from '@features/editor/extensions/note-mention';
+import { NoteMention, WikiNoteMention } from '@features/editor/extensions/note-mention';
 import { TagMention } from '@features/editor/extensions/tag-mention';
-import { DateTimeWidget, updateDateTimeWidget } from '@features/editor/extensions/datetime-widget';
 import { CodeBlockShiki } from '@features/editor/extensions/codeblock-shiki/codeblock-shiki';
 import { MathBlock } from '@features/editor/extensions/math-block';
 import { WebCard } from '@features/editor/extensions/web-card';
 import { SearchAndReplace } from '@features/editor/extensions/search-replace';
 import { SearchReplacePanel } from '@features/editor/components/search-replace-panel';
-import Frontmatter from '@features/editor/extensions/frontmatter';
+import Frontmatter, { selectEditableDocumentContent } from '@features/editor/extensions/frontmatter';
 import { MenuPinExtension } from '@features/editor/extensions/menu-pin';
 import { BlockDragExtension } from '@features/editor/extensions/block-drag';
 import { SlashMenu } from '@features/editor/extensions/slash-menu';
@@ -42,6 +43,7 @@ import { TablePlugin } from '@features/editor/extensions/table/table-plugin';
 import { useI18n } from '@/lib/i18n';
 
 interface MarkdownEditorProps {
+  memoId?: string;
   content: string;
   editable?: boolean;
   placeholder?: string;
@@ -49,7 +51,6 @@ interface MarkdownEditorProps {
   className?: string;
   onEditorScroll?: (scrollTop: number) => void;
   autoFocus?: boolean;
-  editorStorageUpdatedAt?: Date | null;
   onBeforeCreate?: (editor: Editor) => void;
   // 搜索面板由父组件控制（titlebar 按钮 / Ctrl+F 共享同一开关）
   searchPanelOpen?: boolean;
@@ -59,11 +60,19 @@ interface MarkdownEditorProps {
   toolbarCollapsed?: boolean;
   onToolbarCollapsedChange?: (collapsed: boolean) => void;
   onEditingFinished?: () => void;
+  /** Move focus from the first editable body block to the title. */
+  onFocusTitle?: () => void;
+  /** Append the first editable body line to the existing title. */
+  onAppendToTitle?: (title: string) => void;
+  /** Content in the document scroller that stays outside ProseMirror. */
+  header?: ReactNode;
 }
 
 export interface MarkdownEditorHandle {
   flushPendingChanges: () => string | null;
   getCurrentMarkdown: () => string;
+  focusStart?: () => void;
+  moveTitleToBody?: (trailingContent: string) => void;
 }
 
 interface NestedListMarkdownContext {
@@ -187,13 +196,29 @@ function normalizeMarkdownTableEmptyCells(markdown: string): string {
 }
 
 const PreservedParagraph = Paragraph.extend({
+  addAttributes() {
+    return {
+      textAlign: {
+        default: null,
+        parseHTML: element => element.style.textAlign || null,
+        renderHTML: attributes => (
+          attributes.textAlign ? { style: `text-align: ${attributes.textAlign}` } : {}
+        ),
+      },
+    };
+  },
   renderMarkdown(node, h, ctx: MarkdownRenderContext) {
     const content = Array.isArray(node.content) ? node.content : [];
     if (isEmptyParagraphForMarkdown(content, ctx)) {
       return renderEmptyParagraphMarkdown(ctx);
     }
 
-    return h.renderChildren(content);
+    const renderedContent = h.renderChildren(content);
+    // Markdown itself has no alignment syntax. Keep aligned paragraphs as HTML
+    // so the formatting round-trips through the Markdown editor and renderer.
+    return node.attrs?.textAlign
+      ? `<p style="text-align: ${node.attrs.textAlign}">${renderedContent}</p>`
+      : renderedContent;
   },
 });
 
@@ -276,7 +301,7 @@ const PreservedTaskItem = TaskItem.extend({
 
 function normalizeTaskItemPlaceholders(editor: Editor): void {
   const { state, view } = editor;
-  let tr = state.tr;
+  const deletions: Array<{ from: number; to: number }> = [];
 
   state.doc.descendants((node, pos) => {
     if (node.type.name !== 'taskItem') return true;
@@ -289,18 +314,57 @@ function normalizeTaskItemPlaceholders(editor: Editor): void {
     const from = paragraphPos + 1;
     const to = paragraphPos + firstChild.nodeSize - 1;
     if (from < to) {
-      tr = tr.delete(from, to);
+      deletions.push({ from, to });
     }
 
     return false;
   });
 
-  if (tr.docChanged) {
+  if (deletions.length > 0) {
+    // All positions refer to the original document. Applying the ranges from
+    // right to left keeps an earlier deletion from shifting a later range.
+    const tr = state.tr;
+    deletions
+      .sort((a, b) => b.from - a.from)
+      .forEach(({ from, to }) => tr.delete(from, to));
     view.dispatch(tr);
   }
 }
 
+interface EditableBodyStart {
+  block: ProseMirrorNode | null;
+  blockIndex: number;
+  position: number;
+}
+
+/**
+ * Find the first real body block without treating the protected frontmatter
+ * node (which renders the tag row) as document content.
+ */
+function getEditableBodyStart(editor: Editor): EditableBodyStart {
+  let position = 0;
+  for (let index = 0; index < editor.state.doc.childCount; index += 1) {
+    const block = editor.state.doc.child(index);
+    if (block.type.name !== 'frontmatter') {
+      return { block, blockIndex: index, position };
+    }
+    position += block.nodeSize;
+  }
+
+  return {
+    block: null,
+    blockIndex: editor.state.doc.childCount,
+    position,
+  };
+}
+
+function createEmptyParagraph(editor: Editor, text?: string): ProseMirrorNode {
+  const paragraph = editor.state.schema.nodes.paragraph;
+  return paragraph.create(null, text ? editor.state.schema.text(text) : undefined);
+}
+
 export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({
+  memoId,
   content,
   editable = true,
   placeholder,
@@ -308,13 +372,15 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   className,
   onEditorScroll,
   autoFocus = false,
-  editorStorageUpdatedAt,
   onBeforeCreate,
   searchPanelOpen = false,
   onSearchPanelOpenChange,
   toolbarCollapsed = false,
   onToolbarCollapsedChange,
   onEditingFinished,
+  onFocusTitle,
+  onAppendToTitle,
+  header,
 }, ref) {
   const { t } = useI18n();
   const resolvedPlaceholder = placeholder || t('editor.placeholder');
@@ -326,6 +392,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   const resolvedPlaceholderRef = useRef(resolvedPlaceholder);
   resolvedPlaceholderRef.current = resolvedPlaceholder;
   const elementRef = useRef<HTMLDivElement>(null);
+  const editorMountRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const [editorInstance, setEditorInstance] = useState<Editor | null>(null);
   const [isScrolling, setIsScrolling] = useState(false);
@@ -352,10 +419,14 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   const onChangeRef = useRef(onChange);
   const onSearchPanelOpenChangeRef = useRef(onSearchPanelOpenChange);
   const onEditingFinishedRef = useRef(onEditingFinished);
+  const onFocusTitleRef = useRef(onFocusTitle);
+  const onAppendToTitleRef = useRef(onAppendToTitle);
   onEditorScrollRef.current = onEditorScroll;
   onChangeRef.current = onChange;
   onSearchPanelOpenChangeRef.current = onSearchPanelOpenChange;
   onEditingFinishedRef.current = onEditingFinished;
+  onFocusTitleRef.current = onFocusTitle;
+  onAppendToTitleRef.current = onAppendToTitle;
 
   const clearSerializeTimer = useCallback(() => {
     if (serializeTimerRef.current) {
@@ -391,26 +462,18 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   }, [clearSerializeTimer]);
 
   const schedulePendingSerialization = useCallback(() => {
-    clearSerializeTimer();
+    // Publish during continuous typing as well as after the last keystroke.
+    if (serializeTimerRef.current) return;
     const editor = editorRef.current;
     const viewState = editor?.view as (Editor['view'] & { composing?: boolean }) | undefined;
     if (isComposingRef.current || viewState?.composing) {
       return;
     }
     serializeTimerRef.current = setTimeout(() => {
+      serializeTimerRef.current = null;
       serializePendingChanges();
     }, SERIALIZE_DEBOUNCE_MS);
   }, [clearSerializeTimer, serializePendingChanges]);
-
-  useImperativeHandle(ref, () => ({
-    flushPendingChanges: () => serializePendingChanges({ force: true }),
-    getCurrentMarkdown: () => {
-      if (pendingSerializeDirtyRef.current) {
-        return serializePendingChanges({ force: true }) ?? contentRef.current;
-      }
-      return contentRef.current;
-    },
-  }), [serializePendingChanges]);
 
   const logEditorPerf = useCallback((label: string, startedAt: number, meta?: Record<string, unknown>) => {
     console.info('[perf:open-doc]', label, {
@@ -457,6 +520,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       editor
         .chain()
         .setMeta(SKIP_AGENT_THREAD_CARD_CLEANUP_META, true)
+        .setMeta('addToHistory', false)
         .setContent(normalizedNextContent, { contentType: 'markdown', emitUpdate: false })
         .run();
       normalizeTaskItemPlaceholders(editor);
@@ -477,8 +541,83 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     }
   }, [clearSerializeTimer, findScrollable, logEditorPerf]);
 
+  const focusBodyStart = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor || editor.isDestroyed) return;
+    // The frontmatter protection plugin corrects `focus('start')` to the
+    // first editable position when a tags/property row is present.
+    editor.commands.focus('start');
+  }, []);
+
+  const moveTitleToBody = useCallback((trailingContent: string) => {
+    const editor = editorRef.current;
+    if (!editor || editor.isDestroyed || !editor.isEditable) return;
+
+    const { position } = getEditableBodyStart(editor);
+    const text = trailingContent.trim().length > 0 ? trailingContent : undefined;
+    const tr = editor.state.tr.insert(position, createEmptyParagraph(editor, text));
+    // The moved title tail is the existing content at the new body start;
+    // keep the caret before it so typing continues at the split point.
+    const cursorPosition = position + 1;
+    tr.setSelection(TextSelection.near(tr.doc.resolve(cursorPosition), 1));
+    tr.scrollIntoView();
+    editor.view.dispatch(tr);
+    editor.view.focus();
+  }, []);
+
+  const handleBackspaceAtBodyStart = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor || editor.isDestroyed || !editor.isEditable) return false;
+
+    const { block, blockIndex, position } = getEditableBodyStart(editor);
+    const { selection } = editor.state;
+    if (
+      !block
+      || !selection.empty
+      || !selection.$from.parent.isTextblock
+      || selection.from !== position + 1
+      || (block.type.name !== 'paragraph' && block.type.name !== 'heading')
+    ) {
+      return false;
+    }
+
+    const title = block.textContent.trim();
+    if (!title) {
+      // An empty paragraph created by title-Enter is still part of the
+      // title/body boundary. Backspace should cross that boundary instead of
+      // being swallowed by the default paragraph handler.
+      if (blockIndex < editor.state.doc.childCount - 1) {
+        const tr = editor.state.tr.delete(position, position + block.nodeSize);
+        tr.scrollIntoView();
+        editor.view.dispatch(tr);
+      }
+      onFocusTitleRef.current?.();
+      return true;
+    }
+
+    const tr = blockIndex === editor.state.doc.childCount - 1
+      ? editor.state.tr.replaceWith(position, position + block.nodeSize, createEmptyParagraph(editor))
+      : editor.state.tr.delete(position, position + block.nodeSize);
+    tr.scrollIntoView();
+    editor.view.dispatch(tr);
+    onAppendToTitleRef.current?.(title);
+    return true;
+  }, []);
+
+  useImperativeHandle(ref, () => ({
+    flushPendingChanges: () => serializePendingChanges({ force: true }),
+    getCurrentMarkdown: () => {
+      if (pendingSerializeDirtyRef.current) {
+        return serializePendingChanges({ force: true }) ?? contentRef.current;
+      }
+      return contentRef.current;
+    },
+    focusStart: focusBodyStart,
+    moveTitleToBody,
+  }), [focusBodyStart, moveTitleToBody, serializePendingChanges]);
+
   useEffect(() => {
-    if (!elementRef.current || !content) {
+    if (!editorMountRef.current || !content) {
       return;
     }
     const mountStartedAt = performance.now();
@@ -486,12 +625,39 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     contentRef.current = initialContent;
 
     const editor = new Editor({
-      element: elementRef.current,
+      element: editorMountRef.current,
       // 修复跨多块复制时多余空行：ProseMirror 默认在块间插入 `\n\n`，
       // 改成单个 `\n`，粘贴到纯文本目标时块间只保留一个换行。
       editorProps: {
+        attributes: editable
+          ? {}
+          : {
+              tabindex: '0',
+              'aria-readonly': 'true',
+            },
         clipboardTextSerializer(content) {
           return content.content.textBetween(0, content.content.size, '\n', '\n');
+        },
+        handleKeyDown: (_view, event) => {
+          if (!editable || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) {
+            return false;
+          }
+
+          if (event.key === 'Backspace' && handleBackspaceAtBodyStart()) {
+            event.preventDefault();
+            return true;
+          }
+
+          const { selection } = editor.state;
+          if (!(selection instanceof TextSelection) || !selection.empty) return false;
+
+          if (event.key === 'ArrowUp' && selection.from === getEditableBodyStart(editor).position + 1) {
+            event.preventDefault();
+            onFocusTitleRef.current?.();
+            return true;
+          }
+
+          return false;
         },
       },
       extensions: [
@@ -509,7 +675,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         PreservedParagraph,
         PreservedListItem,
         MarkdownEscape,
-        AttachmentLink,
+        AttachmentLink.configure({ memoId }),
         MarkdownLink,
         LinkSelectionHighlight,
         CodeBlockShiki,
@@ -536,10 +702,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         Tag,
         ManagedPasteRules,
         MarkdownPaste,
-        DateTimeWidget,
-        Frontmatter,
+        Frontmatter.configure({ memoId }),
         NoteReference,
         NoteMention,
+        WikiNoteMention,
         TagMention,
         AgentThreadCard,
         SlashMenu,
@@ -609,13 +775,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     // 远小于 MOUNT_QUIET_MS, 第一次 onUpdate 必然被吞。
     mountedAtRef.current = Date.now();
 
-    if (editorStorageUpdatedAt) {
-      updateDateTimeWidget(editor, editorStorageUpdatedAt);
-    }
+    const detachLinkHoverTooltip = attachLinkHoverTooltip(editor, editorMountRef.current);
 
-    const detachLinkHoverTooltip = attachLinkHoverTooltip(editor, elementRef.current);
-
-    const scrollEl = findScrollable(elementRef.current);
+    const scrollEl = elementRef.current ? findScrollable(elementRef.current) : null;
     if (scrollEl) {
       const handleScroll = () => {
         setIsScrolling(true);
@@ -651,7 +813,13 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       editorRef.current = null;
       setEditorInstance(null);
     };
-  }, [applyExternalContent, findScrollable, schedulePendingSerialization, serializePendingChanges]);
+  }, [
+    applyExternalContent,
+    findScrollable,
+    handleBackspaceAtBodyStart,
+    schedulePendingSerialization,
+    serializePendingChanges,
+  ]);
 
   // 语言切换时，原地把 Placeholder extension 的 placeholder 字符串换掉，
   // 再 dispatch 一条带 'placeholder-update' meta 的空事务触发装饰重算。
@@ -675,6 +843,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     const normalizedContent = normalizeMarkdownTableEmptyCells(content);
     if (editor && pendingSerializeDirtyRef.current) {
       serializePendingChanges({ force: true });
+      return;
     }
     if (!editor || editor.isDestroyed || normalizedContent === contentRef.current) {
       return;
@@ -693,64 +862,79 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     applyExternalContent(normalizedContent);
   }, [content, applyExternalContent, serializePendingChanges]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (editorRef.current) {
       editorRef.current.setEditable(editable);
+      const editorDom = editorRef.current.view.dom;
+      if (editable) {
+        editorDom.removeAttribute('tabindex');
+        editorDom.removeAttribute('aria-readonly');
+      } else {
+        editorDom.setAttribute('tabindex', '0');
+        editorDom.setAttribute('aria-readonly', 'true');
+      }
     }
   }, [editable]);
 
-  useEffect(() => {
-    if (editorRef.current) {
-      updateDateTimeWidget(editorRef.current, editorStorageUpdatedAt || null);
-    }
-  }, [editorStorageUpdatedAt]);
-
-  // 把 editor.find / editor.undo / editor.redo 三个 action 的实例级 handler
-  // 注册到全局 handler-registry。组件卸载时 pop 走 — 命令面板 (Phase 3)
-  // 仍能从 registry 读到 action 列表, 但 run 落到空栈, 行为退化为 no-op。
+  // 把 editor.find / editor.undo / editor.redo 以及块级格式 action 的实例级
+  // handler 注册到全局 handler-registry。组件卸载时 pop 走 — 命令面板
+  // (Phase 3) 仍能从 registry 读到 action 列表, 但 run 落到空栈, 行为退化
+  // 为 no-op。编辑器命令附带真实 DOM focus 检查，避免多列同时挂载时把
+  // 命令发给最后挂载而非当前活动的编辑器。
   //
-  // ⌘F 不限制 scope (走 'window'), 焦点不在编辑器内时 invokeHandler 也会命中
-  // 这个栈 — 单一编辑器挂载, 自然没有歧义。Phase 3 若引入第二个 Tiptap 实例
-  // (e.g. 浮层编辑器), 改用 focus 事件动态 push/pop 即可。
   useEffect(() => {
+    const editorIsFocused = () => {
+      const editor = editorRef.current;
+      if (!editor || editor.isDestroyed) return false;
+      try {
+        return editor.view.hasFocus();
+      } catch {
+        return false;
+      }
+    };
     const pops = [
+      pushHandler('editor.selectAll', () => {
+        const editor = editorRef.current;
+        if (!editor) return false;
+        return selectEditableDocumentContent(editor);
+      }, { isActive: editorIsFocused }),
       pushHandler('editor.find', () => {
         onSearchPanelOpenChangeRef.current?.(true);
-      }),
+      }, { isActive: editorIsFocused }),
       pushHandler('editor.undo', () => {
         editorRef.current?.commands.undo();
-      }),
+      }, { isActive: editorIsFocused }),
       pushHandler('editor.redo', () => {
         editorRef.current?.commands.redo();
-      }),
+      }, { isActive: editorIsFocused }),
       // 块元素切换 (⌘1-4 / ⌘0 / ⌘⇧7-9) — 与 drag-context-menu items.tsx
       // 里的菜单项一一对应, 走同一组 Tiptap chain().focus().toggleXxx() 命令。
       // focus() 先调用是为了: 用户可能从标题输入框等地方按快捷键,
       // focus 保证命令落到编辑器内的当前 block。
       pushHandler('editor.setHeading1', () => {
         editorRef.current?.chain().focus().toggleHeading({ level: 1 }).run();
-      }),
+      }, { isActive: editorIsFocused }),
       pushHandler('editor.setHeading2', () => {
         editorRef.current?.chain().focus().toggleHeading({ level: 2 }).run();
-      }),
+      }, { isActive: editorIsFocused }),
       pushHandler('editor.setHeading3', () => {
         editorRef.current?.chain().focus().toggleHeading({ level: 3 }).run();
-      }),
+      }, { isActive: editorIsFocused }),
       pushHandler('editor.setHeading4', () => {
         editorRef.current?.chain().focus().toggleHeading({ level: 4 }).run();
-      }),
+      }, { isActive: editorIsFocused }),
       pushHandler('editor.setParagraph', () => {
         editorRef.current?.chain().focus().setParagraph().run();
-      }),
+      }, { isActive: editorIsFocused }),
       pushHandler('editor.toggleBulletList', () => {
         editorRef.current?.chain().focus().toggleBulletList().run();
-      }),
+      }, { isActive: editorIsFocused }),
       pushHandler('editor.toggleOrderedList', () => {
         editorRef.current?.chain().focus().toggleOrderedList().run();
-      }),
+      }, { isActive: editorIsFocused }),
       pushHandler('editor.toggleTaskList', () => {
         editorRef.current?.chain().focus().toggleTaskList().run();
-      }),
+      }, { isActive: editorIsFocused }),
     ];
     return () => {
       for (const pop of pops) pop();
@@ -794,6 +978,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         onClose={() => onSearchPanelOpenChangeRef.current?.(false)}
       />
       <div ref={elementRef} className="editor-content">
+        {header}
+        <div ref={editorMountRef} className="editor-document-body" />
         {editorInstance && <DragContextMenu editor={editorInstance} />}
         {editorInstance && !isScrolling && (
           <>

@@ -15,7 +15,6 @@ import {
 } from "@features/agent/thread-card/messages/message-list-renderer";
 import {
   areAgentRenderItemsEqual,
-  groupAgentMessages,
   type AgentRenderItem,
 } from "@features/agent/thread-card/messages/tool-grouping";
 import { createAgentThreadCardMessageElement } from "@features/agent/thread-card/messages/message-item-renderer";
@@ -69,8 +68,6 @@ export class ThreadMessageRenderController {
   private reasoningCollapsedOverrides = new Map<string, boolean>();
   private displayExpandedOverrides = new Map<string, boolean>();
   private toolGroupExpandedOverrides = new Map<string, boolean>();
-  private toolGroupPreviewBatches = new Map<string, AgentMessage[]>();
-  private toolGroupPreviousTools = new Map<string, AgentMessage[]>();
   private renderRafId: number | null = null;
   private pendingRenderInput: ThreadMessageRenderInput | null = null;
   private progressiveRenderRafId: number | null = null;
@@ -131,19 +128,21 @@ export class ThreadMessageRenderController {
   dispose(): void {
     this.cancelPendingRender();
     this.cancelProgressiveRender();
+    // The standalone conversation detail can recreate this controller while
+    // React reuses the same body element (for example during StrictMode
+    // effect replay). Do not leave an owned placeholder behind for the next
+    // controller instance, whose renderedEmptyState reference starts empty.
+    this.removeRenderedEmptyState();
     if (this.loadingIndicatorHideTimer !== null) {
       window.clearTimeout(this.loadingIndicatorHideTimer);
       this.loadingIndicatorHideTimer = null;
     }
-    this.toolGroupPreviewBatches.clear();
-    this.toolGroupPreviousTools.clear();
   }
 
   private renderNow(input: ThreadMessageRenderInput): void {
     const scrollState = this.messageViewport.captureRenderScrollState();
     const loadingJustEnded = this.previousIsLoading && !input.isLoading;
     this.previousIsLoading = input.isLoading;
-    this.syncToolGroupPreviewBatches(input.messages, input.isLoading);
     // 流式 Markdown 使用块级增量解析，空行等边界在流式期间可能被暂时
     // 切成多个 block。run 结束时只强制重解析末条消息的 content，既收敛
     // 到最终 Markdown 结构，又保留 message row、滚动位置和交互状态。
@@ -182,7 +181,7 @@ export class ThreadMessageRenderController {
     this.pruneDisplayExpandedOverrides(input.messages);
     this.pruneToolGroupExpandedOverrides(input.messages);
 
-    if (this.canReuseRenderedMessages(input.messages)) {
+    if (this.canReuseRenderedMessages(input.messages, input.isLoading)) {
       if (loadingJustEnded) {
         const finalized = this.tryPatchLastRenderedMessage(
           input.messages,
@@ -264,7 +263,7 @@ export class ThreadMessageRenderController {
     this.body.insertBefore(list, this.loadingIndicator);
     this.rememberRenderedMessages(
       list,
-      getRenderedAgentItems(input.messages, this.toolGroupPreviewBatches),
+      getRenderedAgentItems(input.messages, input.isLoading),
     );
     this.applyBodyScrollAfterRender({
       isLoading: input.isLoading,
@@ -275,7 +274,7 @@ export class ThreadMessageRenderController {
   private shouldRenderProgressively(input: ThreadMessageRenderInput): boolean {
     if (input.isLoading || !input.shouldRenderMessages) return false;
     if (input.messages.length === 0) return false;
-    if (this.canReuseRenderedMessages(input.messages)) return false;
+    if (this.canReuseRenderedMessages(input.messages, input.isLoading)) return false;
     // Progressive rendering is an initial-history optimization. Once a
     // message list is on screen, a completed turn or history reconcile must
     // keep that list mounted; removing it to show the skeleton causes a
@@ -284,7 +283,7 @@ export class ThreadMessageRenderController {
     // The progressive path renders one top-level node per item. A tool group
     // owns several nested rows and must be built atomically by the full list
     // renderer to keep the cache's top-level indexes aligned.
-    if (getRenderedAgentItems(input.messages).some((item) => item.kind === "tool-group")) {
+    if (getRenderedAgentItems(input.messages, input.isLoading).some((item) => item.kind === "tool-group")) {
       return false;
     }
     return input.messages.length >= PROGRESSIVE_RENDER_MESSAGE_THRESHOLD;
@@ -311,7 +310,7 @@ export class ThreadMessageRenderController {
 
     const renderedItems = getRenderedAgentItems(
       input.messages,
-      this.toolGroupPreviewBatches,
+      input.isLoading,
     );
     const list = document.createElement("div");
     list.className = "agent-thread-card__messages";
@@ -475,69 +474,28 @@ export class ThreadMessageRenderController {
   private removeRenderedEmptyState(): void {
     const emptyState = this.renderedEmptyState;
     this.renderedEmptyState = null;
-    if (emptyState?.parentNode === this.body) {
-      this.body.removeChild(emptyState);
+
+    // Usually the reference above is enough. A controller can be recreated
+    // against the same body, though, so also remove orphaned placeholders
+    // from the previous controller. Keep the loading indicator and message
+    // list untouched; both are owned by the current render path.
+    for (const child of Array.from(this.body.children)) {
+      if (!(child instanceof HTMLElement) || child === this.loadingIndicator) {
+        continue;
+      }
+      if (
+        child === emptyState ||
+        child.classList.contains("agent-thread-card__empty") ||
+        child.classList.contains("agent-thread-card__skeleton")
+      ) {
+        child.remove();
+      }
     }
   }
 
   private resetRenderedMessageCache(): void {
     this.renderedMessagesList = null;
     this.renderedMessageRefs = [];
-  }
-
-  /**
-   * The stream has no explicit batch marker. Treat rows appended between two
-   * snapshots as one batch: a fresh controller starts by previewing only
-   * in-flight tool rows, and each later append previews only the newly
-   * appended suffix. A following assistant/reasoning/user row folds every
-   * preview back into the group's detail list.
-   */
-  private syncToolGroupPreviewBatches(
-    messages: ThreadState["messages"],
-    isLoading: boolean,
-  ): void {
-    const lastMessage = messages[messages.length - 1];
-    if (!isLoading || lastMessage?.role !== "tool") {
-      this.toolGroupPreviewBatches.clear();
-      this.toolGroupPreviousTools.clear();
-      return;
-    }
-
-    const group = [...groupAgentMessages(messages)]
-      .reverse()
-      .find((item) => item.kind === "tool-group");
-    if (!group || group.kind !== "tool-group") {
-      this.toolGroupPreviewBatches.clear();
-      this.toolGroupPreviousTools.clear();
-      return;
-    }
-
-    const previousTools = this.toolGroupPreviousTools.get(group.id);
-    const previousPreview = this.toolGroupPreviewBatches.get(group.id);
-    // A controller can be created after a background run has already
-    // accumulated completed tools. Those rows are history, not the current
-    // progress batch. `isLoading` is the only persisted per-tool signal that
-    // can identify the in-flight suffix when no previous render snapshot
-    // exists.
-    let preview = group.tools.filter((tool) => tool.isLoading);
-    if (previousTools && group.tools.length >= previousTools.length) {
-      const keepsPreviousPrefix = previousTools.every(
-        (tool, index) => group.tools[index]?.id === tool.id,
-      );
-      if (keepsPreviousPrefix) {
-        const appended = group.tools.slice(previousTools.length);
-        preview = appended.length > 0
-          ? appended
-          : group.tools.filter((tool) =>
-              previousPreview?.some((previewTool) => previewTool.id === tool.id),
-            );
-      }
-    }
-
-    this.toolGroupPreviewBatches.clear();
-    this.toolGroupPreviousTools.clear();
-    this.toolGroupPreviewBatches.set(group.id, preview);
-    this.toolGroupPreviousTools.set(group.id, group.tools);
   }
 
   private rememberRenderedMessages(
@@ -630,20 +588,19 @@ export class ThreadMessageRenderController {
         if (expanded) this.toolGroupExpandedOverrides.set(groupId, true);
         else this.toolGroupExpandedOverrides.delete(groupId);
       },
-      toolGroupPreview: this.toolGroupPreviewBatches,
       isStreaming: (message) =>
         isLoading && message === lastMessage && !message.isCompleted,
       onForkMessage: this.onForkMessage,
     };
   }
 
-  private canReuseRenderedMessages(messages: ThreadState["messages"]): boolean {
+  private canReuseRenderedMessages(
+    messages: ThreadState["messages"],
+    isLoading: boolean,
+  ): boolean {
     const list = this.renderedMessagesList;
     if (!list || !this.body.contains(list)) return false;
-    const renderedItems = getRenderedAgentItems(
-      messages,
-      this.toolGroupPreviewBatches,
-    );
+    const renderedItems = getRenderedAgentItems(messages, isLoading);
     if (
       renderedItems.length !== this.renderedMessageRefs.length ||
       list.children.length !== renderedItems.length

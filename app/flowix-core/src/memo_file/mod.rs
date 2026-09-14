@@ -44,9 +44,11 @@ pub const MEMO_ID_LENGTH: usize = 8;
 
 mod content;
 mod derivation;
+mod file_io;
 pub(crate) mod frontmatter;
 mod index_store;
 mod internal_migration;
+mod migration;
 mod notebook;
 mod onboarding;
 mod ops;
@@ -57,9 +59,12 @@ mod versions;
 
 // 公开 API re-export — 跟旧 `memo_file.rs` 的 pub use 边界一致。
 pub use derivation::{
-    apply_derived_memo_fields, extract_agent_threads_from_body, extract_title_and_preview,
-    extract_todos_from_body, normalize_search_tag_filter, normalize_tag_path,
-    tag_path_matches_filter,
+    apply_derived_memo_fields, ensure_todo_ids_in_content, extract_agent_threads_from_body,
+    extract_title_and_preview, extract_todos_from_body, normalize_search_tag_filter,
+    normalize_tag_path, tag_path_matches_filter,
+};
+pub use file_io::{
+    atomic_create_bytes, atomic_write_bytes, rename_file_noclobber, FileWriteOutcome,
 };
 pub use frontmatter::{
     build_md_content, extract_body_content, extract_document_metadata, extract_frontmatter_key,
@@ -68,17 +73,20 @@ pub use frontmatter::{
 };
 pub use index_store::{MemoContentCommit, MemoContentRevision};
 pub use internal_migration::{NotebookInternalMigrationReport, NOTEBOOK_INTERNAL_MIGRATION_KEY};
+pub use migration::{DataMigrationReport, NotebookMigrationReport, LATEST_DATA_MIGRATION_VERSION};
 pub use ops::{
-    atomic_write_bytes, base_filename, resolve_filename_conflict, sanitize_filename_component, IsMd,
+    base_filename, filename_from_notebook_relative_path, is_ignored_notebook_relative_path,
+    notebook_path_from_relative, notebook_relative_path, resolve_filename_conflict,
+    resolve_relative_filename_conflict, sanitize_filename_component, IsMd,
 };
 pub use types::{
     AgentThreadItem, DeleteTagReport, Memo, MemoColor, MemoIndexEntry, MemoIndexFile, MemoLocation,
-    MemoMetadataFile, MemoTag, MemoTodoEntry, MoveTagReport, Notebook, NotebookConfig,
-    ReconcileReport, TodoItem,
+    MemoMetadataFile, MemoTag, MemoTodoEntry, MemoVersionCleanupReport, MoveTagReport, Notebook,
+    NotebookConfig, NotebookManifest, ReconcileReport, TodoItem,
 };
 pub use versions::{
     MemoVersionManifest, MemoVersionMeta, MemoVersionSource, MEMO_AUTO_VERSION_INTERVAL_MS,
-    MEMO_VERSION_LIMIT,
+    MEMO_ORPHAN_VERSION_RETENTION, MEMO_VERSION_LIMIT,
 };
 
 /// 笔记本目录 / 笔记文件的存储管理。
@@ -112,7 +120,7 @@ pub struct MemoFile {
     notebook_configs_cache: std::sync::RwLock<Option<Vec<NotebookConfig>>>,
 }
 
-pub(crate) struct CrossProcessWriteGuard {
+pub struct CrossProcessWriteGuard {
     file: std::fs::File,
 }
 
@@ -145,7 +153,7 @@ impl MemoFile {
         }
     }
 
-    pub(crate) fn acquire_cross_process_write_lock(&self) -> io::Result<CrossProcessWriteGuard> {
+    pub fn acquire_cross_process_write_lock(&self) -> io::Result<CrossProcessWriteGuard> {
         std::fs::create_dir_all(&self.config_dir)?;
         let file = OpenOptions::new()
             .create(true)

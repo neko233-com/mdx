@@ -36,6 +36,7 @@
 	--ring: var(--primary);
 
 	--agent-bg: oklch(0.984 0.006 var(--neutral-hue));
+	--agent-status-surface: oklch(0.965 0.004 var(--neutral-hue));
 	--agent-foreground: color-mix(in oklch, var(--foreground) 66%, transparent);
 
 	--statusbar-bg: color-mix(in oklch, var(--card) 92%, var(--background));
@@ -61,6 +62,9 @@
 
 	--code-bg: oklch(0.982 0.005 var(--neutral-hue));
 	--editor-block-bg: oklch(0.982 0.005 var(--neutral-hue));
+	/* Agent conversation surfaces currently follow editor blocks; keep the
+	 * semantic token separate so they can evolve independently later. */
+	--agent-surface-bg: var(--editor-block-bg);
 
 	--floating-bg: oklch(0.320 0.012 var(--neutral-hue));
 	--floating-foreground: oklch(0.950 0 0);

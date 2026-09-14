@@ -96,6 +96,13 @@ export function setCurrentDocument(identity: DocumentIdentity | null, path: stri
   getOrCreateBuffer(normalized);
 }
 
+/** Rebase the active path without treating live editor bytes as a disk load. */
+export function rebaseCurrentDocumentPath(identity: DocumentIdentity, path: string): void {
+  const normalized = normalizeDocumentIdentity(identity);
+  if (!currentIdentity || documentIdentityKey(normalized) !== documentIdentityKey(currentIdentity)) return;
+  currentPath = canonicalPath(path);
+}
+
 export function hasUnsavedLocalChanges(identity?: DocumentIdentity): boolean {
   const target = identity ?? getCurrentIdentity();
   if (!target) return false;
@@ -106,6 +113,20 @@ export function hasUnsavedLocalChanges(identity?: DocumentIdentity): boolean {
 
 export function hasUnsavedLocalChangesForMemo(memoId: string): boolean {
   return hasUnsavedLocalChanges({ kind: 'memo', id: memoId });
+}
+
+/**
+ * Accept the in-memory content as intentionally abandoned without writing it.
+ * This is reserved for a document whose backing source has already vanished;
+ * normal navigation must continue to use the save barrier.
+ */
+export function discardUnsavedLocalChanges(identity: DocumentIdentity): void {
+  const normalized = normalizeDocumentIdentity(identity);
+  const buf = getBuffer(normalized);
+  if (!buf) return;
+  buf.lastSavedContent = buf.content;
+  buf.pendingContent = null;
+  notifyDocumentBufferChanged(normalized, 'save_settled');
 }
 
 export function applyLoadedContent(

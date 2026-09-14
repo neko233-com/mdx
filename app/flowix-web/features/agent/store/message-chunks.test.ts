@@ -47,6 +47,23 @@ describe("assistant message chunks", () => {
     expect(duplicate.pendingAssistantId).toBeNull();
   });
 
+  it("applies commentary classification when the completed snapshot arrives", () => {
+    const streamed = applyTextChunk(emptyState(), "progress", {
+      id: "assistant-item-1",
+      codexTurnId: "turn-1",
+    });
+    const completed = applyTextChunk(streamed, "progress", {
+      id: "assistant-item-1",
+      phase: "completed",
+      contentMode: "snapshot",
+      codexTurnId: "turn-1",
+      messageType: "agent-commentary",
+    });
+
+    expect(completed.messages[0].messageType).toBe("agent-commentary");
+    expect(completed.pendingAssistantId).toBeNull();
+  });
+
   it("keeps every reference intact when a completed reasoning snapshot repeats itself", () => {
     const streamed = applyReasoningChunk(emptyState(), "plan", {
       id: "reasoning-item-1",
@@ -129,6 +146,31 @@ describe("user message chunks", () => {
       content: "ask",
       codexTurnId: "turn-current",
     });
+  });
+
+  it("keeps provider attachments when adopting a matching optimistic row", () => {
+    const attachments = [{
+      type: "input_image" as const,
+      path: "/tmp/provider.png",
+      name: "provider.png",
+      mimeType: "image/png",
+      detail: "high" as const,
+    }];
+    const result = applyUserMessageChunk(
+      {
+        messages: [{ ...optimisticRow, content: "ask" }],
+        pendingAssistantId: null,
+        pendingReasoningId: null,
+      },
+      "ask",
+      {
+        id: "item-u1",
+        codexTurnId: "turn-1",
+        attachments,
+      },
+    );
+
+    expect(result.messages[0].attachments).toEqual(attachments);
   });
 
   it("never adopts without the provider turn id", () => {

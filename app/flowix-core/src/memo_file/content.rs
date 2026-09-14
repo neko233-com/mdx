@@ -155,6 +155,26 @@ impl MemoFile {
         };
 
         match sort {
+            "filenameAsc" | "filenameDesc" => {
+                let descending = sort == "filenameDesc";
+                let mut sorted = filtered;
+                sorted.sort_by(|a, b| {
+                    let filename_order = a
+                        .filename
+                        .to_lowercase()
+                        .cmp(&b.filename.to_lowercase())
+                        .then_with(|| a.filename.cmp(&b.filename))
+                        .then_with(|| a.id.cmp(&b.id));
+                    b.favorited.cmp(&a.favorited).then_with(|| {
+                        if descending {
+                            filename_order.reverse()
+                        } else {
+                            filename_order
+                        }
+                    })
+                });
+                sorted
+            }
             "updatedAt" => {
                 let mut sorted = filtered;
                 sorted.sort_by(|a, b| {
@@ -226,7 +246,8 @@ impl MemoFile {
             .into_iter()
             .filter(|e| !e.id.is_empty())
             .map(|entry| {
-                let path = base.join(&entry.filename);
+                let path = super::notebook_path_from_relative(&base, &entry.relative_path)
+                    .unwrap_or_else(|_| base.join(&entry.filename));
                 let body = fs::read_to_string(&path).unwrap_or_default();
                 (entry, body)
             })
@@ -237,7 +258,9 @@ impl MemoFile {
     pub fn read_current_memo_with_body(&self, id: &str) -> Option<(MemoIndexEntry, String)> {
         let list = self.read_index()?;
         let entry = list.memos.iter().find(|e| e.id == id)?.clone();
-        let path = self.get_memo_base().join(&entry.filename);
+        let base = self.get_memo_base();
+        let path = super::notebook_path_from_relative(&base, &entry.relative_path)
+            .unwrap_or_else(|_| base.join(&entry.filename));
         let body = fs::read_to_string(&path).ok()?;
         Some((entry, body))
     }
@@ -250,7 +273,9 @@ impl MemoFile {
     pub fn read_memo_with_body_global(&self, id: &str) -> Option<(MemoIndexEntry, String)> {
         let location = self.resolve_memo_location(id).ok().flatten()?;
         let entry = location.memo;
-        let path = std::path::PathBuf::from(location.notebook.path).join(&entry.filename);
+        let base = std::path::PathBuf::from(location.notebook.path);
+        let path = super::notebook_path_from_relative(&base, &entry.relative_path)
+            .unwrap_or_else(|_| base.join(&entry.filename));
         let body = fs::read_to_string(&path).ok()?;
         Some((entry, body))
     }

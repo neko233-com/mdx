@@ -24,10 +24,10 @@ function message(
   };
 }
 
-function context(): AgentThreadCardMessageRenderContext {
+function context(isLoading = false): AgentThreadCardMessageRenderContext {
   return {
     language: "zh-CN",
-    isLoading: false,
+    isLoading,
     getReasoningCollapsed: () => false,
     setReasoningCollapsed: () => undefined,
     getDisplayExpanded: () => false,
@@ -37,6 +37,22 @@ function context(): AgentThreadCardMessageRenderContext {
 }
 
 describe("Codex turn-end message actions", () => {
+  it("renders commentary assistant rows around Codex tool rows", () => {
+    const messages = [
+      {
+        ...message("assistant-commentary", "assistant", "turn-1"),
+        messageType: "agent-commentary" as const,
+      },
+      message("tool-1", "tool", "turn-1"),
+      message("assistant-final", "assistant", "turn-1"),
+    ];
+
+    const { list } = createRenderedAgentMessageList(messages, context());
+
+    expect(list.textContent).toContain("assistant-commentary");
+    expect(list.textContent).toContain("assistant-final");
+  });
+
   it("shows copy and time only on the final assistant for agents without turn ids", () => {
     const messages = [
       message("assistant-1", "assistant"),
@@ -246,10 +262,11 @@ describe("Codex turn-end message actions", () => {
     expect(onFork).toHaveBeenCalledWith(expect.objectContaining({ id: "assistant-1" }));
   });
 
-  it("closes the fork confirmation when the message action area is left", () => {
+  it("keeps the fork confirmation available while crossing the message action area", () => {
+    const onFork = vi.fn();
     const { list } = createRenderedAgentMessageList(
       [message("assistant-1", "assistant", "turn-1")],
-      context(),
+      { ...context(), onForkMessage: onFork },
     );
     const item = list.firstElementChild as HTMLElement;
     const forkButton = list.querySelectorAll<HTMLButtonElement>(
@@ -265,8 +282,13 @@ describe("Codex turn-end message actions", () => {
     expect(list.querySelector(".agent-thread-card__message-fork-confirm")).not.toBeNull();
     item.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
 
-    expect(list.querySelector(".agent-thread-card__message-fork-confirm")).toBeNull();
+    expect(list.querySelector(".agent-thread-card__message-fork-confirm")).not.toBeNull();
     expect(forkButton.style.visibility).toBe("");
+
+    list.querySelector<HTMLButtonElement>(
+      ".agent-thread-card__message-fork-confirm-button",
+    )?.click();
+    expect(onFork).toHaveBeenCalledWith(expect.objectContaining({ id: "assistant-1" }));
   });
 
   it("closes the fork confirmation when clicking outside the actions", () => {
@@ -316,17 +338,17 @@ describe("continuous tool group rendering", () => {
       .toContain("已完成 3 个步骤");
     expect(group.querySelector(".agent-thread-card__tool-group-loading-icon"))
       .toBeNull();
-    expect(group.querySelectorAll(".agent-thread-card__tool-group-tools > .agent-thread-card__message"))
+    expect(group.querySelectorAll(".agent-thread-card__tool-group-completed-tools > .agent-thread-card__message"))
       .toHaveLength(0);
     group.querySelector<HTMLButtonElement>(
       ".agent-thread-card__tool-group-header",
     )?.click();
     expect(group.classList.contains("agent-thread-card__tool-group--expanded")).toBe(true);
-    expect(group.querySelectorAll(".agent-thread-card__tool-group-tools > .agent-thread-card__message"))
+    expect(group.querySelectorAll(".agent-thread-card__tool-group-completed-tools > .agent-thread-card__message"))
       .toHaveLength(3);
 
     const inputToggle = group.querySelector<HTMLButtonElement>(
-      ".agent-thread-card__tool-group-tools .agent-thread-card__message-tool-toggle",
+      ".agent-thread-card__tool-group-completed-tools .agent-thread-card__message-tool-toggle",
     );
     inputToggle?.click();
     expect(group.textContent).toContain('"path": "tool-1.md"');
@@ -339,13 +361,13 @@ describe("continuous tool group rendering", () => {
     expect(list.children).toHaveLength(1);
     expect(list.querySelector(".agent-thread-card__tool-group-header")?.textContent)
       .toContain("已完成 1 个步骤");
-    expect(list.querySelectorAll(".agent-thread-card__tool-group-tools > .agent-thread-card__message"))
+    expect(list.querySelectorAll(".agent-thread-card__tool-group-completed-tools > .agent-thread-card__message"))
       .toHaveLength(0);
 
     list.querySelector<HTMLButtonElement>(
       ".agent-thread-card__tool-group-header",
     )?.click();
-    expect(list.querySelectorAll(".agent-thread-card__tool-group-tools > .agent-thread-card__message"))
+    expect(list.querySelectorAll(".agent-thread-card__tool-group-completed-tools > .agent-thread-card__message"))
       .toHaveLength(1);
   });
 
@@ -363,6 +385,52 @@ describe("continuous tool group rendering", () => {
     expect(runningList.textContent).toContain("已完成 0 个步骤");
   });
 
+  it("shows the running spinner in the title bar while waiting for assistant content", () => {
+    const { list } = createRenderedAgentMessageList(
+      [tool("tool-1", { isLoading: false })],
+      context(true),
+    );
+    const group = list.firstElementChild as HTMLElement;
+    const header = group.querySelector<HTMLElement>(
+      ".agent-thread-card__tool-group-header",
+    );
+
+    expect(group.classList.contains("agent-thread-card__tool-group--running")).toBe(true);
+    expect(
+      header?.querySelector(
+        ".agent-thread-card__tool-group-header-loading-icon",
+      ),
+    ).not.toBeNull();
+    expect(
+      group.querySelector(
+        ".agent-thread-card__tool-group-running-tools",
+      )?.children,
+    ).toHaveLength(0);
+  });
+
+  it("stops the title spinner once assistant content follows the tool group", () => {
+    const { list } = createRenderedAgentMessageList(
+      [
+        tool("tool-1", { isLoading: false }),
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "done",
+          timestamp: "2026-09-03T00:00:00.000Z",
+        },
+      ],
+      context(true),
+    );
+    const group = list.firstElementChild as HTMLElement;
+
+    expect(group.classList.contains("agent-thread-card__tool-group--completed")).toBe(true);
+    expect(
+      group.querySelector(
+        ".agent-thread-card__tool-group-header-loading-icon",
+      ),
+    ).toBeNull();
+  });
+
   it("shows duration from tool timestamps", () => {
     const { list } = createRenderedAgentMessageList([
       tool("tool-1", {
@@ -375,7 +443,7 @@ describe("continuous tool group rendering", () => {
       }),
     ], context());
 
-    expect(list.textContent).toContain("已完成 2 个步骤 · 1m2s");
+    expect(list.textContent).toContain("已完成 2 个步骤 · 01:02");
   });
 
   it("uses raw tool call/result timestamps for the completed group", () => {
@@ -387,7 +455,7 @@ describe("continuous tool group rendering", () => {
       }),
     ], context());
 
-    expect(list.textContent).toContain("已完成 1 个步骤 · 2s");
+    expect(list.textContent).toContain("已完成 1 个步骤 · 00:02");
   });
 
   it("does not display 0s for a sub-second raw tool timeline", () => {
@@ -441,14 +509,11 @@ describe("continuous tool group rendering", () => {
     expect(list.textContent).not.toContain("·");
   });
 
-  it("keeps the newest tool batch outside the group while streaming", () => {
+  it("renders completed tools before the dedicated running-tools region", () => {
     const running = tool("tool-2", { isLoading: true, content: "" });
     const { list } = createRenderedAgentMessageList(
       [tool("tool-1"), running],
-      {
-        ...context(),
-        toolGroupPreview: new Map([["tool-group:tool-1", [running]]]),
-      },
+      context(),
     );
     const group = list.firstElementChild as HTMLElement;
 
@@ -458,49 +523,64 @@ describe("continuous tool group rendering", () => {
       .toBeNull();
     expect(
       group.querySelector(
-        ".agent-thread-card__tool-group-preview .agent-thread-card__tool-preview-loading-icon",
+        ".agent-thread-card__tool-group-running-tools .agent-thread-card__tool-group-running-loading-icon",
       ),
     ).not.toBeNull();
-    const preview = group.querySelector<HTMLElement>(
-      ".agent-thread-card__tool-group-preview",
+    const runningTool = group.querySelector<HTMLElement>(
+      ".agent-thread-card__tool-group-running-tool",
     );
     expect(
-      Array.from(preview?.children ?? []).map((child) =>
+      Array.from(runningTool?.children ?? []).map((child) =>
         child.getAttribute("class"),
       ),
     ).toEqual([
       "agent-thread-card__message-tool-icon-wrap",
-      "agent-thread-card__tool-preview-loading-icon",
+      "agent-thread-card__tool-group-running-loading-icon",
       "agent-thread-card__message-tool-name",
       "agent-thread-card__message-tool-content",
     ]);
-    expect(group.querySelector(".agent-thread-card__tool-group-preview"))
+    expect(group.querySelector(".agent-thread-card__tool-group-running-tool"))
       .not.toBeNull();
     expect(
       group.querySelector(
-        ".agent-thread-card__tool-group-preview .agent-thread-card__message-tool-toggle",
+        ".agent-thread-card__tool-group-running-tool .agent-thread-card__message-tool-toggle",
       ),
     ).toBeNull();
     expect(
       group.querySelector(
-        ".agent-thread-card__tool-group-preview",
+        ".agent-thread-card__tool-group-running-tool",
       )?.getAttribute("aria-hidden"),
-    ).toBe("false");
-    expect(group.querySelectorAll(".agent-thread-card__tool-group-tools > .agent-thread-card__message"))
+    ).toBeNull();
+    expect(group.querySelectorAll(".agent-thread-card__tool-group-completed-tools > .agent-thread-card__message"))
       .toHaveLength(0);
+
+    // Collapsed: the completed region is empty and the running region is the
+    // final visible section.
+    expect(group.lastElementChild).toBe(
+      group.querySelector(".agent-thread-card__tool-group-running-tools"),
+    );
 
     group.querySelector<HTMLButtonElement>(
       ".agent-thread-card__tool-group-header",
     )?.click();
     expect(
-      group.querySelector(".agent-thread-card__tool-group-preview")
-        ?.getAttribute("aria-hidden"),
-    ).toBe("false");
-    expect(group.querySelector(".agent-thread-card__tool-group-tools")?.children)
+      group.querySelector(".agent-thread-card__tool-group-running-tools")?.children,
+    ).toHaveLength(1);
+    expect(group.querySelector(".agent-thread-card__tool-group-completed-tools")?.children)
       .toHaveLength(1);
+    // Expanded: completed details come first and the running region remains at
+    // the end as a single-line progress row.
+    expect(group.lastElementChild).toBe(
+      group.querySelector(".agent-thread-card__tool-group-running-tools"),
+    );
+    expect(
+      (group.querySelector(".agent-thread-card__tool-group-completed-tools")?.compareDocumentPosition(
+        group.querySelector(".agent-thread-card__tool-group-running-tools") as Node,
+      ) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(
       group.querySelector(
-        ".agent-thread-card__tool-group-tools .agent-thread-card__message-tool-toggle",
+        ".agent-thread-card__tool-group-completed-tools .agent-thread-card__message-tool-toggle",
       ),
     ).toBeNull();
   });

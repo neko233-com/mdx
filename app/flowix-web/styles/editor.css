@@ -20,6 +20,55 @@
   scrollbar-gutter: stable;
 }
 
+.markdown-editor .memo-document-header {
+  width: 100%;
+  max-width: var(--app-document-width, 680px);
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 0 2.5rem;
+}
+
+.markdown-editor .memo-date-line {
+  padding: 4px 0;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  text-align: center;
+  opacity: 0.7;
+  user-select: none;
+  pointer-events: none;
+}
+
+.markdown-editor .memo-title-shell {
+  width: 100%;
+}
+
+.markdown-editor .memo-title-editor {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: hidden;
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--document-foreground);
+  caret-color: var(--brand);
+  font-family: var(--app-font-family, var(--font-sans));
+  font-size: calc(1.9rem * (var(--app-font-size, 15px) / 16px));
+  font-weight: 600;
+  line-height: 1.32;
+}
+
+.markdown-editor .memo-title-editor::placeholder {
+  color: var(--muted-foreground);
+}
+
+.markdown-editor .memo-title-editor[data-saving="true"] {
+  opacity: 0.72;
+}
+
 .markdown-editor .ProseMirror:not(.agent-thread-card__composer-editor) {
   display: block;
   width: 100%;
@@ -42,11 +91,19 @@
   --editor-scale: calc(var(--app-font-size, 15px) / 16px);
 }
 
+/* Browser-column memo surfaces can be read-only while remaining selectable.
+ * Make that contract explicit because contenteditable=false alone removes
+ * keyboard focus behavior in WebKit. */
+.markdown-editor .ProseMirror[aria-readonly="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .markdown-editor:focus .ProseMirror {
   outline: none;
 }
 
-.markdown-editor .ProseMirror:not(.agent-thread-card__composer-editor) > *:not(.editor-datetime-widget, .agent-thread-card):first-of-type {
+.markdown-editor .ProseMirror:not(.agent-thread-card__composer-editor) > *:not(.agent-thread-card, .frontmatter-property-node):first-of-type {
   margin-top: 0.5rem;
 }
 
@@ -114,13 +171,24 @@
   display: none;
 }
 
+/* Composer slash atoms use the same terminal caret decoration as note and
+ * file-reference atoms. The composer is excluded from the document-editor
+ * rule above, so keep the anchor visible here as an inline landing point. */
+.markdown-editor .agent-thread-card__composer-editor .terminal-inline-atom-caret-anchor {
+  display: inline;
+}
+
+.markdown-editor .agent-thread-card__composer-editor .terminal-inline-atom-caret-anchor + br.ProseMirror-trailingBreak,
+.markdown-editor .agent-thread-card__composer-editor .terminal-inline-atom-caret-anchor + img.ProseMirror-separator + br.ProseMirror-trailingBreak {
+  display: none;
+}
+
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) strong:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   font-weight: 700;
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) em:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   font-style: italic;
-  font-weight: 300;
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) code {
@@ -567,7 +635,7 @@
   display: inline;
   color: var(--document-tag-foreground, var(--primary-foreground));
   font-weight: 400;
-  font-size: 0.78rem;
+  font-size: 88%;
   cursor: pointer;
   background: var(--document-tag-bg);
   border-radius: 8px;

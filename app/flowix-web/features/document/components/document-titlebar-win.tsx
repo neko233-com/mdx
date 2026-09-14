@@ -22,6 +22,7 @@ import {
 const ICON_BTN = DOCUMENT_TITLEBAR_ICON_BUTTON_WIN;
 
 export function DocumentTitlebarWin({
+  reserveWindowsControls = true,
   document: { currentMemo, externalFilePath = null },
   sidebar: {
     hidden: isSidebarHidden,
@@ -37,18 +38,14 @@ export function DocumentTitlebarWin({
     visible: showNavigationButtons = true,
   },
   contentCapabilities: {
-    search: canSearch,
-    properties: canEditProperties,
     copyFullText: canCopyFullText,
     exportContent: canExportContent,
     saveAsTemplate: canSaveAsTemplate,
     versionHistory: canViewVersionHistory,
   },
   actions: {
-    onOpenSearch,
     onCopyLink,
     onCopyFullText,
-    onOpenProperties,
     onTogglePin,
     onExportMarkdown,
     onSaveAsTemplate,
@@ -68,22 +65,25 @@ export function DocumentTitlebarWin({
   return (
       <WorkColumnTitlebarShell
       isWindows
-      className={isAgentThreadCardFullscreen ? 'agent-thread-card-fullscreen-titlebar' : ''}
+      reserveWindowsControls={reserveWindowsControls}
+      className={isAgentThreadCardFullscreen ? 'agent-surface-titlebar' : ''}
       style={isAgentThreadCardFullscreen ? undefined : { backgroundImage: WORK_COLUMN_TITLEBAR_GRADIENT }}
     >
       <div className="flex shrink-0 items-center gap-1">
         {isSidebarHidden && (
-          <button
-            type="button"
-            onClick={onToggleSidebar}
-            onMouseEnter={onPreviewTriggerEnter}
-            onMouseLeave={onPreviewTriggerLeave}
-            aria-label={t("document.titlebar.showSidebar")}
-            title={t("document.titlebar.showSidebarTooltip")}
-            className="w-5 h-5 flex items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--foreground)] rounded-lg transition-[opacity,transform,color] duration-[400ms] animate-in fade-in zoom-in-95"
-          >
-            <SidebarToggleIcon className="w-4 h-4" variant="collapsed" />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={onToggleSidebar}
+              onMouseEnter={onPreviewTriggerEnter}
+              onMouseLeave={onPreviewTriggerLeave}
+              aria-label={t("document.titlebar.showSidebar")}
+              title={t("document.titlebar.showSidebarTooltip")}
+              className="w-5 h-5 flex items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--foreground)] rounded-lg transition-[opacity,transform,color] duration-[400ms] animate-in fade-in zoom-in-95"
+            >
+              <SidebarToggleIcon className="w-4 h-4" variant="collapsed" />
+            </button>
+          </>
         )}
         {showNavigationButtons && (
           <>
@@ -127,18 +127,14 @@ export function DocumentTitlebarWin({
           <MemoActions
             memo={currentMemo}
             iconButtonClass={ICON_BTN}
-            onOpenSearch={onOpenSearch}
             onCopyLink={onCopyLink}
             onCopyFullText={onCopyFullText}
-            onOpenProperties={onOpenProperties}
             onTogglePin={onTogglePin}
             onExportMarkdown={onExportMarkdown}
             onSaveAsTemplate={onSaveAsTemplate}
             onExportWord={onExportWord}
             onRequestDeleteMemo={onRequestDeleteMemo}
             onColorsChange={onColorsChange ?? (() => {})}
-            canSearch={canSearch}
-            canEditProperties={canEditProperties}
             canCopyFullText={canCopyFullText}
             canExportContent={canExportContent}
             canSaveAsTemplate={canSaveAsTemplate}

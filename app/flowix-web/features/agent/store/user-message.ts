@@ -1,6 +1,7 @@
 import type { ChatMessage } from "@/types";
 import type {
   AgentEvent,
+  AgentMessageAttachment,
   AgentTypeKey,
 } from "@/types/agent";
 import {
@@ -31,6 +32,39 @@ export interface PrepareUserMessageOptions {
   agentRoleName?: string;
   agentRoleBody?: string | null;
   systemReminderDirectory?: string;
+  attachments?: AgentMessageAttachment[];
+}
+
+function attachmentMimeType(path: string): string {
+  const extension = path.split(/[\\/]/u).pop()?.split(".").pop()?.toLowerCase();
+  switch (extension) {
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "webp":
+      return "image/webp";
+    case "gif":
+      return "image/gif";
+    case "png":
+    default:
+      return "image/png";
+  }
+}
+
+/** Build display metadata from the authorized cache paths used by the IPC. */
+export function createAgentMessageAttachments(
+  paths: readonly string[] | undefined,
+): AgentMessageAttachment[] {
+  return (paths ?? []).map((path, index) => {
+    const name = path.split(/[\\/]/u).pop() || `image-${index + 1}`;
+    return {
+      type: "input_image",
+      path,
+      name,
+      mimeType: attachmentMimeType(path),
+      detail: "high",
+    };
+  });
 }
 
 /**
@@ -52,6 +86,7 @@ export function prepareUserMessage({
   agentRoleName,
   agentRoleBody,
   systemReminderDirectory,
+  attachments,
 }: PrepareUserMessageOptions): PreparedUserMessage {
   const userPayload = buildUserLlmContent(content, systemReminderDirectory);
   const llmContent = appendFirstMessageContext(
@@ -70,6 +105,7 @@ export function prepareUserMessage({
       id: `user-${Date.now()}`,
       role: "user",
       content,
+      attachments: attachments?.length ? attachments : undefined,
       llmContent,
       systemReminderDirectory: userPayload.systemReminderDirectory,
       systemReminderDocumentPath: userPayload.systemReminderDocumentPath,
