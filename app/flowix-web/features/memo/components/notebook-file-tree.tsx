@@ -717,7 +717,12 @@ export function NotebookFileTree({
         : { path, ...resourceMetadata };
     });
     if (!isSelected && !hasModifier) updateSelection([item.fullPath], item.fullPath);
-    const captureElement = treeRootRef.current ?? event.currentTarget;
+    // Capture on the row that started the gesture. Capturing on the tree root
+    // retargets the browser's follow-up click to the root, so a normal click
+    // updates the selection during pointerdown but never opens the document.
+    // Pointer events still bubble through the tree root while the row remains
+    // mounted, which keeps drag handling unchanged without swallowing clicks.
+    const captureElement = event.currentTarget;
     captureElement.setPointerCapture(event.pointerId);
     pointerDragRef.current = {
       sourcePath: item.fullPath,

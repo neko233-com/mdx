@@ -98,14 +98,19 @@ describe('NotebookFileTree pointer dragging', () => {
   const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
   let host: HTMLDivElement;
   let captured = false;
+  let capturedElement: HTMLElement | null = null;
 
   beforeEach(() => {
     environment.IS_REACT_ACT_ENVIRONMENT = true;
     host = document.createElement('div');
     document.body.append(host);
     captured = false;
+    capturedElement = null;
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(204);
-    HTMLElement.prototype.setPointerCapture = vi.fn(() => { captured = true; });
+    HTMLElement.prototype.setPointerCapture = vi.fn(function (this: HTMLElement) {
+      captured = true;
+      capturedElement = this;
+    });
     HTMLElement.prototype.hasPointerCapture = vi.fn(() => captured);
     HTMLElement.prototype.releasePointerCapture = vi.fn(() => { captured = false; });
     Object.defineProperty(document, 'elementFromPoint', {
@@ -209,6 +214,18 @@ describe('NotebookFileTree pointer dragging', () => {
   function clickEvent(modifiers: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean } = {}) {
     return new MouseEvent('click', { bubbles: true, button: 0, ...modifiers });
   }
+
+  it('captures a drag on the clicked row so a normal click can still open it', async () => {
+    const { root } = await mount(successfulMove);
+    const noteRow = host.querySelector<HTMLElement>('[data-notebook-tree-kind="note"]')!;
+    const treeRoot = host.querySelector<HTMLElement>('[data-notebook-tree-root="true"]')!;
+
+    await act(async () => noteRow.dispatchEvent(pointerEvent('pointerdown', 10, 10)));
+
+    expect(capturedElement).toBe(noteRow);
+    expect(capturedElement).not.toBe(treeRoot);
+    await act(async () => root.unmount());
+  });
 
   it('does not load full note metadata while the tree is mounted', async () => {
     const readMemo = vi.spyOn(memos, 'readMemo').mockResolvedValue(null);
