@@ -20,8 +20,9 @@ interface SourceMemoEditorProps extends SourceCodeEditorProps {
 }
 
 /**
- * Memo source surface: the title is supplied as CodeMirror's scroll header,
- * while CodeMirror remains the only owner of the document buffer and scroll.
+ * Memo source surface: the title is supplied as a CodeMirror-managed block
+ * widget, while CodeMirror remains the only owner of the document buffer and
+ * scroll geometry.
  */
 export const SourceMemoEditor = forwardRef<CodeEditorHandle, SourceMemoEditorProps>(
   function SourceMemoEditor({

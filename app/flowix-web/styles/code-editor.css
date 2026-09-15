@@ -34,11 +34,10 @@
 	overflow-anchor: none;
 }
 
-/* A memo's source title is part of the source scroll surface. CodeMirror's
- * default scroller is a two-column flex row (gutter + content), so use a
- * second row for the gutter/content when the title mount is present. This
- * keeps the title aligned with the source text while preserving line-number
- * alignment for the first body line. */
+/* A memo's source title is a block widget inside `.cm-content`. Keep the
+ * CodeMirror scroller's native flex layout intact so its content geometry,
+ * absolute layers, and virtual viewport continue to share one coordinate
+ * system. */
 .code-editor {
 	--code-editor-font-size: 13px;
 	--code-editor-line-height: 1.65;
@@ -48,36 +47,16 @@
 	--code-editor-content-padding-bottom: 28px;
 }
 
-.code-editor.code-editor--with-scroll-header .cm-scroller {
-	display: grid !important;
-	align-items: stretch !important;
-	grid-template-columns: auto minmax(0, 1fr);
-	grid-template-rows: auto minmax(0, 1fr);
-}
-
 .code-editor.code-editor--with-scroll-header .cm-source-header {
-	grid-column: 2;
-	grid-row: 1;
+	display: block;
+	width: 100%;
 	min-width: 0;
 	box-sizing: border-box;
 	font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 	font-size: var(--code-editor-font-size, 13px);
 	line-height: var(--code-editor-line-height, 1.65);
 	color: var(--document-foreground, var(--foreground, #1f2937));
-}
-
-.code-editor.code-editor--with-scroll-header .cm-gutters {
-	grid-column: 1;
-	grid-row: 2;
-	align-self: stretch;
-}
-
-.code-editor.code-editor--with-scroll-header .cm-content {
-	grid-column: 2;
-	grid-row: 2;
-	align-self: stretch;
-	width: 100%;
-	padding-top: 0 !important;
+	white-space: normal;
 }
 
 .code-editor .source-memo-title-row {
@@ -85,10 +64,15 @@
 	width: 100%;
 	min-width: 0;
 	--source-memo-title-font-size: 16px;
-	padding-top: var(--code-editor-content-padding-top, 14px);
-	/* Preserve the former separator footprint: 0.5em above + 1px line +
-	 * 0.5em below, without drawing a visible rule. */
-	padding-bottom: calc(1em + 0.0625rem);
+	/* Keep the former separator-height footprint while reducing the space
+	 * below the title to a fixed rem-based spacing. */
+	padding-bottom: calc(0.1rem + 0.0625rem);
+}
+
+/* The editor's normal top padding supplies the space above the title widget,
+ * so the title and source lines remain in one measured CodeMirror surface. */
+.code-editor.code-editor--with-scroll-header .cm-content {
+	padding-top: var(--code-editor-content-padding-top, 14px) !important;
 }
 
 .code-editor .source-memo-title-row .memo-title-shell {

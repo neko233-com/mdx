@@ -127,6 +127,32 @@ describe('CodeEditor', () => {
     expect(container.querySelector('.code-editor--with-scroll-header')).not.toBeNull();
     expect(scroller?.querySelector('.cm-source-header [data-testid="source-title"]')?.textContent)
       .toBe('Title');
+    expect(container.querySelector('.cm-content > .cm-source-header')).not.toBeNull();
+  });
+
+  it('keeps the source header when the document content is synchronized', async () => {
+    const header = <div data-testid="source-title">Title</div>;
+
+    await act(async () => root.render(
+      <CodeEditor
+        filePath="/project/note.md"
+        content={'---\nkey: memo-1\n---\nFirst'}
+        onChange={vi.fn()}
+        scrollHeader={header}
+      />
+    ));
+
+    await act(async () => root.render(
+      <CodeEditor
+        filePath="/project/note.md"
+        content={'---\nkey: memo-1\n---\nFirst\nSecond'}
+        onChange={vi.fn()}
+        scrollHeader={header}
+      />
+    ));
+
+    expect(container.querySelector('.cm-content > .cm-source-header [data-testid="source-title"]')?.textContent)
+      .toBe('Title');
   });
 
   it('focuses the source body after frontmatter', async () => {

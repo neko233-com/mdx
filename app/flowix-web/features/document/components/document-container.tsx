@@ -122,6 +122,14 @@ export function DocumentContainer({
   const flushPendingEditorChanges = useCallback(() => {
     return editorHandleRef.current?.flushPendingChanges() ?? null;
   }, []);
+  const handleEditorScroll = useCallback((scrollTop: number) => {
+    const isScrolled = scrollTop > 90;
+    setState((prev) => (
+      prev.isScrolled === isScrolled
+        ? prev
+        : { ...prev, isScrolled }
+    ));
+  }, [setState]);
 
   const handleMoveTitleToBody = useCallback(({
     trailingContent,
@@ -471,7 +479,7 @@ export function DocumentContainer({
               titleAutoFocus={initialFocus === 'title'}
               titleRef={titleEditorRef}
               onMoveToBody={handleMoveTitleToBody}
-              onEditorScroll={(scrollTop) => setState(prev => ({ ...prev, isScrolled: scrollTop > 90 }))}
+              onEditorScroll={handleEditorScroll}
               onEditingFinished={flushPendingEditorChanges}
               searchPanelOpen={searchPanelOpen}
               onSearchPanelOpenChange={onSearchPanelOpenChange}
@@ -485,7 +493,7 @@ export function DocumentContainer({
               editable={!readOnly}
               onChange={handleChange}
               autoFocus={initialFocus === 'body'}
-              onEditorScroll={(scrollTop) => setState(prev => ({ ...prev, isScrolled: scrollTop > 90 }))}
+              onEditorScroll={handleEditorScroll}
               onEditingFinished={flushPendingEditorChanges}
               searchPanelOpen={searchPanelOpen}
               onSearchPanelOpenChange={onSearchPanelOpenChange}
@@ -504,7 +512,7 @@ export function DocumentContainer({
               handleChange(content);
             }}
             className=""
-            onEditorScroll={(scrollTop) => setState(prev => ({ ...prev, isScrolled: scrollTop > 90 }))}
+            onEditorScroll={handleEditorScroll}
             onEditingFinished={() => {
               flushPendingEditorChanges();
             }}

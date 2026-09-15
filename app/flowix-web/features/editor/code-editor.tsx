@@ -2,6 +2,7 @@
 
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -12,14 +13,24 @@ import {
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { basicSetup } from 'codemirror';
-import { Compartment, EditorState } from '@codemirror/state';
+import {
+  Compartment,
+  EditorState,
+  StateEffect,
+  StateField,
+} from '@codemirror/state';
 import {
   LanguageDescription,
   syntaxHighlighting,
 } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 import { tagHighlighter, tags } from '@lezer/highlight';
-import { EditorView } from '@codemirror/view';
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  WidgetType,
+} from '@codemirror/view';
 import {
   closeSearchPanel,
   openSearchPanel,
@@ -56,6 +67,64 @@ interface CodeEditorProps {
 function getSourceBodyStart(content: string): number {
   const frontmatter = /^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(content);
   return frontmatter?.[0].length ?? 0;
+}
+
+type SourceHeaderMountHandler = (dom: HTMLDivElement, mounted: boolean) => void;
+
+/**
+ * The source title is a CodeMirror block widget instead of a sibling of
+ * `.cm-content`. This keeps its height in CodeMirror's height map, which is
+ * required for virtual viewport updates and scroll anchoring to remain valid.
+ */
+class SourceHeaderWidget extends WidgetType {
+  constructor(private readonly onMount: SourceHeaderMountHandler) {
+    super();
+  }
+
+  eq(other: SourceHeaderWidget): boolean {
+    return other.onMount === this.onMount;
+  }
+
+  toDOM(): HTMLDivElement {
+    const dom = document.createElement('div');
+    dom.className = 'cm-source-header';
+    this.onMount(dom, true);
+    return dom;
+  }
+
+  destroy(dom: HTMLElement): void {
+    if (dom instanceof HTMLDivElement) this.onMount(dom, false);
+  }
+
+  ignoreEvent(): boolean {
+    return true;
+  }
+
+  // This is only used before the widget has been measured. The ResizeObserver
+  // below replaces it with the exact height once the title is in the DOM.
+  get estimatedHeight(): number {
+    return 54;
+  }
+}
+
+const setSourceHeaderDecoration = StateEffect.define<DecorationSet>();
+
+const sourceHeaderField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setSourceHeaderDecoration)) return effect.value;
+    }
+    return value.map(transaction.changes);
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+function sourceHeaderDecoration(onMount: SourceHeaderMountHandler): DecorationSet {
+  const widget = new SourceHeaderWidget(onMount);
+  return Decoration.set([
+    Decoration.widget({ widget, side: -1, block: true }).range(0),
+  ]);
 }
 
 const codeEditorTheme = EditorView.theme({
@@ -188,6 +257,13 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
   const languageCompartment = useMemo(() => new Compartment(), []);
   const editableCompartment = useMemo(() => new Compartment(), []);
   const hasScrollHeader = Boolean(scrollHeader);
+  const handleSourceHeaderMount = useCallback<SourceHeaderMountHandler>((dom, mounted) => {
+    if (mounted) {
+      setScrollHeaderMount(dom);
+    } else {
+      setScrollHeaderMount((current) => current === dom ? null : current);
+    }
+  }, []);
 
   onChangeRef.current = onChange;
   onSearchPanelOpenChangeRef.current = onSearchPanelOpenChange;
@@ -249,6 +325,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
       extensions: [
         basicSetup,
         codeEditorTheme,
+        sourceHeaderField,
         ...(shikiLang
           ? [shikiHighlighting(shikiLang)]
           : [syntaxHighlighting(codeHighlighter)]),
@@ -277,15 +354,6 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
     const view = new EditorView({ state, parent: mount });
     viewRef.current = view;
 
-    // Keep the title in the same scrolling element as the source document.
-    // The mount is created for every editor instance so a memo title can
-    // appear after the document metadata finishes loading without forcing a
-    // CodeMirror teardown/recreate.
-    const headerMount = document.createElement('div');
-    headerMount.className = 'cm-source-header';
-    view.scrollDOM.appendChild(headerMount);
-    setScrollHeaderMount(headerMount);
-
     const handleScroll = () => onEditorScrollRef.current?.(view.scrollDOM.scrollTop);
     const handleBlur = () => onEditingFinishedRef.current?.();
     view.scrollDOM.addEventListener('scroll', handleScroll, { passive: true });
@@ -296,12 +364,24 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
     return () => {
       view.scrollDOM.removeEventListener('scroll', handleScroll);
       view.contentDOM.removeEventListener('blur', handleBlur);
-      headerMount.remove();
-      setScrollHeaderMount((current) => current === headerMount ? null : current);
       view.destroy();
       viewRef.current = null;
+      setScrollHeaderMount(null);
     };
-  }, [autoFocus, editableCompartment, filePath, languageCompartment]);
+  }, [autoFocus, editableCompartment, filePath, handleSourceHeaderMount, languageCompartment]);
+
+  // Install or remove the title as a CodeMirror-managed block widget. This is
+  // a separate effect so changing the header does not recreate the editor.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+
+    view.dispatch({
+      effects: setSourceHeaderDecoration.of(
+        hasScrollHeader ? sourceHeaderDecoration(handleSourceHeaderMount) : Decoration.none,
+      ),
+    });
+  }, [handleSourceHeaderMount, hasScrollHeader]);
 
   useEffect(() => {
     const editorIsFocused = () => viewRef.current?.hasFocus ?? false;
