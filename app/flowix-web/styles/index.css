@@ -234,6 +234,7 @@
 	right: var(--folder-file-tree-drop-right);
 	bottom: 0;
 	left: var(--folder-file-tree-drop-left);
+	z-index: 2;
 	border-radius: 0.5rem;
 	background: color-mix(in oklch, var(--brand) 15%, transparent);
 	content: '';
@@ -243,6 +244,39 @@
 .folder-file-tree__group[data-drag-over='true'] > .folder-file-tree__item,
 .folder-file-tree__group[data-drag-over='true'] > .folder-file-tree__subtree {
 	z-index: 1;
+}
+
+.notebook-file-tree__item--moving {
+	opacity: 0.62;
+}
+
+.notebook-file-tree__item--move-success {
+	animation: notebook-file-tree-move-success 420ms ease-out both;
+}
+
+.notebook-file-tree__moving-indicator {
+	display: block;
+	width: 0.75rem;
+	height: 0.75rem;
+	border: 1.5px solid color-mix(in srgb, var(--brand) 34%, transparent);
+	border-top-color: var(--brand);
+	border-radius: 999px;
+	animation: notebook-file-tree-move-spin 700ms linear infinite;
+}
+
+@keyframes notebook-file-tree-move-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@keyframes notebook-file-tree-move-success {
+	from {
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 28%, transparent);
+	}
+	to {
+		box-shadow: 0 0 0 0 transparent;
+	}
 }
 
 .folder-file-tree__subtree-inner {
@@ -321,6 +355,16 @@
 
 	.folder-file-tree__subtree[data-expanded='true'] > .folder-file-tree__subtree-inner::before {
 		transition-duration: 0ms;
+	}
+
+	.notebook-file-tree__moving-indicator {
+		animation: none;
+		opacity: 0.7;
+	}
+
+	.notebook-file-tree__item--move-success {
+		animation: none;
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 20%, transparent);
 	}
 }
 

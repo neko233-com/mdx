@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DocTreeItem } from '@platform/tauri/client';
 import {
+  flattenLoadedTree,
   flattenVisibleTree,
   useFolderTree,
   type FolderTreeState,
@@ -180,5 +181,22 @@ describe('flattenVisibleTree', () => {
       '/root/x.md',
     ]);
     expect(flattened[1].depth).toBe(1);
+  });
+});
+
+describe('flattenLoadedTree', () => {
+  it('uses loaded children when root folders are still placeholders', () => {
+    const rootFolder = dir('/root/sub', 'sub');
+    const loadedFolder = dir('/root/sub', 'sub', [file('/root/sub/note.md', 'note.md')]);
+
+    const flattened = flattenLoadedTree({
+      rootChildren: [rootFolder],
+      nodes: new Map([[rootFolder.fullPath, loadedFolder]]),
+    });
+
+    expect(flattened.map((item) => item.fullPath)).toEqual([
+      '/root/sub',
+      '/root/sub/note.md',
+    ]);
   });
 });

@@ -4,8 +4,6 @@ import { FileBrowserView, type FileBrowserViewSurface } from './file-browser-vie
 import { openBrowserColumnTarget, selectBrowserColumnFile } from '@features/workspace/use-cases/browser-column-navigation';
 
 import {
-  lazy,
-  Suspense,
   useCallback,
   useEffect,
   useRef,
@@ -18,6 +16,8 @@ import {
 import { ChevronLeft, ChevronRight, Globe, RotateCw, X } from 'lucide-react';
 import { LazyAgentConversationDetail } from '@features/agent/components/lazy-agent-conversation-detail';
 import { DocumentContainer } from '@features/document/components/document-container';
+import { LazyPluginDocumentView } from '@features/plugin/public/surface-api';
+import { SurfaceSuspenseHost } from '@shared/ui/surface-suspense-host';
 import {
   useBrowserColumnStore,
   type BrowserColumnTab,
@@ -319,12 +319,6 @@ function BrowserWebSurfaceView({ surface }: { surface: BrowserWebSurface }) {
   );
 }
 
-const PluginDocumentView = lazy(() =>
-  import('@features/plugin/plugin-document-view').then((module) => ({
-    default: module.PluginDocumentView,
-  })),
-);
-
 function BrowserDocumentSurfaceView({ surface }: { surface: BrowserDocumentSurface }) {
   return <DocumentContainer {...surface.props} />;
 }
@@ -334,19 +328,11 @@ function BrowserFileBrowserSurfaceView({ surface }: { surface: BrowserFileBrowse
 }
 
 function BrowserArtifactSurfaceView({ surface }: { surface: BrowserArtifactSurface }) {
-  return (
-    <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--muted-foreground)]">正在加载插件产物…</div>}>
-      <PluginDocumentView {...surface.props} />
-    </Suspense>
-  );
+  return <LazyPluginDocumentView {...surface.props} />;
 }
 
 function BrowserAgentConversationSurfaceView({ surface }: { surface: BrowserAgentConversationSurface }) {
-  return (
-    <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--muted-foreground)]">正在加载 Agent 对话…</div>}>
-      <LazyAgentConversationDetail instanceId={surface.instanceId} />
-    </Suspense>
-  );
+  return <LazyAgentConversationDetail instanceId={surface.instanceId} />;
 }
 
 type SurfaceOfKind<K extends BrowserColumnSurfaceKind> = Extract<BrowserColumnSurface, { kind: K }>;
@@ -482,11 +468,15 @@ export function browserColumnSurfaceSupports(
 }
 
 export function BrowserColumnSurfaceHost({ surface }: { surface: BrowserColumnSurface }) {
+  const instanceKey = `${surface.kind}:${surface.instanceKey}`;
+  const definition = getBrowserColumnSurfaceDefinition(surface);
   return (
-    <BrowserColumnSurfaceMount
-      key={`${surface.kind}:${surface.instanceKey}`}
-      surface={surface}
-    />
+    <SurfaceSuspenseHost
+      instanceKey={instanceKey}
+      loadingTone={definition.chrome}
+    >
+      <BrowserColumnSurfaceMount surface={surface} />
+    </SurfaceSuspenseHost>
   );
 }
 

@@ -207,6 +207,12 @@ fn code_content_for_cas(content: &str) -> Vec<String> {
 }
 
 pub(super) fn cas_content_matches(current: &str, expected: &str, incoming: &str) -> bool {
+    let current = flowix_core::memo_file::normalize_markdown_encoding_boundaries(current);
+    let expected = flowix_core::memo_file::normalize_markdown_encoding_boundaries(expected);
+    let incoming = flowix_core::memo_file::normalize_markdown_encoding_boundaries(incoming);
+    let current = current.as_ref();
+    let expected = expected.as_ref();
+    let incoming = incoming.as_ref();
     if current == expected || current == incoming {
         return true;
     }
@@ -290,6 +296,15 @@ mod tests {
         let current = "# Title\n\nBody\n";
         let expected = "# Title\n\nOld body\n";
         let incoming = "# Title\n\nBody\n";
+
+        assert!(cas_content_matches(current, expected, incoming));
+    }
+
+    #[test]
+    fn cas_accepts_legacy_bom_boundary_normalization() {
+        let current = "---\nkey: abc123\n---\n\u{FEFF}Body\n";
+        let expected = "---\nkey: abc123\n---\nBody\n";
+        let incoming = "---\nkey: abc123\n---\nEdited body\n";
 
         assert!(cas_content_matches(current, expected, incoming));
     }

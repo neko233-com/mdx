@@ -5,7 +5,10 @@ import { AllSelection, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state
 import type { Selection } from '@tiptap/pm/state';
 import { FrontmatterPropertyNodeView } from '@features/editor/extensions/frontmatter-node-view';
 
-const FRONTMATTER_TOKEN_RE = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+// Consume a BOM both at the true file boundary and immediately after the
+// frontmatter block. The latter repairs legacy imports where key injection
+// displaced the UTF-8 signature into the Markdown body.
+const FRONTMATTER_TOKEN_RE = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n\uFEFF?|$)/;
 
 const Frontmatter = Node.create({
   name: 'frontmatter',

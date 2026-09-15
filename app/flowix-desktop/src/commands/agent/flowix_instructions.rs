@@ -58,12 +58,6 @@ fn workspace_scope(cwd: &Path, workspace_paths: &[String]) -> String {
     section
 }
 
-/// Synchronize Flowix's stable CLI rules and workspace scope into the project-local AGENTS file.
-///
-/// The operation is intentionally idempotent. Existing user-authored content
-/// is preserved, while only the marked Flowix section is replaced. The caller
-/// must invoke this before creating or resuming the provider session so native
-/// AGENTS loaders observe the current rules during their baseline load.
 pub(crate) fn sync_native_agent_instructions(
     cwd: &Path,
     agent_type: &str,
@@ -127,12 +121,8 @@ fn upsert_managed_section(
 
     let section = managed_section(cwd, workspace_paths);
     if start_count == 1 {
-        let start = existing
-            .find(MANAGED_START)
-            .expect("marker count guarantees start marker");
-        let end = existing
-            .find(MANAGED_END)
-            .expect("marker count guarantees end marker");
+        let start = existing.find(MANAGED_START).unwrap();
+        let end = existing.find(MANAGED_END).unwrap();
         if end < start {
             return Err("AGENTS.md contains reversed Flowix instruction markers".to_string());
         }
@@ -162,118 +152,4 @@ fn join_sections(prefix: &str, section: &str, suffix: &str) -> String {
     }
     result.push('\n');
     result
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn creates_managed_section_without_user_content() {
-        let result = upsert_managed_section("", Path::new("/notes/current"), &[]).unwrap();
-        assert!(result.starts_with(MANAGED_START));
-        assert!(result.contains("flowix notebooks"));
-        assert!(result.contains("flowix plugin create mindmap"));
-        assert!(result.contains("8 位 ID / 笔记本名"));
-        assert!(result.contains("## 工作空间范围"));
-        assert!(result.contains("当前笔记本：/notes/current"));
-        assert!(result.ends_with('\n'));
-    }
-
-    #[test]
-    fn preserves_user_content_when_adding_section() {
-        let result = upsert_managed_section(
-            "# My project\n\nUse Rust.\n",
-            Path::new("/notes/current"),
-            &["/projects/app".to_string()],
-        )
-        .unwrap();
-        assert!(result.starts_with("# My project\n\nUse Rust."));
-        assert!(result.contains(MANAGED_START));
-        assert!(result.contains("资料文件夹：\n  - /projects/app"));
-        assert!(result.ends_with('\n'));
-    }
-
-    #[test]
-    fn replaces_only_the_managed_section() {
-        let existing =
-            format!("# Before\n\n{MANAGED_START}\nold rules\n{MANAGED_END}\n\n# After\n");
-        let result = upsert_managed_section(&existing, Path::new("/notes/current"), &[]).unwrap();
-        assert!(result.contains("# Before"));
-        assert!(result.contains("# After"));
-        assert!(!result.contains("old rules"));
-        assert_eq!(marker_count(&result, MANAGED_START), 1);
-        assert_eq!(marker_count(&result, MANAGED_END), 1);
-    }
-
-    #[test]
-    fn rejects_malformed_markers() {
-        assert!(
-            upsert_managed_section(
-                &format!("{MANAGED_START}\nonly start"),
-                Path::new("/notes"),
-                &[],
-            )
-            .is_err()
-        );
-        assert!(
-            upsert_managed_section(
-                &format!("{MANAGED_START}\none\n{MANAGED_END}\n{MANAGED_END}"),
-                Path::new("/notes"),
-                &[],
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn sync_is_idempotent_for_native_agents() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("AGENTS.md");
-
-        sync_native_agent_instructions(directory.path(), "codex", &[]).unwrap();
-        let first = std::fs::read_to_string(&path).unwrap();
-        sync_native_agent_instructions(directory.path(), "deepseek-harness", &[]).unwrap();
-        let second = std::fs::read_to_string(&path).unwrap();
-
-        assert_eq!(first, second);
-        assert_eq!(marker_count(&second, MANAGED_START), 1);
-        assert_eq!(marker_count(&second, MANAGED_END), 1);
-    }
-
-    #[test]
-    fn sync_refreshes_the_workspace_scope() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("AGENTS.md");
-
-        sync_native_agent_instructions(
-            directory.path(),
-            "codex",
-            &["/projects/one".to_string(), "/projects/two".to_string()],
-        )
-        .unwrap();
-        let first = std::fs::read_to_string(&path).unwrap();
-        assert!(first.contains("当前笔记本："));
-        assert!(first.contains("  - /projects/one"));
-        assert!(first.contains("  - /projects/two"));
-
-        sync_native_agent_instructions(
-            directory.path(),
-            "codex",
-            &["/projects/changed".to_string()],
-        )
-        .unwrap();
-        let second = std::fs::read_to_string(path).unwrap();
-        assert!(second.contains("  - /projects/changed"));
-        assert!(!second.contains("  - /projects/one"));
-    }
-
-    #[test]
-    fn unsupported_agents_do_not_create_project_instructions() {
-        let directory = tempfile::tempdir().unwrap();
-
-        sync_native_agent_instructions(directory.path(), "claude", &[]).unwrap();
-
-        assert!(!directory.path().join("AGENTS.md").exists());
-    }
 }

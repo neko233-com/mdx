@@ -20,6 +20,21 @@ import {
 import { generatePropertyKey } from '@features/document/properties/property-key';
 
 describe('frontmatter property helpers', () => {
+  it('consumes a legacy BOM displaced behind frontmatter', () => {
+    const editor = new Editor({
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nkey: abc12345\n---\n\uFEFFBody',
+      contentType: 'markdown',
+    });
+
+    const markdown = editor.getMarkdown();
+    expect(markdown).toContain('key: abc12345');
+    expect(markdown).toContain('Body');
+    expect(markdown).not.toContain('\uFEFF');
+    expect(markdown).not.toContain('nbsp');
+    editor.destroy();
+  });
+
   it('skips the system key and returns every property from the first group', () => {
     const result = parseVisibleFrontmatter('key: ra61em97\nstatus: in-progress\nkeywords: [推广, 归类]');
 

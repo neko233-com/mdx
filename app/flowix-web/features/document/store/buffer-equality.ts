@@ -18,6 +18,9 @@ function normalizeYamlValue(value: unknown, preserveMappingOrder = false): unkno
 function normalizeBody(body: string): string {
   return body
     .replace(/^\n+/, '')
+    // Legacy imports could displace a file-leading UTF-8 BOM behind injected
+    // frontmatter. Ignore only that body-boundary marker for dirty checks.
+    .replace(/^\uFEFF/, '')
     .replace(/\n+$/, '');
 }
 

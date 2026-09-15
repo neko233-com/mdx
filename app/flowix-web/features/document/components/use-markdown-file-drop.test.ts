@@ -8,13 +8,20 @@ const mocks = vi.hoisted(() => ({
   onDragDropEvent: vi.fn(),
 }));
 
+vi.mock('@tauri-apps/api/webview', () => ({
+  getCurrentWebview: () => ({
+    onDragDropEvent: mocks.onDragDropEvent,
+  }),
+}));
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({
-    onDragDropEvent: mocks.onDragDropEvent,
+    scaleFactor: vi.fn().mockResolvedValue(1),
   }),
 }));
 
 import {
+  EXTERNAL_FILE_DROP_EVENT,
+  elementFromExternalDropPosition,
   firstMarkdownPath,
   isMarkdownPath,
   useMarkdownFileDrop,
@@ -132,34 +139,86 @@ describe('useMarkdownFileDrop', () => {
     expect(onDropPaths).not.toHaveBeenCalled();
   });
 
-  it('ignores native events while an internal HTML drag is active', async () => {
+  it('routes supported external files to the notebook drop target', async () => {
     const onDropPaths = vi.fn();
-    await act(async () => root.render(createElement(Harness, { onDropPaths })));
-
-    await act(async () => {
-      document.dispatchEvent(new Event('dragstart', { bubbles: true }));
-      mocks.listener?.({ payload: { type: 'enter', paths: ['/notes/a.md'] } });
-      mocks.listener?.({ payload: { type: 'drop', paths: ['/notes/a.md'] } });
+    const target = document.createElement('div');
+    target.dataset.notebookExternalDropTarget = 'true';
+    document.body.appendChild(target);
+    const routedEvents: CustomEvent[] = [];
+    const onRoutedEvent = (event: Event) => {
+      routedEvents.push(event as CustomEvent);
+    };
+    window.addEventListener(EXTERNAL_FILE_DROP_EVENT, onRoutedEvent);
+    const previousElementFromPoint = document.elementFromPoint;
+    const elementFromPoint = vi.fn(() => target);
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: elementFromPoint,
     });
 
-    expect(container.textContent).toBe('idle');
+    await act(async () => root.render(createElement(Harness, { onDropPaths })));
+    await act(async () => {
+      mocks.listener?.({
+        payload: {
+          type: 'enter',
+          paths: ['/external/a.md', '/external/image.png', '/external/archive.zip'],
+          position: { x: 10, y: 20 },
+        },
+      });
+      mocks.listener?.({
+        payload: {
+          type: 'drop',
+          paths: ['/external/a.md', '/external/image.png', '/external/archive.zip'],
+          position: { x: 10, y: 20 },
+        },
+      });
+    });
+
+    expect(routedEvents.map((event) => event.detail.type)).toEqual(['enter', 'drop']);
+    expect(routedEvents[0].detail.paths).toEqual(['/external/a.md', '/external/image.png']);
     expect(onDropPaths).not.toHaveBeenCalled();
+    window.removeEventListener(EXTERNAL_FILE_DROP_EVENT, onRoutedEvent);
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: previousElementFromPoint,
+    });
   });
 
-  it('clears the internal ref after a window blur so a follow-up external drop is honored', async () => {
+  it('resolves a logical-pixel drop position on a scaled WebView', () => {
+    const target = document.createElement('div');
+    target.dataset.notebookExternalDropTarget = 'true';
+    document.body.appendChild(target);
+    const previousElementFromPoint = document.elementFromPoint;
+    const previousDevicePixelRatio = window.devicePixelRatio;
+    const elementFromPoint = vi.fn((x: number) => (x === 10 ? target : document.body));
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: elementFromPoint,
+    });
+    Object.defineProperty(window, 'devicePixelRatio', {
+      configurable: true,
+      value: 2,
+    });
+
+    expect(elementFromExternalDropPosition({ x: 20, y: 20 }, 2)).toBe(target);
+    expect(elementFromPoint).toHaveBeenCalledWith(10, 10);
+
+    Object.defineProperty(document, 'elementFromPoint', {
+      configurable: true,
+      value: previousElementFromPoint,
+    });
+    Object.defineProperty(window, 'devicePixelRatio', {
+      configurable: true,
+      value: previousDevicePixelRatio,
+    });
+  });
+
+  it('does not let an unrelated HTML drag suppress native file events', async () => {
     const onDropPaths = vi.fn();
     await act(async () => root.render(createElement(Harness, { onDropPaths })));
 
     await act(async () => {
       document.dispatchEvent(new Event('dragstart', { bubbles: true }));
-    });
-    expect(container.textContent).toBe('idle');
-
-    await act(async () => {
-      window.dispatchEvent(new Event('blur'));
-    });
-
-    await act(async () => {
       mocks.listener?.({ payload: { type: 'enter', paths: ['/notes/a.md'] } });
       mocks.listener?.({ payload: { type: 'drop', paths: ['/notes/a.md'] } });
     });

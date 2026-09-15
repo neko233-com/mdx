@@ -1,5 +1,15 @@
-import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import type { ThemeId } from '@/lib/theme';
+import type { MemoColor } from '@/types/memo-item';
+
+export interface DocTreeMemoMeta {
+  id: string;
+  icon: string | null;
+  colors: MemoColor[];
+  favorited: boolean;
+}
+
+export type DocTreeResourceKind = 'note' | 'image' | 'video' | 'other';
 
 export interface DocTreeItem {
   id: string;
@@ -12,6 +22,8 @@ export interface DocTreeItem {
   modifiedMs: number | null;
   createdMs: number | null;
   memoCreatedMs: number | null;
+  memoMeta?: DocTreeMemoMeta | null;
+  resourceKind?: DocTreeResourceKind | null;
 }
 
 export const files = {
@@ -27,6 +39,9 @@ export const files = {
   unwatchRoot: (leaseId: string) => invoke<void>('unwatch_file_browser_root', { leaseId }),
   read: (filePath: string, spacePath?: string) => invoke<string | null>('read_file', { filePath, spacePath }),
   readImage: (filePath: string, spacePath?: string) => invoke<string | null>('read_image_file', { filePath, spacePath }),
+  // Video stays a native media URL so playback does not load the whole file
+  // into a base64 string like the existing image preview does.
+  toAssetUrl: (filePath: string) => convertFileSrc(filePath),
   write: (filePath: string, content: string, skipValidation?: boolean, spacePath?: string) =>
     invoke<boolean>('write_file', { filePath, content, skipValidation, spacePath }),
   delete: (filePath: string, spacePath?: string) => invoke<boolean>('delete_file', { filePath, spacePath }),
@@ -34,6 +49,10 @@ export const files = {
     invoke<boolean>('delete_folder', { folderPath, spacePath }),
   rename: (filePath: string, name: string, spacePath: string) =>
     invoke<string>('rename_file', { filePath, name, spacePath }),
+  move: (filePath: string, targetDirectoryPath: string, spacePath: string) =>
+    invoke<string>('move_file', { filePath, targetDirectoryPath, spacePath }),
+  importFile: (filePath: string, targetDirectoryPath: string, spacePath: string) =>
+    invoke<string>('import_file', { filePath, targetDirectoryPath, spacePath }),
   renameFolder: (folderPath: string, name: string, spacePath: string) =>
     invoke<string>('rename_folder', { folderPath, name, spacePath }),
   createFolder: (spacePath: string, name: string, parentId?: string) =>

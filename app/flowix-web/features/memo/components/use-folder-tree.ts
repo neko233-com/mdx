@@ -3,17 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { files, type DocTreeItem } from '@platform/tauri/client';
-import { canonicalPath } from '@/lib/path';
+import { canonicalDirectoryPath, canonicalPath } from '@/lib/path';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('folder-tree');
 const REFRESH_DEDUP_WINDOW_MS = 350;
-
-function canonicalDirectoryPath(path: string): string {
-  const canonical = canonicalPath(path);
-  const trimmed = canonical.replace(/\/+$/, '');
-  return trimmed || (canonical.startsWith('/') ? '/' : canonical);
-}
 
 /**
  * VSCode 风格文件树数据 hook ── 惰性单层加载。
@@ -361,6 +355,30 @@ export type FolderTreeController = ReturnType<typeof useFolderTree>;
 export interface VisibleTreeNode {
   item: DocTreeItem;
   depth: number;
+}
+
+/** Flatten all currently loaded items, including items in collapsed folders. */
+export function flattenLoadedTree(
+  state: Pick<FolderTreeState, 'rootChildren' | 'nodes'>,
+): DocTreeItem[] {
+  const out: DocTreeItem[] = [];
+  const seen = new Set<string>();
+  const walk = (items: DocTreeItem[]) => {
+    for (const item of items) {
+      const key = canonicalPath(item.fullPath);
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(item);
+      }
+      if (item.type === 'folder' && item.children) walk(item.children);
+    }
+  };
+
+  walk(state.rootChildren);
+  for (const item of state.nodes.values()) {
+    if (!seen.has(canonicalPath(item.fullPath))) walk([item]);
+  }
+  return out;
 }
 
 export function flattenVisibleTree(state: FolderTreeState): VisibleTreeNode[] {

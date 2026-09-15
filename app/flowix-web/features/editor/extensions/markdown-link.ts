@@ -44,13 +44,23 @@ function stripOptionalTitle(destination: string): { href: string; title: string 
   const titleMatch = /^(\S+)\s+["']([^"']*)["']$/.exec(trimmed);
 
   if (!titleMatch) {
-    return { href: normalizePlainLinkHref(trimmed), title: null };
+    return { href: normalizeMarkdownDestination(trimmed), title: null };
   }
 
   return {
-    href: normalizePlainLinkHref(titleMatch[1]),
+    href: normalizeMarkdownDestination(titleMatch[1]),
     title: titleMatch[2] || null,
   };
+}
+
+function normalizeMarkdownDestination(url: string | null | undefined): string {
+  const safeHref = sanitizeLinkHref(url);
+  if (!safeHref) return '';
+  const trimmed = safeHref.trim();
+  if (!trimmed || /^[a-z][a-z0-9+.-]*:/i.test(trimmed) || trimmed.startsWith('//')) {
+    return normalizePlainLinkHref(trimmed);
+  }
+  return trimmed;
 }
 
 export function isPlainMarkdownLinkUrl(url: string | null | undefined): boolean {
@@ -127,7 +137,7 @@ export const MarkdownLink = Link.extend({
     }
 
     return helpers.applyMark('link', helpers.parseInline(token.tokens || []), {
-      href: normalizePlainLinkHref(token.href),
+      href: normalizeMarkdownDestination(token.href),
       title: token.title || null,
     });
   },

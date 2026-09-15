@@ -5,3 +5,4 @@
  * 让 platform 层成为 Tauri 适配的唯一边界 (便于 lint 边界规则 + 未来换实现)。
  */
 export { getCurrentWindow } from '@tauri-apps/api/window';
+export { getCurrentWebview } from '@tauri-apps/api/webview';

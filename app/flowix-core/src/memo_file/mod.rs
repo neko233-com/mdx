@@ -69,7 +69,8 @@ pub use file_io::{
 pub use frontmatter::{
     build_md_content, extract_body_content, extract_document_metadata, extract_frontmatter_key,
     extract_frontmatter_properties, merge_frontmatter, normalize_document_tags,
-    replace_frontmatter_tags, DocumentMetadata, FrontmatterMetadataError, MergeOverrides,
+    normalize_markdown_encoding_boundaries, replace_frontmatter_tags, DocumentMetadata,
+    FrontmatterMetadataError, MergeOverrides,
 };
 pub use index_store::{MemoContentCommit, MemoContentRevision};
 pub use internal_migration::{NotebookInternalMigrationReport, NOTEBOOK_INTERNAL_MIGRATION_KEY};

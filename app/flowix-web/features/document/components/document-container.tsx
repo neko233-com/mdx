@@ -5,6 +5,7 @@ import { useMemoStore } from '@features/memo';
 import { files } from '@platform/tauri/client';
 import {
   applyLoadedDocumentContent,
+  registerDocumentCapture,
   consumeSelfDocumentPathUpdate,
   hasDocumentUnsavedChanges,
   useDocumentMetricsStore,
@@ -33,8 +34,9 @@ import { NotePropertiesDialog } from '@features/document/components/note-propert
 import { MemoDocumentHeader } from '@features/document/components/memo-document-header';
 import type { MemoTitleEditorHandle } from '@features/document/components/memo-title-editor';
 import type { MarkdownEditorHandle } from '@features/editor/markdown-editor';
-import { isEditableTextFilePath, isImageFilePath } from '@features/editor/code-file';
+import { isEditableTextFilePath, isImageFilePath, isVideoFilePath } from '@features/editor/code-file';
 import { useI18n } from '@/lib/i18n';
+import { CenteredLoadingSpinner } from '@shared/ui/centered-loading-spinner';
 import { WorkspaceEmptyState } from '@shared/ui/workspace-empty-state';
 import { clearWorkspaceDocument } from '@features/workspace/use-cases/workspace-navigation';
 import { removeBrowserColumnTabsByMemoId } from '@features/workspace/use-cases/browser-column-navigation';
@@ -75,7 +77,11 @@ export function DocumentContainer({
     [filePath, isExternalDocument, memoId],
   );
   const isImagePreview = isExternalDocument && isImageFilePath(filePath);
-  const isUnsupportedExternalFile = isExternalDocument && !isEditableTextFilePath(filePath) && !isImagePreview;
+  const isVideoPreview = isExternalDocument && isVideoFilePath(filePath);
+  const isUnsupportedExternalFile = isExternalDocument
+    && !isEditableTextFilePath(filePath)
+    && !isImagePreview
+    && !isVideoPreview;
   // Every text file in the file tree, including Markdown, is source text and
   // therefore uses CodeMirror. Memo documents retain their rich editor.
   const usesCodeEditor = isExternalDocument && isEditableTextFilePath(filePath);
@@ -99,13 +105,17 @@ export function DocumentContainer({
     notebookPath,
     isExternalDocument,
     externalScopePath,
-    skipContentLoad: isImagePreview || isUnsupportedExternalFile,
+    skipContentLoad: isImagePreview || isVideoPreview || isUnsupportedExternalFile,
     transitionId,
     isolatedSession: documentSessionMode === 'isolated',
   });
   const flushPendingEditorChanges = useCallback(() => {
     return editorHandleRef.current?.flushPendingChanges() ?? null;
   }, []);
+
+  useEffect(() => (
+    registerDocumentCapture(documentIdentity, flushPendingEditorChanges)
+  ), [documentIdentity, flushPendingEditorChanges]);
 
   const {
     clearSaveTimer,
@@ -402,19 +412,13 @@ export function DocumentContainer({
     <div ref={containerRef} onFocusCapture={() => useWorkspaceFocusStore.getState().focusHost(hostId)} onPointerDownCapture={() => useWorkspaceFocusStore.getState().focusHost(hostId)} className="document-container h-full w-full min-w-0 flex flex-col bg-transparent relative overflow-hidden">
       <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
         {state.isLoading && (
-          <div
-            role="status"
-            aria-label="Loading"
-            className="flex h-full w-full items-center justify-center"
-          >
-            <div
-              aria-hidden="true"
-              className="h-5 w-5 animate-spin rounded-full border-2 border-[color-mix(in_oklch,var(--muted-foreground)_26%,transparent)] border-t-[var(--brand)]"
-            />
-          </div>
+          <CenteredLoadingSpinner className="h-full w-full" />
         )}
         {!state.isLoading && isImagePreview && (
           <ImageFilePreview filePath={filePath} scopePath={externalScopePath} />
+        )}
+        {!state.isLoading && isVideoPreview && (
+          <VideoFilePreview filePath={filePath} />
         )}
         {!state.isLoading && usesCodeEditor && (
           <LazyCodeEditor
@@ -564,6 +568,27 @@ function ImageFilePreview({ filePath, scopePath }: { filePath: string; scopePath
         src={src}
         alt={filePath.split(/[\\/]/).pop() ?? filePath}
         className="max-h-full max-w-full object-contain"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  );
+}
+
+function VideoFilePreview({ filePath }: { filePath: string }) {
+  const [failed, setFailed] = useState(false);
+  const src = useMemo(() => files.toAssetUrl(filePath), [filePath]);
+
+  if (failed) return <UnavailableFileView filePath={filePath} />;
+
+  return (
+    <div className="flex h-full w-full items-center justify-center overflow-auto bg-[var(--background)] p-6">
+      <video
+        src={src}
+        controls
+        preload="metadata"
+        playsInline
+        className="max-h-full max-w-full"
+        aria-label={filePath.split(/[\\/]/).pop() ?? filePath}
         onError={() => setFailed(true)}
       />
     </div>

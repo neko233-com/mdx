@@ -213,6 +213,14 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(crate::app_update::AppUpdateState::default())
         .manage(memo_watcher.clone())
+        .on_webview_event(|webview, event| {
+            if let tauri::WebviewEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                let state = webview.state::<AppState>();
+                for path in paths {
+                    state.document_access.grant(webview.label(), path);
+                }
+            }
+        })
         .setup(move |app| {
             // Structural data migrations are the startup gate. They complete
             // before AppState, cloud polling, file watchers, or normal Webview
@@ -338,17 +346,17 @@ pub fn run() {
 
                 // Theme::System 时跟�?OS 明暗实时切换窗口背景�? 仅当窗口�??显式
                 // theme (�?��用所有窗口都�? �?Tauri 才派�?ThemeChanged, 故这�?                // 监听主窗口即�?��发一次全局刷新 (apply_theme_background_all 遍历所有窗�?�?
-                let app_for_theme = app.handle().clone();
+                let app_for_window_event = app.handle().clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::ThemeChanged(_) = event {
-                        let current = app_for_theme
+                        let current = app_for_window_event
                             .state::<AppState>()
                             .user_config
                             .get_preference()
                             .theme;
                         if current == crate::config::Theme::System {
                             crate::window_chrome::apply_theme_background_all(
-                                &app_for_theme,
+                                &app_for_window_event,
                                 current,
                             );
                         }
@@ -667,6 +675,10 @@ pub fn run() {
             commands::memo::reads::open_memo_session,
             commands::memo::reads::read_document,
             commands::memo::reads::write_document,
+            commands::recovery::write_recovery_draft,
+            commands::recovery::read_recovery_draft,
+            commands::recovery::clear_recovery_draft_through,
+            commands::recovery::list_recovery_drafts,
             commands::external_document::read_external_document,
             commands::external_document::write_external_document,
             commands::memo::reads::get_launch_open_files,
@@ -713,6 +725,8 @@ pub fn run() {
             commands::file::read_image_file,
             commands::file::write_file,
             commands::file::rename_file,
+            commands::file::move_file,
+            commands::file::import_file,
             commands::file::rename_folder,
             commands::file::delete_file,
             commands::file::delete_folder,

@@ -10,6 +10,7 @@ export * from './client/plugin';
 export * from './client/general';
 export * from './client/memos';
 export * from './client/updater';
+export * from './client/recovery';
 
 type RpcRequest = <T = unknown>(method: string, params?: unknown) => Promise<T>;
 

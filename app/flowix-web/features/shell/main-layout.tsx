@@ -50,6 +50,7 @@ import {
   type WorkColumnTarget,
 } from '@features/workspace/public/shell-api';
 import { MainStatusBarHost } from '@features/shell/components/main-status-bar-host';
+import { CenteredLoadingSpinner } from '@shared/ui/centered-loading-spinner';
 import { MainPromptHost } from '@features/shell/components/main-prompt-host';
 
 const DOCUMENT_PANEL_MIN_WIDTH = BROWSER_COLUMN_MIN_WIDTH;
@@ -400,6 +401,9 @@ export function MainLayout({
     emptyMessage: t('shell.emptyDocument'),
   });
   const isAgentConversationDetail = workColumnPresentation.header.kind === 'agent';
+  const workColumnLoadingTone = navigationState.phase === 'loading'
+    ? navigationState.pendingTarget?.kind === 'agent-conversation' ? 'agent' : 'document'
+    : workColumnPresentation.header.kind === 'agent' ? 'agent' : 'document';
   const documentTitlebarProps = {
     reserveWindowsControls: !browserColumnVisible,
     document: {
@@ -645,16 +649,11 @@ export function MainLayout({
             <div className="relative isolate flex-1 min-w-0 overflow-hidden">
               <WorkColumnContentHost content={workColumnPresentation.content} />
               {(isDocumentTransitioning || navigationState.phase === 'loading') && (
-                <div
-                  className="absolute inset-0 z-40 flex items-center justify-center bg-[color-mix(in_oklch,var(--card)_78%,transparent)] backdrop-blur-[1px]"
-                  role="status"
-                  aria-label="Loading"
-                >
-                  <div
-                    className="h-5 w-5 rounded-full border-2 border-[color-mix(in_oklch,var(--muted-foreground)_26%,transparent)] border-t-[var(--brand)] animate-spin"
-                    aria-hidden="true"
-                  />
-                </div>
+                <CenteredLoadingSpinner
+                  className={workColumnLoadingTone === 'agent'
+                    ? 'absolute inset-0 z-40 bg-[var(--agent-surface-bg,var(--editor-block-bg,var(--document-bg)))]'
+                    : 'absolute inset-0 z-40 bg-[color-mix(in_oklch,var(--card)_78%,transparent)] backdrop-blur-[1px]'}
+                />
               )}
             </div>
           </div>

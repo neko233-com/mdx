@@ -9,6 +9,7 @@ import {
   markSelfDocumentPathUpdate,
   hasDocumentUnsavedChanges,
   recordDocumentEdit,
+  protectDocumentDraft,
   saveDocumentContent,
   type DocumentIdentity,
 } from '@features/document';
@@ -24,6 +25,24 @@ import {
 } from '@features/document/components/session/document-utils';
 
 const DERIVED_STATS_DEBOUNCE_MS = 200;
+const RECOVERY_DRAFT_DEBOUNCE_MS = 300;
+const DOCUMENT_FLUSH_WAIT_MS = 5_000;
+
+function waitForSave(promise: Promise<boolean>): Promise<boolean | 'timeout'> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => resolve('timeout'), DOCUMENT_FLUSH_WAIT_MS);
+    void promise.then(
+      (saved) => {
+        window.clearTimeout(timer);
+        resolve(saved);
+      },
+      () => {
+        window.clearTimeout(timer);
+        resolve(false);
+      },
+    );
+  });
+}
 
 interface UseDocumentAutosaveOptions {
   filePath: string;
@@ -67,9 +86,9 @@ export function useDocumentAutosave({
 }: UseDocumentAutosaveOptions) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const derivedStatsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recoveryDraftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const derivedStatsVersionRef = useRef(0);
   const isMountedRef = useRef(true);
-  const sourceMissingAfterSaveRef = useRef(false);
 
   const clearSaveTimer = useCallback(() => {
     if (saveTimerRef.current) {
@@ -82,6 +101,13 @@ export function useDocumentAutosave({
     if (derivedStatsTimerRef.current) {
       clearTimeout(derivedStatsTimerRef.current);
       derivedStatsTimerRef.current = null;
+    }
+  }, []);
+
+  const clearRecoveryDraftTimer = useCallback(() => {
+    if (recoveryDraftTimerRef.current) {
+      clearTimeout(recoveryDraftTimerRef.current);
+      recoveryDraftTimerRef.current = null;
     }
   }, []);
 
@@ -111,7 +137,6 @@ export function useDocumentAutosave({
     options?: { force?: boolean; silent?: boolean },
   ): Promise<boolean> => {
     if (!path) return false;
-    sourceMissingAfterSaveRef.current = false;
     let casRefused = false;
     const buf = getDocumentBuffer(identity);
     // Another surface may have edited since this save was scheduled.
@@ -167,10 +192,9 @@ export function useDocumentAutosave({
             lastSavedHead: buf.lastSavedContent.slice(0, 200),
           });
           casRefused = true;
-          buf.pendingContent = null;
           void writtenContent;
         },
-        onError: (_writtenContent, err) => {
+        onError: (_writtenContent, _revision, err) => {
           console.error('[DocumentContainer] Failed to save memo:', err);
           const language = getCurrentAppLanguage();
           const message = err instanceof Error ? err.message : String(err);
@@ -206,7 +230,6 @@ export function useDocumentAutosave({
     }
     if (!isMountedRef.current) return false;
     if (onDisk === null) {
-      sourceMissingAfterSaveRef.current = true;
       return false;
     }
     buf.lastSavedContent = onDisk;
@@ -234,18 +257,17 @@ export function useDocumentAutosave({
     const path = draft?.path ?? filePath;
     clearSaveTimer();
     if (content == null || !path || !hasDocumentUnsavedChanges(identity)) return true;
-    const saved = await saveDoc(content, path, options);
-    if (saved || !sourceMissingAfterSaveRef.current) return saved;
+    const result = await waitForSave(saveDoc(content, path, options));
+    if (result === true) return true;
 
-    // The backing file was removed outside Flowix. There is nothing left to
-    // save safely, so clear the dirty barrier and allow this isolated tab to
-    // close instead of trapping the user in a retry loop.
-    discardDocumentDraft(identity);
-    const language = getCurrentAppLanguage();
-    toast.warning(translate(language, 'document.save.sourceMissingDiscarded'), {
-      duration: 5000,
-    });
-    return true;
+    // The canonical request may still be running after a timeout. Do not
+    // start a competing write; protect the captured revision separately and
+    // let the per-document save queue keep its ordering.
+    return protectDocumentDraft(
+      identity,
+      path,
+      result === 'timeout' ? 'save-timeout' : 'save-error',
+    );
   }, [clearSaveTimer, filePath, flushPendingContent, identity, saveDoc]);
 
   const discardDocument = useCallback(() => {
@@ -316,6 +338,13 @@ export function useDocumentAutosave({
     }));
     scheduleDerivedStatsUpdate(content);
 
+    clearRecoveryDraftTimer();
+    const recoveryPath = filePath;
+    recoveryDraftTimerRef.current = setTimeout(() => {
+      recoveryDraftTimerRef.current = null;
+      void protectDocumentDraft(identity, recoveryPath, 'autosave');
+    }, RECOVERY_DRAFT_DEBOUNCE_MS);
+
     clearSaveTimer();
     const pathAtSchedule = filePath;
     saveTimerRef.current = setTimeout(() => {
@@ -325,6 +354,7 @@ export function useDocumentAutosave({
     filePath,
     identity,
     clearSaveTimer,
+    clearRecoveryDraftTimer,
     scheduleDerivedStatsUpdate,
     saveDoc,
     setState,
@@ -359,6 +389,8 @@ export function useDocumentAutosave({
       const path = draft?.path ?? filePath;
       if (content == null || !path) return;
       clearSaveTimer();
+      clearRecoveryDraftTimer();
+      void protectDocumentDraft(identity, path, 'shutdown');
       void saveDoc(content, path);
     };
 
@@ -378,8 +410,9 @@ export function useDocumentAutosave({
       isMountedRef.current = false;
       clearSaveTimer();
       clearDerivedStatsTimer();
+      clearRecoveryDraftTimer();
     };
-  }, [filePath, flushDocument, flushPendingContent, saveDoc, clearSaveTimer, clearDerivedStatsTimer, maybeSaveOrReloadOnHide, identity, isolatedSession]);
+  }, [filePath, flushDocument, flushPendingContent, saveDoc, clearSaveTimer, clearDerivedStatsTimer, clearRecoveryDraftTimer, maybeSaveOrReloadOnHide, identity, isolatedSession]);
 
   return {
     clearSaveTimer,

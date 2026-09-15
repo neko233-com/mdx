@@ -1,7 +1,34 @@
 import { useEffect, useRef, useState } from 'react';
-import { getCurrentWindow } from '@platform/tauri/window';
+import { getCurrentWebview, getCurrentWindow } from '@platform/tauri/window';
+import { isNotebookResourcePath } from '@features/editor/code-file';
 
 const MARKDOWN_EXTENSION_PATTERN = /\.(md|markdown)$/i;
+
+export const EXTERNAL_FILE_DROP_EVENT = 'flowix:external-file-drop';
+export const EXTERNAL_FILE_DROP_TARGET_SELECTOR = '[data-notebook-external-drop-target="true"]';
+
+export interface ExternalDropPosition {
+  x: number;
+  y: number;
+}
+
+export interface ExternalFileDropDetail {
+  type: 'enter' | 'over' | 'drop' | 'leave';
+  paths: string[];
+  position: ExternalDropPosition | null;
+}
+
+/** Resolve Tauri's drop position across physical- and logical-pixel WebViews. */
+export function elementFromExternalDropPosition(
+  position?: ExternalDropPosition | null,
+  scaleFactor = window.devicePixelRatio || 1,
+): Element | null {
+  if (!position || typeof document.elementFromPoint !== 'function') return null;
+  return document.elementFromPoint(
+    position.x / (scaleFactor || 1),
+    position.y / (scaleFactor || 1),
+  );
+}
 
 export function isMarkdownPath(path: string): boolean {
   return MARKDOWN_EXTENSION_PATTERN.test(path);
@@ -24,6 +51,10 @@ export function markdownPaths(paths?: readonly string[] | null): string[] {
   return result;
 }
 
+function notebookResourcePaths(paths: readonly string[]): string[] {
+  return paths.filter(isNotebookResourcePath);
+}
+
 interface UseMarkdownFileDropOptions {
   onDropPaths: (paths: string[]) => void | Promise<void>;
   onDropError?: (error: unknown) => void;
@@ -34,7 +65,9 @@ export function useMarkdownFileDrop({
   onDropError,
 }: UseMarkdownFileDropOptions) {
   const [isDraggingMarkdown, setIsDraggingMarkdown] = useState(false);
-  const isInternalHtml5DragRef = useRef(false);
+  const draggedPathsRef = useRef<string[]>([]);
+  const dropScaleFactorRef = useRef(window.devicePixelRatio || 1);
+  const routedTargetRef = useRef<HTMLElement | null>(null);
   const onDropPathsRef = useRef(onDropPaths);
   const onDropErrorRef = useRef(onDropError);
   const dropRequestRef = useRef(0);
@@ -45,58 +78,107 @@ export function useMarkdownFileDrop({
   }, [onDropError, onDropPaths]);
 
   useEffect(() => {
-    const onHtmlDragStart = () => {
-      isInternalHtml5DragRef.current = true;
-    };
-    const resetDrag = () => {
-      isInternalHtml5DragRef.current = false;
-    };
-    const onHtmlDragEnd = resetDrag;
-    const onHtmlDrop = resetDrag;
-    const onWindowBlur = resetDrag;
-    const onPointerCancel = resetDrag;
-    document.addEventListener('dragstart', onHtmlDragStart);
-    document.addEventListener('dragend', onHtmlDragEnd);
-    document.addEventListener('drop', onHtmlDrop);
-    window.addEventListener('blur', onWindowBlur);
-    window.addEventListener('pointercancel', onPointerCancel);
-    window.addEventListener('dragend', onHtmlDragEnd);
-    return () => {
-      document.removeEventListener('dragstart', onHtmlDragStart);
-      document.removeEventListener('dragend', onHtmlDragEnd);
-      document.removeEventListener('drop', onHtmlDrop);
-      window.removeEventListener('blur', onWindowBlur);
-      window.removeEventListener('pointercancel', onPointerCancel);
-      window.removeEventListener('dragend', onHtmlDragEnd);
-    };
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+    void getCurrentWindow().scaleFactor().then((factor) => {
+      if (Number.isFinite(factor) && factor > 0) dropScaleFactorRef.current = factor;
+    }).catch(() => undefined);
   }, []);
 
   useEffect(() => {
+    const clearRoutedTarget = () => {
+      const target = routedTargetRef.current;
+      if (!target) return;
+      window.dispatchEvent(new CustomEvent<ExternalFileDropDetail>(EXTERNAL_FILE_DROP_EVENT, {
+        detail: { type: 'leave', paths: draggedPathsRef.current, position: null },
+      }));
+      routedTargetRef.current = null;
+    };
+    const dispatchToTarget = (
+      type: ExternalFileDropDetail['type'],
+      paths: string[],
+      position: ExternalDropPosition | null | undefined,
+    ): boolean => {
+      const target = elementFromExternalDropPosition(position, dropScaleFactorRef.current)
+        ?.closest<HTMLElement>(EXTERNAL_FILE_DROP_TARGET_SELECTOR) ?? null;
+      if (!target) {
+        clearRoutedTarget();
+        return false;
+      }
+      if (routedTargetRef.current && routedTargetRef.current !== target) {
+        window.dispatchEvent(
+          new CustomEvent<ExternalFileDropDetail>(EXTERNAL_FILE_DROP_EVENT, {
+            detail: { type: 'leave', paths, position: null },
+          }),
+        );
+      }
+      routedTargetRef.current = target;
+      window.dispatchEvent(new CustomEvent<ExternalFileDropDetail>(EXTERNAL_FILE_DROP_EVENT, {
+        detail: { type, paths, position: position ?? null },
+      }));
+      return true;
+    };
+
     if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
-      return;
+      return undefined;
     }
 
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
-    getCurrentWindow().onDragDropEvent((event) => {
-      if (disposed || isInternalHtml5DragRef.current) return;
+    getCurrentWebview().onDragDropEvent((event) => {
+      if (disposed) return;
 
       const { type } = event.payload;
       if (type === 'enter') {
-        setIsDraggingMarkdown(Boolean(firstMarkdownPath(event.payload.paths)));
+        draggedPathsRef.current = Array.isArray(event.payload.paths)
+          ? event.payload.paths
+          : [];
+        const acceptedPaths = notebookResourcePaths(draggedPathsRef.current);
+        if (acceptedPaths.length > 0 && dispatchToTarget('enter', acceptedPaths, event.payload.position)) {
+          setIsDraggingMarkdown(false);
+          return;
+        }
+        clearRoutedTarget();
+        setIsDraggingMarkdown(Boolean(firstMarkdownPath(draggedPathsRef.current)));
         return;
       }
-      if (type === 'over') return;
-      if (type === 'leave' || type === 'drop') {
-        setIsDraggingMarkdown(false);
-      }
-      if (type !== 'drop') return;
 
-      const paths = markdownPaths(event.payload.paths);
-      if (paths.length === 0) return;
+      if (type === 'over') {
+        const acceptedPaths = notebookResourcePaths(draggedPathsRef.current);
+        if (acceptedPaths.length > 0 && dispatchToTarget('over', acceptedPaths, event.payload.position)) {
+          setIsDraggingMarkdown(false);
+          return;
+        }
+        clearRoutedTarget();
+        setIsDraggingMarkdown(Boolean(firstMarkdownPath(draggedPathsRef.current)));
+        return;
+      }
+
+      if (type === 'leave') {
+        clearRoutedTarget();
+        draggedPathsRef.current = [];
+        setIsDraggingMarkdown(false);
+        return;
+      }
+
+      const paths = Array.isArray(event.payload.paths)
+        ? event.payload.paths
+        : draggedPathsRef.current;
+      const acceptedPaths = notebookResourcePaths(paths);
+      if (acceptedPaths.length > 0 && dispatchToTarget('drop', acceptedPaths, event.payload.position)) {
+        routedTargetRef.current = null;
+        setIsDraggingMarkdown(false);
+        draggedPathsRef.current = [];
+        return;
+      }
+
+      clearRoutedTarget();
+      setIsDraggingMarkdown(false);
+      draggedPathsRef.current = [];
+      const markdownOnly = markdownPaths(paths);
+      if (markdownOnly.length === 0) return;
       const requestId = ++dropRequestRef.current;
-      void Promise.resolve(onDropPathsRef.current(paths)).catch((error) => {
+      void Promise.resolve(onDropPathsRef.current(markdownOnly)).catch((error) => {
         if (dropRequestRef.current !== requestId || disposed) return;
         onDropErrorRef.current?.(error);
       });
@@ -109,6 +191,7 @@ export function useMarkdownFileDrop({
 
     return () => {
       disposed = true;
+      clearRoutedTarget();
       unlisten?.();
     };
   }, []);

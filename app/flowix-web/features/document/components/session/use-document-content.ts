@@ -6,8 +6,11 @@ import {
   setActiveDocumentPath,
   applyLoadedDocumentContent,
   consumeStagedDocumentSnapshot,
+  applyRecoveryDraftContent,
+  readRecoveryDraft,
   useDocumentStore,
   type DocumentIdentity,
+  type RecoveryDraft,
 } from '@features/document';
 import { translate } from '@/lib/i18n';
 import { replaceActiveMemoPath } from '@features/workspace/use-cases/workspace-navigation';
@@ -80,12 +83,25 @@ export function useDocumentContent({
   const counter = useRef(0);
 
   const applyLoadedContent = useCallback(
-    (path: string, fullContent: string, options?: Pick<LoadContentOptions, 'preservePending'>) => {
+    (
+      path: string,
+      fullContent: string,
+      options?: Pick<LoadContentOptions, 'preservePending'> & { recovery?: RecoveryDraft | null },
+    ) => {
       const startedAt = performance.now();
       const buf = applyLoadedDocumentContent(identity, path, fullContent, {
         preservePending: options?.preservePending ?? true,
         setAsCurrent: !isolatedSession,
       });
+      const recovery = options?.recovery ?? null;
+      if (
+        recovery
+        && recovery.originalPath === path
+        && recovery.baseContent === fullContent
+        && recovery.content !== fullContent
+      ) {
+        applyRecoveryDraftContent(identity, recovery.content, recovery.revision);
+      }
       const memo = isExternalDocument ? null : getMemoSnapshot(memoId);
       const createdAt = memo?.createdAt ? formatDateTime(memo.createdAt, getCurrentAppLanguage()) : '';
       const updatedAt = memo?.updatedAt ? formatDateTime(memo.updatedAt, getCurrentAppLanguage()) : '';
@@ -95,7 +111,11 @@ export function useDocumentContent({
       // from the first Markdown heading would make an existing document look
       // newly created and is invalid once the title lives outside Markdown.
       const isNew = false;
-      const initialContent = buf.content;
+      const initialContent = recovery
+        && recovery.originalPath === path
+        && recovery.baseContent === fullContent
+        ? recovery.content
+        : buf.content;
       const initialBody = extractBodyContent(initialContent);
       const initialCharCount = countTextUnits(initialBody);
 
@@ -150,7 +170,8 @@ export function useDocumentContent({
       }
       const stagedContent = consumeStagedDocumentSnapshot(identity, path);
       if (stagedContent !== null) {
-        applyLoadedContent(path, stagedContent, { preservePending: true });
+        const recovery = await readRecoveryDraft(identity).catch(() => null);
+        applyLoadedContent(path, stagedContent, { preservePending: true, recovery });
         logOpenDocPerf('reloadDocument:staged', startedAt, {
           memoId,
           transitionId,
@@ -226,7 +247,12 @@ export function useDocumentContent({
         }
 
         if (currentLoadId !== counter.current) return;
-        applyLoadedContent(readPath, fullContent, { preservePending: options?.preservePending });
+        const recovery = await readRecoveryDraft(identity).catch(() => null);
+        if (currentLoadId !== counter.current) return;
+        applyLoadedContent(readPath, fullContent, {
+          preservePending: options?.preservePending,
+          recovery,
+        });
         logOpenDocPerf('reloadDocument:loaded', startedAt, {
           memoId,
           transitionId,

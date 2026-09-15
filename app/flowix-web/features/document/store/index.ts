@@ -15,6 +15,11 @@ export {
   consumeSelfDocumentPathUpdate,
   markSelfDocumentPathUpdate,
   recordDocumentEdit,
+  registerDocumentCapture,
+  captureLatestDocumentContent,
+  protectDocumentDraft,
+  applyRecoveryDraftContent,
+  prepareDocumentLeave,
   saveDocumentContent,
   flushDocumentPath,
   getDocumentBuffer,
@@ -33,4 +38,9 @@ export {
 } from '@features/document/store/document-identity';
 export type { DocumentBuffer } from '@features/document/store/document-buffer';
 export { subscribeDocumentBufferChanges } from '@features/document/store/buffer-registry';
+export {
+  readRecoveryDraft,
+  listRecoveryDrafts,
+  type RecoveryDraft,
+} from '@features/document/store/recovery-draft-store';
 export { useDocumentMetricsStore } from '@features/document/store/document-metrics-store';

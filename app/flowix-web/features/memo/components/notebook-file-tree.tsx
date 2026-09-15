@@ -1,54 +1,78 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import {
-  FilePlusIcon,
-  FolderPlusIcon,
-  LinkIcon,
-  PencilSimpleIcon,
-  TrashSimpleIcon,
-} from '@phosphor-icons/react';
-import { ChevronRight, File, FolderPlus, MoreHorizontal, Plus } from 'lucide-react';
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
+import { File } from 'lucide-react';
+import { FolderPlus } from 'lucide-react';
 
-import { canonicalPath } from '@/lib/path';
+import {
+  canonicalDirectoryPath,
+  canonicalPath,
+  parentDirectoryPath,
+  pathInDirectory,
+  samePath,
+  uniquePaths,
+} from '@/lib/path';
+import { createLogger } from '@/lib/logger';
 import { toast } from '@/lib/toast';
 import { cn, displayTitleFromFilename } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { useComposingValue } from '@shared/hooks/use-composing-value';
 import { OverlayScrollbar } from '@shared/ui/overlay-scrollbar';
 import { FileTypeIcon } from '@features/memo/components/file-type-icon';
-import { MemoCardActions } from '@features/memo/components/memo-card-actions';
-import { memoRepository } from '@features/memo/services/memo-repository';
-import { MEMO_COLOR_HEX, useMemoStore, type MemoColor, type MemoItem } from '@features/memo';
+import { useMemoStore } from '@features/memo';
 import { useDocumentStore } from '@features/document/store';
-import { resolveMemoByPath } from '@features/memo/use-cases/open-by-target';
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-  useContextMenuContext,
-} from '@shared/ui/context-menu';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@shared/ui/dialog';
+  elementFromExternalDropPosition,
+  EXTERNAL_FILE_DROP_EVENT,
+  type ExternalDropPosition,
+  type ExternalFileDropDetail,
+} from '@features/document/components/use-markdown-file-drop';
+import { resolveMemoByPath } from '@features/memo/use-cases/open-by-target';
 import folderIcon from '@/assets/folder-outline.svg?raw';
-import type { FolderTreeController } from '@features/memo/components/use-folder-tree';
-import { getPropertyIconOption } from '@features/document/properties/property-icons';
-import { files, memos, type DocTreeItem } from '@platform/tauri/client';
+import {
+  flattenLoadedTree,
+  flattenVisibleTree,
+  type FolderTreeController,
+} from '@features/memo/components/use-folder-tree';
+import { NotebookTreeRow } from '@features/memo/components/notebook-tree-row';
+import { files, memos, type DocTreeItem, type DocTreeResourceKind } from '@platform/tauri/client';
+import { resourceKindFromPath } from '@features/editor/code-file';
 
 const TREE_EDGE_GUTTER = 6;
 const INDENT_PER_LEVEL = 20;
+const logger = createLogger('notebook-file-tree');
 // Row gutter (6px) + inline padding (6px) + half of the 12px caret.
 const FOLDER_CARET_CENTER_OFFSET = 12;
-const TREE_MENU_CLASS =
-  'w-[180px] space-y-0.5 rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]';
-const TREE_MENU_ITEM_CLASS =
-  'h-7 items-center justify-start rounded-lg px-2 py-0 text-left transition-colors hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]';
-const TREE_MENU_DIVIDER_CLASS = 'mx-1 my-1 h-px bg-[var(--border-popup)] opacity-60';
 
-function canonicalDirectoryPath(path: string): string {
-  const canonical = canonicalPath(path);
-  const trimmed = canonical.replace(/\/+$/, '');
-  return trimmed || (canonical.startsWith('/') ? '/' : canonical);
+function resolveDropDirectory(
+  hit: Element | null,
+  treeRoot: HTMLElement,
+  notebookPath: string,
+): string | null {
+  if (!hit || !treeRoot.contains(hit)) return null;
+
+  // A folder group (or a note row inside it) is more specific than the tree
+  // root. Only fall back to root when no concrete drop target was hit.
+  const concreteTarget = hit.closest<HTMLElement>('[data-notebook-drop-path]');
+  return concreteTarget?.dataset.notebookDropPath ?? notebookPath;
+}
+
+function resolveExternalDropDirectory(
+  position: ExternalDropPosition | null,
+  treeRoot: HTMLElement,
+  notebookPath: string,
+): string | null {
+  const hit = elementFromExternalDropPosition(position);
+  return hit ? resolveDropDirectory(hit, treeRoot, notebookPath) : null;
 }
 
 
@@ -62,6 +86,17 @@ export interface NotebookNoteCreateRequest {
   parentPath: string;
 }
 
+export interface NotebookMoveResult {
+  movedPaths: string[];
+  failedPaths: string[];
+}
+
+export interface NotebookMoveSource {
+  path: string;
+  memoId?: string;
+  resourceKind?: DocTreeResourceKind | null;
+}
+
 interface NotebookFileTreeProps {
   notebookPath: string;
   notebookName: string;
@@ -73,12 +108,17 @@ interface NotebookFileTreeProps {
   onNoteSelect: (filePath: string) => void;
   onNoteOpenInNewTab?: (filePath: string) => void;
   onCreateNote: (parentPath: string, title: string) => Promise<void> | void;
-  onMoveNote: (sourcePath: string, targetDirectoryPath: string) => Promise<void>;
+  onMoveNote: (
+    sources: NotebookMoveSource[],
+    targetDirectoryPath: string,
+  ) => Promise<NotebookMoveResult>;
   onDeleteFolder?: (folderPath: string) => Promise<void>;
 }
 
 interface PointerNoteDrag {
   sourcePath: string;
+  sourcePaths: string[];
+  sourceItems: NotebookMoveSource[];
   sourceName: string;
   pointerId: number;
   captureElement: HTMLElement;
@@ -95,13 +135,15 @@ interface NotebookTreeDraftState {
   value: string;
 }
 
+interface NotebookMoveFeedback {
+  paths: string[];
+  targetDirectoryPath: string;
+  status: 'moving' | 'success';
+}
+
 
 /**
- * 笔记本专用文件树。
- *
- * 这个组件有意不依赖 FolderFileTree：笔记树后续的选择模型、拖放、菜单与
- * 排序都可以独立演进。每个展开目录保留真实的递归 DOM 容器，使其标题和
- * 子列表可作为一个整体响应拖放状态。当前只共享底层目录读取 controller 和基础图标。
+ * Notebook file tree with selection, pointer dragging, and external drops.
  */
 export function NotebookFileTree({
   notebookPath,
@@ -120,10 +162,20 @@ export function NotebookFileTree({
   const { t } = useI18n();
   const [showScrollTopHint, setShowScrollTopHint] = useState(false);
   const [draft, setDraft] = useState<NotebookTreeDraftState | null>(null);
+  const [selectedFilePaths, setSelectedFilePaths] = useState<string[]>([]);
+  const [focusedTreePath, setFocusedTreePath] = useState<string | null>(null);
+  const selectedFilePathsRef = useRef<string[]>([]);
+  const selectionAnchorPathRef = useRef<string | null>(null);
   const pointerDragRef = useRef<PointerNoteDrag | null>(null);
+  const dropPendingRef = useRef(false);
+  const externalDropTargetPathRef = useRef<string | null>(null);
   const treeScrollerRef = useRef<HTMLDivElement | null>(null);
+  const externalDropSurfaceRef = useRef<HTMLDivElement | null>(null);
   const treeRootRef = useRef<HTMLDivElement | null>(null);
-  const suppressOpenPathRef = useRef<string | null>(null);
+  const dragPreviewRef = useRef<HTMLDivElement | null>(null);
+  const dragPreviewPositionRef = useRef({ x: 0, y: 0 });
+  const moveFeedbackTimerRef = useRef<number | null>(null);
+  const suppressOpenPathsRef = useRef<Set<string>>(new Set());
   const handledFolderRequestIdRef = useRef<number | null>(null);
   const handledNoteRequestIdRef = useRef<number | null>(null);
   const cancelledDraftRequestIdRef = useRef<number | null>(null);
@@ -132,12 +184,172 @@ export function NotebookFileTree({
   const [dragPreview, setDragPreview] = useState<{
     name: string;
     path: string;
-    x: number;
-    y: number;
+    count: number;
   } | null>(null);
+  const [moveFeedback, setMoveFeedback] = useState<NotebookMoveFeedback | null>(null);
+
+  const clearMoveFeedbackTimer = useCallback(() => {
+    if (moveFeedbackTimerRef.current === null) return;
+    window.clearTimeout(moveFeedbackTimerRef.current);
+    moveFeedbackTimerRef.current = null;
+  }, []);
+
+  useEffect(() => clearMoveFeedbackTimer, [clearMoveFeedbackTimer]);
+
+  const updateDragPreviewPosition = useCallback((x: number, y: number) => {
+    dragPreviewPositionRef.current = { x, y };
+    dragPreviewRef.current?.style.setProperty(
+      'transform',
+      `translate3d(${x}px, ${y}px, 0)`,
+    );
+  }, []);
+  const selectedFilePathSet = useMemo(
+    () => new Set(selectedFilePaths.map((path) => canonicalPath(path))),
+    [selectedFilePaths],
+  );
+  const loadedTreeItems = useMemo(() => flattenLoadedTree(tree), [tree]);
+  const visibleTreeItems = useMemo(() => flattenVisibleTree(tree), [tree]);
+  const visibleNotePaths = useMemo(
+    () => visibleTreeItems
+      .filter(({ item }) => item.type === 'document')
+      .map(({ item }) => item.fullPath),
+    [visibleTreeItems],
+  );
+  const memoIdByPath = useMemo(
+    () => new Map(
+      loadedTreeItems
+        .filter((item) => item.memoMeta?.id)
+        .map((item) => [canonicalPath(item.fullPath), item.memoMeta!.id] as const),
+    ),
+    [loadedTreeItems],
+  );
+  const treeItemByPath = useMemo(() => {
+    return new Map(loadedTreeItems.map((item) => [canonicalPath(item.fullPath), item] as const));
+  }, [loadedTreeItems]);
+  const treeItemPaths = useMemo(() => new Set(treeItemByPath.keys()), [treeItemByPath]);
+  const updateSelection = useCallback((paths: string[], anchorPath: string | null) => {
+    const nextPaths = uniquePaths(paths);
+    selectedFilePathsRef.current = nextPaths;
+    selectionAnchorPathRef.current = anchorPath;
+    setSelectedFilePaths(nextPaths);
+  }, []);
+  useEffect(() => {
+    const currentPaths = selectedFilePathsRef.current;
+    const nextPaths = currentPaths.filter((path) => treeItemPaths.has(canonicalPath(path)));
+    if (nextPaths.length === currentPaths.length) return;
+    const anchorPath = selectionAnchorPathRef.current;
+    updateSelection(
+      nextPaths,
+      anchorPath && nextPaths.some((path) => samePath(path, anchorPath))
+        ? anchorPath
+        : nextPaths[nextPaths.length - 1] ?? null,
+    );
+  }, [treeItemPaths, updateSelection]);
+  const focusTreeItem = useCallback((path: string) => {
+    setFocusedTreePath(path);
+    const row = Array.from(
+      treeRootRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? [],
+    ).find((candidate) => samePath(candidate.dataset.notebookTreePath ?? '', path));
+    row?.focus();
+  }, []);
+  const handleTreeItemKeyDown = useCallback((
+    path: string,
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ) => {
+    const currentIndex = visibleTreeItems.findIndex(({ item }) => samePath(item.fullPath, path));
+    if (currentIndex < 0) return;
+    const current = visibleTreeItems[currentIndex];
+    const nextVisibleItem = (step: number) => visibleTreeItems[currentIndex + step];
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const target = nextVisibleItem(event.key === 'ArrowDown' ? 1 : -1);
+      if (!target) return;
+      event.preventDefault();
+      focusTreeItem(target.item.fullPath);
+      return;
+    }
+    if (event.key === 'Home' || event.key === 'End') {
+      const target = event.key === 'Home'
+        ? visibleTreeItems[0]
+        : visibleTreeItems[visibleTreeItems.length - 1];
+      if (!target) return;
+      event.preventDefault();
+      focusTreeItem(target.item.fullPath);
+      return;
+    }
+
+    if (event.key === 'ArrowRight' && current.item.type === 'folder') {
+      const expanded = tree.expanded.has(canonicalPath(current.item.fullPath));
+      if (!expanded) {
+        event.preventDefault();
+        tree.toggle(current.item.fullPath);
+        return;
+      }
+      const child = nextVisibleItem(1);
+      if (child && child.depth > current.depth) {
+        event.preventDefault();
+        focusTreeItem(child.item.fullPath);
+      }
+      return;
+    }
+
+    if (event.key === 'ArrowLeft') {
+      if (current.item.type === 'folder'
+        && tree.expanded.has(canonicalPath(current.item.fullPath))) {
+        event.preventDefault();
+        tree.toggle(current.item.fullPath);
+        return;
+      }
+      const parent = visibleTreeItems
+        .slice(0, currentIndex)
+        .reverse()
+        .find(({ item, depth }) => item.type === 'folder' && depth < current.depth);
+      if (parent) {
+        event.preventDefault();
+        focusTreeItem(parent.item.fullPath);
+      }
+    }
+  }, [focusTreeItem, tree, visibleTreeItems]);
+  useEffect(() => {
+    const hasFocusedItem = focusedTreePath
+      && visibleTreeItems.some(({ item }) => samePath(item.fullPath, focusedTreePath));
+    if (hasFocusedItem) return;
+    const fallback = activeFilePath && visibleTreeItems.some(({ item }) => samePath(item.fullPath, activeFilePath))
+      ? activeFilePath
+      : visibleTreeItems[0]?.item.fullPath ?? null;
+    if (fallback !== focusedTreePath) setFocusedTreePath(fallback);
+  }, [activeFilePath, focusedTreePath, visibleTreeItems]);
+  const selectNote = useCallback((filePath: string, event?: ReactMouseEvent<HTMLDivElement>) => {
+    const currentPaths = selectedFilePathsRef.current;
+    const isToggle = Boolean(event?.ctrlKey || event?.metaKey);
+    const anchorPath = selectionAnchorPathRef.current;
+    const targetIndex = visibleNotePaths.findIndex((path) => samePath(path, filePath));
+    const anchorIndex = anchorPath
+      ? visibleNotePaths.findIndex((path) => samePath(path, anchorPath))
+      : -1;
+
+    if (event?.shiftKey && anchorIndex >= 0 && targetIndex >= 0) {
+      const start = Math.min(anchorIndex, targetIndex);
+      const end = Math.max(anchorIndex, targetIndex);
+      const range = visibleNotePaths.slice(start, end + 1);
+      updateSelection(isToggle ? [...currentPaths, ...range] : range, filePath);
+    } else if (isToggle) {
+      const nextPaths = currentPaths.some((path) => samePath(path, filePath))
+        ? currentPaths.filter((path) => !samePath(path, filePath))
+        : [...currentPaths, filePath];
+      updateSelection(nextPaths, filePath);
+    } else {
+      updateSelection([filePath], filePath);
+      onNoteSelect(filePath);
+    }
+  }, [onNoteSelect, updateSelection, visibleNotePaths]);
   const hasVisibleItems = tree.rootChildren.length > 0;
   const isRootDropTarget = dragOverFolderPath !== null
     && canonicalDirectoryPath(dragOverFolderPath) === canonicalDirectoryPath(notebookPath);
+  const treeFocusPath = focusedTreePath
+    ?? (activeFilePath && visibleTreeItems.some(({ item }) => samePath(item.fullPath, activeFilePath))
+      ? activeFilePath
+      : visibleTreeItems[0]?.item.fullPath ?? null);
 
   useEffect(() => {
     if (!activeFilePath || tree.loading) return;
@@ -221,29 +433,33 @@ export function NotebookFileTree({
 
   const handleRename = useCallback(async (item: DocTreeItem, nextName: string) => {
     const trimmed = nextName.trim();
+    const isNote = item.type === 'document'
+      && (item.resourceKind ?? resourceKindFromPath(item.name)) === 'note';
     const currentName = item.type === 'folder'
       ? item.name
-      : displayTitleFromFilename(item.name);
+      : isNote ? displayTitleFromFilename(item.name) : item.name;
     if (!trimmed || trimmed === currentName) return;
 
     try {
       if (item.type === 'folder') {
         await files.renameFolder(item.fullPath, trimmed, notebookPath);
       } else {
-        const resolved = await resolveMemoByPath(item.fullPath);
-        if (resolved?.memoId) {
+        const memoId = isNote
+          ? item.memoMeta?.id ?? (await resolveMemoByPath(item.fullPath))?.memoId
+          : null;
+        if (memoId) {
           // Indexed notes use the memo path so the index and active editor
           // keep the same identity after the rename. Unindexed Markdown files
           // still use the generic file rename API.
           const result = await memos.renameMemoTitle({
-            id: resolved.memoId,
+            id: memoId,
             title: trimmed,
             expectedFilename: item.name,
           });
           useMemoStore.getState().handleMemoUpdated(result.memo);
           useDocumentStore.getState().replaceActiveMemoPath(result.memo.id, result.path);
         } else {
-          const extension = item.name.match(/\.(md|markdown)$/i)?.[0] ?? '';
+          const extension = isNote ? item.name.match(/\.(md|markdown)$/i)?.[0] ?? '' : '';
           await files.rename(item.fullPath, `${trimmed}${extension}`, notebookPath);
         }
       }
@@ -279,12 +495,18 @@ export function NotebookFileTree({
     const hasDraftChild = item.type === 'folder'
       && draft !== null
       && canonicalDirectoryPath(draft.parentPath) === canonicalDirectoryPath(item.fullPath);
-    // 空文件夹仍保留 folder group，但子树固定为 0 高，避免 0fr/1fr
-    // 动画与子列表的 padding 产生无内容的高度抖动。
+    // Folder groups own the drop target so child rows do not intercept it.
     const hasSubtreeContent = childItems.length > 0 || hasDraftChild;
     const isDropTarget = item.type === 'folder'
       && dragOverFolderPath !== null
       && canonicalDirectoryPath(item.fullPath) === canonicalDirectoryPath(dragOverFolderPath);
+    const isMovingTarget = item.type === 'folder'
+      && moveFeedback !== null
+      && samePath(item.fullPath, moveFeedback.targetDirectoryPath);
+    const isMovingSource = item.type === 'document'
+      && moveFeedback !== null
+      && moveFeedback.paths.some((path) => samePath(path, item.fullPath));
+    const moveStatus = isMovingTarget || isMovingSource ? moveFeedback?.status : undefined;
 
     return (
       <div
@@ -320,29 +542,51 @@ export function NotebookFileTree({
           expanded={expanded}
           active={item.type === 'document' && Boolean(activeFilePath)
             && canonicalPath(item.fullPath) === canonicalPath(activeFilePath!)}
+          selected={item.type === 'document' && selectedFilePathSet.has(canonicalPath(item.fullPath))}
+          moveStatus={moveStatus}
           onToggle={() => tree.toggle(item.fullPath)}
-          onOpen={() => {
-            if (suppressOpenPathRef.current === item.fullPath) {
-              suppressOpenPathRef.current = null;
+          onOpen={(event) => {
+            if (suppressOpenPathsRef.current.has(canonicalPath(item.fullPath))) {
               return;
             }
-            onNoteSelect(item.fullPath);
+            selectNote(item.fullPath, event);
           }}
           onOpenInNewTab={onNoteOpenInNewTab
             ? () => onNoteOpenInNewTab(item.fullPath)
             : undefined}
-          dropTargetPath={item.type === 'folder' ? item.fullPath : isFolderParent(item, notebookPath)}
           onCreateNote={() => requestCreateDraft(isFolderParent(item, notebookPath), 'note')}
           onCreateFolder={() => requestCreateDraft(isFolderParent(item, notebookPath), 'folder')}
           onRename={(nextName) => handleRename(item, nextName)}
+          tabIndex={treeFocusPath && samePath(treeFocusPath, item.fullPath) ? 0 : -1}
+          onFocus={() => setFocusedTreePath(item.fullPath)}
+          onKeyDown={(event) => handleTreeItemKeyDown(item.fullPath, event)}
           onDeleteFolder={item.type === 'folder' && onDeleteFolder
             ? () => onDeleteFolder(item.fullPath)
             : undefined}
           onPointerDown={(event) => {
-            if (item.type !== 'document') return;
+            if (item.type !== 'document' || dropPendingRef.current) return;
+            const currentPaths = selectedFilePathsRef.current;
+            const isSelected = currentPaths.some((path) => samePath(path, item.fullPath));
+            const hasModifier = event.shiftKey || event.ctrlKey || event.metaKey;
+            const sourcePaths = isSelected ? currentPaths : [item.fullPath];
+            const sourceItems = sourcePaths.map((path) => {
+              const sourceItem = path === item.fullPath ? item : treeItemByPath.get(canonicalPath(path));
+              const memoId = memoIdByPath.get(canonicalPath(path));
+              const resourceMetadata = sourceItem?.resourceKind
+                ? { resourceKind: sourceItem.resourceKind }
+                : {};
+              return memoId
+                ? { path, memoId, ...resourceMetadata }
+                : { path, ...resourceMetadata };
+            });
+            if (!isSelected && !hasModifier) {
+              updateSelection([item.fullPath], item.fullPath);
+            }
             event.currentTarget.setPointerCapture(event.pointerId);
             pointerDragRef.current = {
               sourcePath: item.fullPath,
+              sourcePaths,
+              sourceItems,
               sourceName: displayTitleFromFilename(item.name),
               pointerId: event.pointerId,
               captureElement: event.currentTarget,
@@ -401,29 +645,164 @@ export function NotebookFileTree({
 
   const handleDrop = useCallback(async (
     targetDirectoryPath: string,
-    sourcePathOverride?: string,
+    sourceItemsOverride?: NotebookMoveSource[],
   ) => {
-    const sourcePath = sourcePathOverride || pointerDragRef.current?.sourcePath || null;
-    if (!sourcePath) return;
+    if (dropPendingRef.current) return;
+    const sourceItems = sourceItemsOverride ?? pointerDragRef.current?.sourceItems ?? [];
+    const sourcePaths = sourceItems.map((source) => source.path);
+    if (sourcePaths.length === 0) return;
+    const targetPath = canonicalDirectoryPath(targetDirectoryPath);
+    const movableSourceItems = sourceItems.filter(
+      (source) => parentDirectoryPath(source.path, notebookPath) !== targetPath,
+    );
+    const movableSourcePaths = movableSourceItems.map((source) => source.path);
     pointerDragRef.current = null;
     setDragOverFolderPath(null);
     setDragPreview(null);
+    if (movableSourcePaths.length === 0) return;
+    dropPendingRef.current = true;
+    clearMoveFeedbackTimer();
+    setMoveFeedback({
+      paths: movableSourcePaths,
+      targetDirectoryPath: targetPath,
+      status: 'moving',
+    });
     try {
-      await onMoveNote(sourcePath, targetDirectoryPath);
-      const sourceParent = sourcePath.slice(0, sourcePath.lastIndexOf('/')) || notebookPath;
-      await tree.refresh(sourceParent);
-      if (canonicalPath(sourceParent) !== canonicalPath(targetDirectoryPath)) {
-        await tree.refresh(targetDirectoryPath);
+      const startedAt = performance.now();
+      const moveResult = await onMoveNote(movableSourceItems, targetDirectoryPath);
+      const moveFinishedAt = performance.now();
+      const rootPath = canonicalDirectoryPath(notebookPath);
+      const sourceParents = uniquePaths(
+        movableSourcePaths.map((sourcePath) => parentDirectoryPath(sourcePath, notebookPath)),
+      ).filter((path) => (
+        path === rootPath || path.startsWith(`${rootPath}/`)
+      ));
+      const refreshPaths = moveResult.movedPaths.length > 0
+        ? [...sourceParents, targetDirectoryPath]
+        : sourceParents;
+      await Promise.all(uniquePaths(refreshPaths).map((path) => tree.refresh(path)));
+      const refreshFinishedAt = performance.now();
+      logger.debug('notebook tree drop completed', {
+        requestedCount: movableSourcePaths.length,
+        movedCount: moveResult.movedPaths.length,
+        failedCount: moveResult.failedPaths.length,
+        moveDurationMs: Math.round(moveFinishedAt - startedAt),
+        refreshDurationMs: Math.round(refreshFinishedAt - moveFinishedAt),
+        totalDurationMs: Math.round(refreshFinishedAt - startedAt),
+      });
+
+      const unchangedSelection = sourcePaths.filter((sourcePath) => (
+        parentDirectoryPath(sourcePath, notebookPath) === targetPath
+      ));
+      const nextSelection = uniquePaths([
+        ...moveResult.movedPaths,
+        ...moveResult.failedPaths,
+        ...unchangedSelection,
+      ]);
+      const selectedAnchor = selectionAnchorPathRef.current;
+      const movedAnchor = selectedAnchor
+        ? moveResult.movedPaths.find((path) => (
+          samePath(path, pathInDirectory(targetPath, selectedAnchor))
+        ))
+        : null;
+      const nextAnchor = movedAnchor
+        ?? (selectedAnchor && moveResult.failedPaths.some((path) => samePath(path, selectedAnchor))
+          ? selectedAnchor
+          : selectedAnchor && unchangedSelection.some((path) => samePath(path, selectedAnchor))
+            ? selectedAnchor
+            : nextSelection[nextSelection.length - 1] ?? null);
+      updateSelection(nextSelection, nextAnchor);
+      if (moveResult.movedPaths.length > 0) {
+        setMoveFeedback({
+          paths: moveResult.movedPaths,
+          targetDirectoryPath: targetPath,
+          status: 'success',
+        });
+        moveFeedbackTimerRef.current = window.setTimeout(() => {
+          moveFeedbackTimerRef.current = null;
+          setMoveFeedback(null);
+        }, 450);
+      } else {
+        setMoveFeedback(null);
+      }
+      if (moveResult.failedPaths.length > 0) {
+        toast.error(t('memo.fileTree.movePartialFailed', {
+          moved: moveResult.movedPaths.length,
+          failed: moveResult.failedPaths.length,
+        }));
       }
     } catch (error) {
+      clearMoveFeedbackTimer();
+      setMoveFeedback(null);
       toast.error(t(String(error).includes('FILE_EXISTS')
         ? 'memo.fileTree.nameConflict'
         : 'memo.fileTree.moveFailed'));
+    } finally {
+      dropPendingRef.current = false;
     }
-  }, [notebookPath, onMoveNote, t, tree.refresh]);
+  }, [clearMoveFeedbackTimer, notebookPath, onMoveNote, t, tree.refresh, updateSelection]);
+
+  useEffect(() => {
+    const dropSurface = externalDropSurfaceRef.current;
+    if (!dropSurface) return;
+
+    const updateExternalDropTarget = (detail: ExternalFileDropDetail) => {
+      if (dropPendingRef.current) {
+        externalDropTargetPathRef.current = null;
+        setDragOverFolderPath(null);
+        return;
+      }
+      if (detail.type === 'leave' || detail.paths.length === 0) {
+        externalDropTargetPathRef.current = null;
+        if (!pointerDragRef.current) setDragOverFolderPath(null);
+        return;
+      }
+
+      const targetDirectoryPath = resolveExternalDropDirectory(
+        detail.position,
+        dropSurface,
+        notebookPath,
+      );
+      const targetPath = targetDirectoryPath
+        ? canonicalDirectoryPath(targetDirectoryPath)
+        : null;
+      const canDrop = targetPath !== null && detail.paths.some((path) => (
+        parentDirectoryPath(path, notebookPath) !== targetPath
+      ));
+      const nextTargetPath = canDrop ? targetPath : null;
+      const previousTargetPath = externalDropTargetPathRef.current;
+      externalDropTargetPathRef.current = nextTargetPath;
+      if (previousTargetPath !== nextTargetPath) {
+        setDragOverFolderPath(nextTargetPath);
+      }
+
+      if (detail.type !== 'drop' || !nextTargetPath) return;
+      externalDropTargetPathRef.current = null;
+      void handleDrop(nextTargetPath, detail.paths.map((path) => ({
+        path,
+        resourceKind: resourceKindFromPath(path),
+      })));
+    };
+
+    const onExternalFileDrop = (event: Event) => {
+      const detail = (event as CustomEvent<ExternalFileDropDetail>).detail;
+      if (!detail) return;
+      updateExternalDropTarget(detail);
+    };
+
+    window.addEventListener(EXTERNAL_FILE_DROP_EVENT, onExternalFileDrop);
+    return () => {
+      window.removeEventListener(EXTERNAL_FILE_DROP_EVENT, onExternalFileDrop);
+      externalDropTargetPathRef.current = null;
+    };
+  }, [handleDrop, notebookPath]);
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col select-none bg-[var(--card)] text-[var(--foreground)]">
+    <div
+      ref={externalDropSurfaceRef}
+      data-notebook-external-drop-target="true"
+      className="relative flex h-full min-h-0 flex-col select-none bg-[var(--card)] text-[var(--foreground)]"
+    >
       <div className="relative min-h-0 flex-1">
         <OverlayScrollbar
           className="h-full"
@@ -449,18 +828,12 @@ export function NotebookFileTree({
               </button>
             )}
           </div>
-          {!hasVisibleItems && !tree.loading && !draft && (
-            <div className="px-4 py-6 text-center text-xs text-[var(--muted-foreground)]">
-              {tree.error ? t('memo.fileTree.unreadableHint') : t('memo.fileTree.empty')}
-            </div>
-          )}
-
           <div
             ref={treeRootRef}
             role="tree"
+            aria-multiselectable="true"
             aria-label={notebookName}
             data-notebook-tree-root="true"
-            data-notebook-drop-path={notebookPath}
             className={cn(
               'relative rounded-lg transition-colors duration-150',
               isRootDropTarget && 'bg-[color-mix(in_oklch,var(--brand)_10%,transparent)]',
@@ -472,27 +845,31 @@ export function NotebookFileTree({
                 const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
                 if (distance < 5) return;
                 drag.active = true;
+                setDragPreview({
+                  name: drag.sourceName,
+                  path: drag.sourcePath,
+                  count: drag.sourcePaths.length,
+                });
               }
               event.preventDefault();
-              setDragPreview({
-                name: drag.sourceName,
-                path: drag.sourcePath,
-                x: event.clientX + 12,
-                y: event.clientY + 12,
-              });
+              updateDragPreviewPosition(event.clientX + 12, event.clientY + 12);
               const hit = document.elementFromPoint(event.clientX, event.clientY);
+              const treeRoot = treeRootRef.current;
               const hitTree = hit?.closest<HTMLElement>('[data-notebook-tree-root="true"]');
-              const dropTarget = hitTree === treeRootRef.current
-                ? hit?.closest<HTMLElement>('[data-notebook-drop-path]')
+              const candidateDirectoryPath = hitTree === treeRoot
+                ? treeRoot ? resolveDropDirectory(hit, treeRoot, notebookPath) : null
                 : null;
-              // 每个可投放区域都带有自己的目录: 文件夹行/子树容器指向自身,
-              // 文件行指向所属目录。这样 hover 到展开文件夹的任意空白区域时,
-              // 仍然属于同一个 drop zone, 不需要精确命中文件夹标题行。
-              const targetDirectoryPath = hitTree === treeRootRef.current
-                ? dropTarget?.dataset.notebookDropPath ?? null
+              const targetDirectoryPath = candidateDirectoryPath
+                && drag.sourcePaths.some(
+                  (sourcePath) => parentDirectoryPath(sourcePath, notebookPath)
+                    !== canonicalDirectoryPath(candidateDirectoryPath),
+                )
+                ? candidateDirectoryPath
                 : null;
-              drag.targetDirectoryPath = targetDirectoryPath;
-              setDragOverFolderPath(targetDirectoryPath);
+              if (drag.targetDirectoryPath !== targetDirectoryPath) {
+                drag.targetDirectoryPath = targetDirectoryPath;
+                setDragOverFolderPath(targetDirectoryPath);
+              }
             }}
             onPointerUp={(event) => {
               const drag = pointerDragRef.current;
@@ -505,13 +882,16 @@ export function NotebookFileTree({
               setDragPreview(null);
               if (!drag.active || !drag.targetDirectoryPath) return;
               event.preventDefault();
-              suppressOpenPathRef.current = drag.sourcePath;
+              const suppressedPaths = new Set(
+                drag.sourcePaths.map((sourcePath) => canonicalPath(sourcePath)),
+              );
+              suppressOpenPathsRef.current = suppressedPaths;
               window.setTimeout(() => {
-                if (suppressOpenPathRef.current === drag.sourcePath) {
-                  suppressOpenPathRef.current = null;
+                if (suppressOpenPathsRef.current === suppressedPaths) {
+                  suppressOpenPathsRef.current = new Set();
                 }
               }, 0);
-              void handleDrop(drag.targetDirectoryPath, drag.sourcePath);
+              void handleDrop(drag.targetDirectoryPath, drag.sourceItems);
             }}
             onPointerCancel={(event) => {
               const drag = pointerDragRef.current;
@@ -521,6 +901,11 @@ export function NotebookFileTree({
               setDragPreview(null);
             }}
           >
+            {!hasVisibleItems && !tree.loading && !draft && (
+              <div className="px-4 py-6 text-center text-xs text-[var(--muted-foreground)]">
+                {tree.error ? t('memo.fileTree.unreadableHint') : t('memo.fileTree.empty')}
+              </div>
+            )}
             <div className="notebook-file-tree__items">
               {renderTreeItems(tree.rootChildren, 0, notebookPath)}
             </div>
@@ -529,11 +914,19 @@ export function NotebookFileTree({
         {dragPreview && (
           <div
             aria-hidden="true"
-            className="pointer-events-none fixed z-[100] flex h-8 max-w-[220px] items-center gap-1.5 rounded-lg border border-[var(--border-popup)] bg-[color-mix(in_oklch,var(--card)_88%,transparent)] px-2 text-sm text-[var(--foreground)] opacity-90 shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.35)] backdrop-blur-sm"
-            style={{ left: dragPreview.x, top: dragPreview.y }}
+            className="pointer-events-none fixed left-0 top-0 z-[100] flex h-8 max-w-[220px] items-center gap-1.5 rounded-lg border border-[var(--border-popup)] bg-[color-mix(in_oklch,var(--card)_88%,transparent)] px-2 text-sm text-[var(--foreground)] opacity-90 shadow-[0_4px_16px_-4px_rgb(0_0_0_/_0.35)] backdrop-blur-sm will-change-transform"
+            ref={(node) => {
+              dragPreviewRef.current = node;
+              if (node) {
+                const { x, y } = dragPreviewPositionRef.current;
+                node.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+              }
+            }}
           >
             <FileTypeIcon path={dragPreview.path} className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
-            <span className="truncate">{dragPreview.name}</span>
+            <span className="truncate">
+              {dragPreview.count > 1 ? t('memo.fileTree.draggingNotes', { count: dragPreview.count }) : dragPreview.name}
+            </span>
           </div>
         )}
         <div
@@ -618,407 +1011,6 @@ function NotebookTreeDraft({
         className="ml-1.5 h-5 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm outline-none"
       />
     </div>
-  );
-}
-
-function NotebookTreeRow({
-  item,
-  depth,
-  expanded,
-  active,
-  onToggle,
-  onOpen,
-  onOpenInNewTab,
-  dropTargetPath,
-  onCreateNote,
-  onCreateFolder,
-  onRename,
-  onDeleteFolder,
-  onPointerDown,
-}: {
-  item: DocTreeItem;
-  depth: number;
-  expanded: boolean;
-  active: boolean;
-  onToggle: () => void;
-  onOpen: () => void;
-  onOpenInNewTab?: () => void;
-  dropTargetPath: string;
-  onCreateNote: () => void;
-  onCreateFolder: () => void;
-  onRename: (nextName: string) => Promise<void> | void;
-  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  onDeleteFolder?: () => Promise<void>;
-}) {
-  const { t } = useI18n();
-  const isFolder = item.type === 'folder';
-  const [memo, setMemo] = useState<MemoItem | null>(null);
-  // The memo is initially loaded by path because the file tree can contain
-  // notes outside the currently loaded list query. Keep listening to the
-  // store as well so changes made from the work column are reflected here
-  // immediately, without requiring a tree refresh.
-  const storeMemo = useMemoStore((state) => {
-    if (!memo) return null;
-    return state.memos.find((candidate) => candidate.id === memo.id)
-      ?? (state.selectedMemo?.id === memo.id ? state.selectedMemo : null);
-  });
-  const displayedMemo = storeMemo ?? memo;
-  // `memo` is loaded from read_memo for the initial render. Once the memo
-  // store receives the write event, prefer that authoritative snapshot so
-  // property changes made in the document view appear without a tree refresh.
-  const noteIcon = !isFolder && displayedMemo
-    ? getPropertyIconOption(displayedMemo.icon ?? '')
-    : null;
-  const [contextMenuOpen, setContextMenuOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(
-    isFolder ? item.name : displayTitleFromFilename(item.name),
-  );
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const loadMemo = useCallback(async () => {
-    if (isFolder) return;
-    const resolved = await resolveMemoByPath(item.fullPath);
-    if (!resolved) return;
-    const loaded = await memos.readMemo(resolved.memoId);
-    if (loaded) setMemo(loaded);
-  }, [isFolder, item.fullPath]);
-
-  useEffect(() => {
-    void loadMemo();
-  }, [loadMemo]);
-
-  const toggleFavorite = useCallback(async (nextMemo: MemoItem) => {
-    await (nextMemo.favorited
-      ? memoRepository.unfavorite(nextMemo.id)
-      : memoRepository.favorite(nextMemo.id));
-    setMemo((current) => current?.id === nextMemo.id
-      ? { ...current, favorited: !nextMemo.favorited }
-      : current);
-    useMemoStore.getState().triggerRefresh();
-  }, []);
-
-  const changeColors = useCallback(async (nextMemo: MemoItem, colors: MemoColor[]) => {
-    await useMemoStore.getState().setMemoColors(nextMemo.id, colors);
-    setMemo((current) => current?.id === nextMemo.id
-      ? { ...current, colors }
-      : current);
-  }, []);
-
-  const requestDelete = useCallback((nextMemo: MemoItem) => {
-    window.dispatchEvent(new CustomEvent<MemoItem>('flowix:request-delete-memo', {
-      detail: nextMemo,
-    }));
-  }, []);
-
-  const confirmFolderDelete = useCallback(async () => {
-    if (!onDeleteFolder || deleting) return;
-    setDeleting(true);
-    try {
-      await onDeleteFolder();
-      setConfirmDelete(false);
-    } finally {
-      setDeleting(false);
-    }
-  }, [deleting, onDeleteFolder]);
-
-  const submitRename = useCallback(() => {
-    if (!renaming) return;
-    setRenaming(false);
-    void onRename(renameValue);
-  }, [onRename, renameValue, renaming]);
-
-  const cancelRename = useCallback(() => {
-    setRenaming(false);
-    setRenameValue(isFolder ? item.name : displayTitleFromFilename(item.name));
-  }, [isFolder, item.name]);
-
-  return (
-    <>
-      <ContextMenu onOpenChange={(open) => {
-        setContextMenuOpen(open);
-        if (open) void loadMemo();
-      }}>
-      <ContextMenuTrigger asChild>
-        <div
-          role="treeitem"
-          aria-expanded={isFolder ? expanded : undefined}
-          aria-selected={!isFolder ? active : undefined}
-          tabIndex={0}
-          data-notebook-drop-path={dropTargetPath}
-          data-notebook-tree-kind={isFolder ? 'folder' : 'note'}
-          title={item.fullPath}
-          onClick={isFolder ? onToggle : onOpen}
-          onDoubleClick={!isFolder && onOpenInNewTab ? onOpenInNewTab : undefined}
-          onPointerDown={(event) => {
-            if (renaming) {
-              event.stopPropagation();
-              return;
-            }
-            if (isFolder || event.button !== 0) return;
-            onPointerDown(event);
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter' && event.key !== ' ') return;
-            event.preventDefault();
-            if (isFolder) onToggle(); else onOpen();
-          }}
-          className={cn(
-            'folder-file-tree__item group relative flex h-8 cursor-pointer items-center rounded-lg px-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--brand)]',
-            active
-              ? 'bg-[var(--muted)] font-medium text-[var(--foreground)]'
-              : cn('hover:bg-[var(--muted)]', contextMenuOpen && 'bg-[var(--muted)] text-[var(--foreground)]'),
-          )}
-          style={{
-            marginLeft: TREE_EDGE_GUTTER + depth * INDENT_PER_LEVEL,
-            width: `calc(100% - ${TREE_EDGE_GUTTER * 2 + depth * INDENT_PER_LEVEL}px)`,
-          }}
-        >
-      {renaming ? (
-        <>
-          <span
-            aria-hidden="true"
-            className={cn(
-              'relative flex h-[15px] w-[15px] shrink-0 items-center justify-center',
-              isFolder
-                ? 'text-[var(--brand)]'
-                : 'text-[color-mix(in_oklch,var(--foreground)_90%,white_10%)]',
-            )}
-          >
-            {isFolder ? (
-              <span
-                className="absolute inset-0 flex items-center justify-center"
-                dangerouslySetInnerHTML={{ __html: folderIcon }}
-              />
-            ) : (
-              <File aria-hidden="true" className="h-[15px] w-[15px]" strokeWidth={1.3} />
-            )}
-          </span>
-          <input
-            autoFocus
-            value={renameValue}
-            onChange={(event) => setRenameValue(event.target.value)}
-            onBlur={submitRename}
-            onKeyDown={(event) => {
-              event.stopPropagation();
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                submitRename();
-              } else if (event.key === 'Escape') {
-                event.preventDefault();
-                cancelRename();
-              }
-            }}
-            onClick={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
-            className="ml-1.5 h-5 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm outline-none"
-          />
-        </>
-      ) : (
-        <>
-          {isFolder ? (
-            <span aria-hidden="true" className="relative h-[15px] w-[15px] shrink-0 text-[var(--brand)]">
-              <span
-                className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0"
-                dangerouslySetInnerHTML={{ __html: folderIcon }}
-              />
-              <ChevronRight className={cn(
-                'absolute inset-0 h-[15px] w-[15px] opacity-0 transition-[opacity,transform] duration-150 group-hover:opacity-100 group-focus-visible:opacity-100',
-                expanded && 'rotate-90',
-              )} />
-            </span>
-          ) : (
-            <span className="relative flex h-[15px] w-[15px] shrink-0 items-center justify-center text-[color-mix(in_oklch,var(--foreground)_90%,white_10%)]">
-              {noteIcon ? (
-                <img
-                  src={noteIcon.src}
-                  alt=""
-                  aria-hidden="true"
-                  className="h-[15px] w-[15px] object-contain"
-                  draggable={false}
-                />
-              ) : (
-                <File aria-hidden="true" className="h-[15px] w-[15px]" strokeWidth={1.3} />
-              )}
-            </span>
-          )}
-          <span className={cn(
-            'min-w-0 flex-1 truncate',
-            'ml-1.5',
-            !isFolder && 'text-[color-mix(in_oklch,var(--foreground)_90%,transparent)]',
-          )}>
-            {isFolder ? item.name : displayTitleFromFilename(item.name)}
-          </span>
-          {isFolder && (
-            <span className={cn(
-              'pointer-events-none ml-1 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-visible:pointer-events-auto group-focus-visible:opacity-100',
-              contextMenuOpen && 'pointer-events-auto opacity-100',
-            )}>
-              <button
-                type="button"
-                aria-label={t('memo.fileTree.newNote')}
-                title={t('memo.fileTree.newNote')}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onCreateNote();
-                }}
-                onKeyDown={(event) => event.stopPropagation()}
-                className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand)]"
-              >
-                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                aria-label={t('memo.fileTree.newFolder')}
-                title={t('memo.fileTree.newFolder')}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onCreateFolder();
-                }}
-                onKeyDown={(event) => event.stopPropagation()}
-                className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand)]"
-              >
-                <FolderPlus className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            </span>
-          )}
-        </>
-      )}
-      {!renaming && !isFolder && displayedMemo && displayedMemo.colors.length > 0 && (
-        <span
-          aria-label="Note colors"
-          className="ml-2 inline-flex h-6 shrink-0 items-center justify-center gap-0.5 px-2"
-        >
-          {displayedMemo.colors.map((color) => (
-            <span
-              key={color}
-              aria-hidden="true"
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: MEMO_COLOR_HEX[color] }}
-            />
-          ))}
-        </span>
-      )}
-      {!renaming && (
-        <NotebookTreeMoreButton
-          label={t('memo.fileTree.moreActions')}
-          active={contextMenuOpen}
-        />
-      )}
-        </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent className={TREE_MENU_CLASS}>
-        <ContextMenuItem onClick={onCreateNote} className={TREE_MENU_ITEM_CLASS}>
-          <FilePlusIcon className="mr-2 h-4 w-4" />
-          {t('memo.fileTree.newNote')}
-        </ContextMenuItem>
-        <ContextMenuItem onClick={onCreateFolder} className={TREE_MENU_ITEM_CLASS}>
-          <FolderPlusIcon className="mr-2 h-4 w-4" />
-          {t('memo.fileTree.newFolder')}
-        </ContextMenuItem>
-        <ContextMenuItem
-          onClick={() => {
-            setRenameValue(isFolder ? item.name : displayTitleFromFilename(item.name));
-            setRenaming(true);
-          }}
-          className={TREE_MENU_ITEM_CLASS}
-        >
-          <PencilSimpleIcon className="mr-2 h-4 w-4" />
-          {t('memo.fileTree.rename')}
-        </ContextMenuItem>
-        {isFolder && onDeleteFolder && (
-          <ContextMenuItem
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(item.fullPath);
-                toast.success(t('memo.fileTree.pathCopied'));
-              } catch {
-                toast.error(t('memo.fileTree.copyFailed'));
-              }
-            }}
-            className={TREE_MENU_ITEM_CLASS}
-          >
-            <LinkIcon className="mr-2 h-4 w-4" />
-            {t('memo.fileTree.copyLink')}
-          </ContextMenuItem>
-        )}
-        {isFolder && onDeleteFolder && (
-          <>
-            <div role="separator" aria-hidden="true" className={TREE_MENU_DIVIDER_CLASS} />
-            <ContextMenuItem
-              onClick={() => setConfirmDelete(true)}
-              className={cn(TREE_MENU_ITEM_CLASS, 'hover:bg-transparent hover:text-[var(--destructive)]')}
-            >
-              <TrashSimpleIcon className="mr-2 h-4 w-4" />
-              {t('memo.fileTree.delete')}
-            </ContextMenuItem>
-          </>
-        )}
-        {!isFolder && (
-          <div role="separator" aria-hidden="true" className={TREE_MENU_DIVIDER_CLASS} />
-        )}
-        {!isFolder && displayedMemo && (
-          <MemoCardActions
-            memo={displayedMemo}
-            onOpenInSplit={onOpenInNewTab
-              ? () => onOpenInNewTab()
-              : undefined}
-            onFavoriteToggle={(nextMemo) => { void toggleFavorite(nextMemo); }}
-            onDelete={requestDelete}
-            onColorsChange={(nextMemo, colors) => { void changeColors(nextMemo, colors); }}
-            Item={ContextMenuItem}
-          />
-        )}
-        {!isFolder && !memo && (
-          <ContextMenuItem disabled className={TREE_MENU_ITEM_CLASS}>
-            {t('memo.fileTree.loading')}
-          </ContextMenuItem>
-        )}
-      </ContextMenuContent>
-      </ContextMenu>
-      <Dialog open={confirmDelete} onOpenChange={(open) => { if (!open && !deleting) setConfirmDelete(false); }}>
-        <DialogContent className="rounded-xl border border-[var(--border-popup)] bg-[var(--card)] shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]">
-          <DialogHeader>
-            <DialogTitle>{t('memo.fileTree.deleteFolderTitle')}</DialogTitle>
-            <DialogDescription>{t('memo.fileTree.deleteFolderDescription')}</DialogDescription>
-          </DialogHeader>
-          <div className="mt-4 flex justify-end gap-2">
-            <button type="button" disabled={deleting} onClick={() => setConfirmDelete(false)} className="h-8 rounded-lg px-3 text-sm hover:bg-[var(--muted)]">
-              {t('dialog.cancel')}
-            </button>
-            <button type="button" disabled={deleting} onClick={() => void confirmFolderDelete()} className="h-8 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 text-sm text-[var(--foreground)] hover:border-[var(--destructive)] hover:bg-[var(--destructive)] hover:text-white disabled:opacity-50">
-              {t('dialog.delete')}
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
-function NotebookTreeMoreButton({ label, active }: { label: string; active: boolean }) {
-  const { openAt } = useContextMenuContext();
-
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onPointerDown={(event) => event.stopPropagation()}
-      onClick={(event) => {
-        event.stopPropagation();
-        const rect = event.currentTarget.getBoundingClientRect();
-        openAt(rect.left, rect.bottom);
-      }}
-      onKeyDown={(event) => event.stopPropagation()}
-      className={cn(
-        'pointer-events-none ml-0 flex h-6 w-0 shrink-0 items-center justify-center overflow-hidden rounded-md text-[var(--muted-foreground)] opacity-0 transition-[width,margin,opacity,color] duration-[37.5ms] group-hover:pointer-events-auto group-hover:ml-1 group-hover:w-6 group-hover:opacity-100 hover:text-[var(--foreground)] focus-visible:pointer-events-auto focus-visible:ml-1 focus-visible:w-6 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand)]',
-        active && 'pointer-events-auto ml-1 w-6 opacity-100 text-[var(--foreground)]',
-      )}
-    >
-      <MoreHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
-    </button>
   );
 }
 

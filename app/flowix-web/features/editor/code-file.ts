@@ -4,6 +4,12 @@ const IMAGE_EXTENSIONS = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'ico', 'tif', 'tiff', 'heic',
 ]);
 
+const VIDEO_EXTENSIONS = new Set([
+  '3gp', 'avi', 'flv', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'mts', 'webm', 'wmv',
+]);
+
+export type ResourceKind = 'note' | 'image' | 'video' | 'other';
+
 // Keep this list aligned with the extension allowlist in
 // `supported_text_document_path` in the desktop external-document command.
 // All entries, including Markdown, are rendered as source text by CodeMirror
@@ -50,4 +56,21 @@ export function isEditableTextFilePath(path: string): boolean {
 
 export function isImageFilePath(path: string): boolean {
   return IMAGE_EXTENSIONS.has(fileExtension(path));
+}
+
+export function isVideoFilePath(path: string): boolean {
+  return VIDEO_EXTENSIONS.has(fileExtension(path));
+}
+
+/** Classify files shown by the notebook tree and external document view. */
+export function resourceKindFromPath(path: string): ResourceKind {
+  if (isMarkdownFilePath(path)) return 'note';
+  if (isImageFilePath(path)) return 'image';
+  if (isVideoFilePath(path)) return 'video';
+  return 'other';
+}
+
+export function isNotebookResourcePath(path: string): boolean {
+  const kind = resourceKindFromPath(path);
+  return kind === 'note' || kind === 'image' || kind === 'video';
 }

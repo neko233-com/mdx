@@ -56,6 +56,8 @@ export interface SaveContext {
    * 走新路径写。
    */
   key: string | null;
+  /** Immutable buffer revision represented by this save request. */
+  revision: number;
   /**
    * Read the current expectedContent (CAS expected value) just before the
    * IPC fires. Returning a fresh value here is what makes coalescing
@@ -69,11 +71,11 @@ export interface SaveContext {
    * `writtenPath` 是磁盘上最终物理路径 ── rename 后可能跟 caller
    * 传的 path 不同, 前端需要据此切 buf / 更新 closure。
    */
-  onSaved: (writtenPath: string, writtenContent: string) => void;
+  onSaved: (writtenPath: string, writtenContent: string, revision: number) => void;
   /** Called on CAS refusal (write returned false). */
-  onCasRefused: (writtenContent: string) => void;
+  onCasRefused: (writtenContent: string, revision: number) => void;
   /** Called on transport / IPC error. */
-  onError: (writtenContent: string, err: unknown) => void;
+  onError: (writtenContent: string, revision: number, err: unknown) => void;
 }
 
 interface QueueEntry {
@@ -182,17 +184,17 @@ async function runOne(ctx: SaveContext, content: string): Promise<boolean> {
           scopePath: ctx.scopePath,
         });
       if (result.status === 'saved') {
-        ctx.onSaved(result.path, result.content);
+        ctx.onSaved(result.path, result.content, ctx.revision);
         return true;
       }
       if (result.status === 'conflict') {
-        ctx.onCasRefused(content);
+        ctx.onCasRefused(content, ctx.revision);
         return false;
       }
       const message = result.status === 'missing'
         ? `External document is unavailable: ${ctx.path}`
         : result.message;
-      ctx.onError(content, new Error(message));
+      ctx.onError(content, ctx.revision, new Error(message));
       return false;
     }
     const result = await memosClient.writeDocument({
@@ -202,14 +204,14 @@ async function runOne(ctx: SaveContext, content: string): Promise<boolean> {
     });
     if (result !== null) {
       if (ctx.key) markMemoCommitApplied(ctx.key, result);
-      ctx.onSaved(result.path, result.content);
+      ctx.onSaved(result.path, result.content, ctx.revision);
       return true;
     }
-    ctx.onCasRefused(content);
+    ctx.onCasRefused(content, ctx.revision);
     return false;
   } catch (err) {
     console.error('[runOne] IPC threw', { path: ctx.path, err });
-    ctx.onError(content, err);
+    ctx.onError(content, ctx.revision, err);
     return false;
   }
 }

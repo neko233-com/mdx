@@ -8,7 +8,8 @@ use tauri::{AppHandle, State};
 use crate::lock_utils::read_lock;
 use crate::watcher::path::normalize_for_compare;
 use flowix_core::memo_file::{
-    notebook_path_from_relative, notebook_relative_path, Memo, MemoFile, MemoTodoEntry,
+    normalize_markdown_encoding_boundaries, notebook_path_from_relative, notebook_relative_path,
+    Memo, MemoFile, MemoTodoEntry,
 };
 use flowix_core::{FlowixError, MemoPage, MemoService};
 
@@ -276,7 +277,7 @@ pub fn open_memo_session(id: String, state: State<AppState>) -> Option<OpenMemoS
 
     start_security_bookmark_access(&state, &path);
     let content = match fs::read_to_string(&path) {
-        Ok(content) => content,
+        Ok(content) => normalize_markdown_encoding_boundaries(&content).into_owned(),
         Err(error) => {
             if error.kind() == std::io::ErrorKind::NotFound {
                 tracing::info!(
@@ -315,7 +316,9 @@ pub fn read_document(
     }
     let io_path = resolve_document_path_for_io(&file_path, state.inner());
     start_security_bookmark_access(&state, &io_path);
-    fs::read_to_string(&io_path).ok()
+    fs::read_to_string(&io_path)
+        .ok()
+        .map(|content| normalize_markdown_encoding_boundaries(&content).into_owned())
 }
 
 /// Resolve a document path for disk I/O, with a constrained stale-path fallback.

@@ -1,0 +1,31 @@
+import { Fragment, Suspense, type ReactNode } from 'react';
+import { CenteredLoadingSpinner } from './centered-loading-spinner';
+
+export type SurfaceLoadingTone = 'document' | 'agent';
+
+interface SurfaceSuspenseHostProps {
+  instanceKey: string;
+  loadingTone: SurfaceLoadingTone;
+  children: ReactNode;
+}
+
+export function SurfaceSuspenseHost({
+  instanceKey,
+  loadingTone,
+  children,
+}: SurfaceSuspenseHostProps) {
+  const fallbackClassName = loadingTone === 'agent'
+    ? 'bg-[var(--agent-surface-bg,var(--editor-block-bg,var(--document-bg)))]'
+    : '';
+  return (
+    <Suspense
+      fallback={(
+        <CenteredLoadingSpinner
+          className={`h-full ${fallbackClassName}`}
+        />
+      )}
+    >
+      <Fragment key={instanceKey}>{children}</Fragment>
+    </Suspense>
+  );
+}

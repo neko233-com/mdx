@@ -46,6 +46,7 @@ pub mod memo;
 pub mod notebook;
 pub mod plugin;
 pub mod product;
+pub mod recovery;
 pub mod settings;
 pub mod tag;
 pub mod thread;

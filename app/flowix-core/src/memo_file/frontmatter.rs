@@ -26,6 +26,7 @@
 //! 引号合法且无可读性损失)。body 字符串本身走 caller 传入的形态, merge
 //! 工具不动。
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 
@@ -36,6 +37,37 @@ use thiserror::Error;
 
 pub static FRONTMATTER_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^\u{FEFF}?---\r?\n([\s\S]*?)(?:\r?\n)?---\r?\n?([\s\S]*)$").unwrap());
+
+/// Canonicalize UTF-8 BOM placement for Markdown without touching U+FEFF in
+/// authored body content. Besides a true file-leading BOM, this recognizes
+/// the legacy Flowix shape where frontmatter injection displaced that BOM to
+/// the first character of the body.
+pub fn normalize_markdown_encoding_boundaries(content: &str) -> Cow<'_, str> {
+    let without_leading_bom = content.strip_prefix('\u{FEFF}').unwrap_or(content);
+    let Some(captures) = FRONTMATTER_RE.captures(without_leading_bom) else {
+        return if without_leading_bom.len() == content.len() {
+            Cow::Borrowed(content)
+        } else {
+            Cow::Borrowed(without_leading_bom)
+        };
+    };
+    let Some(body) = captures.get(2) else {
+        return Cow::Borrowed(without_leading_bom);
+    };
+    if !body.as_str().starts_with('\u{FEFF}') {
+        return if without_leading_bom.len() == content.len() {
+            Cow::Borrowed(content)
+        } else {
+            Cow::Borrowed(without_leading_bom)
+        };
+    }
+
+    let bom_start = body.start();
+    let mut normalized = String::with_capacity(without_leading_bom.len() - '\u{FEFF}'.len_utf8());
+    normalized.push_str(&without_leading_bom[..bom_start]);
+    normalized.push_str(&without_leading_bom[bom_start + '\u{FEFF}'.len_utf8()..]);
+    Cow::Owned(normalized)
+}
 
 /// 顶层 `key: value` 单行识别 (无引号 / 单引号 / 双引号 value 都识别)。
 ///
@@ -379,6 +411,13 @@ pub fn merge_frontmatter(content: &str, overrides: &MergeOverrides) -> String {
         return content.to_string();
     }
 
+    // A UTF-8 BOM is an encoding signature, not Markdown body content. Strip
+    // it only at the file boundary before adding or rewriting frontmatter so
+    // it can never be displaced behind the closing `---`. A U+FEFF anywhere
+    // else in the document remains untouched.
+    let normalized = normalize_markdown_encoding_boundaries(content);
+    let content = normalized.as_ref();
+
     let collapsed;
     let content = if let Some(next) = collapse_adjacent_override_frontmatter(content, overrides) {
         collapsed = next;
@@ -703,6 +742,61 @@ mod tests {
         let overrides: MergeOverrides = MergeOverrides::new();
         let input = "---\nkey: abc123\n---\nbody\n";
         assert_eq!(merge_frontmatter(input, &overrides), input);
+    }
+
+    #[test]
+    fn merge_strips_leading_bom_before_inserting_frontmatter() {
+        let mut overrides = MergeOverrides::new();
+        overrides.insert("key".to_string(), "abc123".to_string());
+
+        let out = merge_frontmatter("\u{FEFF}# Imported\n", &overrides);
+
+        assert_eq!(out, "---\nkey: abc123\n---\n\n# Imported\n");
+    }
+
+    #[test]
+    fn encoding_boundary_normalization_is_idempotent_and_scoped() {
+        let legacy = "---\nkey: abc123\n---\n\u{FEFF}body \u{FEFF} text\n";
+        let normalized = normalize_markdown_encoding_boundaries(legacy);
+
+        assert_eq!(normalized, "---\nkey: abc123\n---\nbody \u{FEFF} text\n");
+        assert!(matches!(
+            normalize_markdown_encoding_boundaries(normalized.as_ref()),
+            Cow::Borrowed(_)
+        ));
+    }
+
+    #[test]
+    fn merge_strips_leading_bom_before_updating_frontmatter() {
+        let mut overrides = MergeOverrides::new();
+        overrides.insert("key".to_string(), "abc123".to_string());
+
+        let out = merge_frontmatter("\u{FEFF}---\nkey: old999\n---\nbody\n", &overrides);
+
+        assert_eq!(out, "---\nkey: abc123\n---\nbody\n");
+    }
+
+    #[test]
+    fn merge_strips_legacy_bom_at_frontmatter_body_boundary() {
+        let mut overrides = MergeOverrides::new();
+        overrides.insert("key".to_string(), "abc123".to_string());
+
+        let out = merge_frontmatter(
+            "---\nkey: old999\n---\n\u{FEFF}<p>Imported</p>\n",
+            &overrides,
+        );
+
+        assert_eq!(out, "---\nkey: abc123\n---\n<p>Imported</p>\n");
+    }
+
+    #[test]
+    fn merge_preserves_bom_outside_the_file_boundary() {
+        let mut overrides = MergeOverrides::new();
+        overrides.insert("key".to_string(), "abc123".to_string());
+
+        let out = merge_frontmatter("body \u{FEFF} text\n", &overrides);
+
+        assert_eq!(out, "---\nkey: abc123\n---\n\nbody \u{FEFF} text\n");
     }
 
     #[test]

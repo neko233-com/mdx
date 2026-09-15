@@ -79,9 +79,7 @@ impl MemoFile {
                 } else {
                     &entry.relative_path
                 };
-                !super::ops::is_ignored_notebook_relative_path(
-                    std::path::Path::new(relative_path),
-                )
+                !super::ops::is_ignored_notebook_relative_path(std::path::Path::new(relative_path))
             })
             .map(MemoFile::index_entry_to_memo)
             .collect();

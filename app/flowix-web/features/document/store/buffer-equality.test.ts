@@ -37,4 +37,10 @@ describe('document buffer semantic equality', () => {
     const identity = { kind: 'external' as const, path: '/notes/readme.md' };
     expect(isDocumentContentEqual(identity, 'body\n', 'body')).toBe(true);
   });
+
+  it('ignores a legacy BOM displaced behind frontmatter', () => {
+    const legacy = '---\nkey: abc12345\n---\n\uFEFFbody\n';
+    const repaired = '---\nkey: abc12345\n---\nbody\n';
+    expect(isContentSemanticallyEqual(legacy, repaired)).toBe(true);
+  });
 });

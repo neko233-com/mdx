@@ -325,11 +325,11 @@
   width: 100%;
   min-height: 0;
   overflow: hidden;
-  background: var(--editor-block-bg, var(--document-bg));
+  background: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
 }
 
 .agent-conversation-detail {
-  background: var(--editor-block-bg, var(--document-bg));
+  background: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
 }
 
 /* 独立 Agent 对话标题栏与消息区使用完全相同的纯色背景。
