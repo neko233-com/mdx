@@ -20,7 +20,7 @@
   scrollbar-gutter: stable;
 }
 
-.markdown-editor .memo-document-header {
+.memo-document-header {
   width: 100%;
   max-width: var(--app-document-width, 680px);
   margin: 0 auto;
@@ -28,7 +28,7 @@
   padding: 0 2.5rem;
 }
 
-.markdown-editor .memo-date-line {
+.memo-date-line {
   padding: 4px 0;
   color: var(--muted-foreground);
   font-size: 0.75rem;
@@ -39,11 +39,11 @@
   pointer-events: none;
 }
 
-.markdown-editor .memo-title-shell {
+.memo-title-shell {
   width: 100%;
 }
 
-.markdown-editor .memo-title-editor {
+.memo-title-editor {
   display: block;
   width: 100%;
   height: auto;
@@ -61,11 +61,11 @@
   line-height: 1.32;
 }
 
-.markdown-editor .memo-title-editor::placeholder {
+.memo-title-editor::placeholder {
   color: var(--muted-foreground);
 }
 
-.markdown-editor .memo-title-editor[data-saving="true"] {
+.memo-title-editor[data-saving="true"] {
   opacity: 0.72;
 }
 

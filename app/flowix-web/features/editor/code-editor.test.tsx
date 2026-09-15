@@ -84,6 +84,102 @@ describe('CodeEditor', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it('moves title tail into the source body after frontmatter', async () => {
+    const editorRef = createRef<CodeEditorHandle>();
+    const onChange = vi.fn();
+    const initialContent = '---\nkey: memo-1\n---\nExisting body';
+    const bodyStart = '---\nkey: memo-1\n---\n'.length;
+
+    await act(async () => root.render(
+      <CodeEditor
+        ref={editorRef}
+        filePath="/project/note.md"
+        content={initialContent}
+        onChange={onChange}
+      />
+    ));
+
+    act(() => editorRef.current?.moveTitleToBody?.(' tail'));
+
+    expect(editorRef.current?.flushPendingChanges()).toBe(
+      '---\nkey: memo-1\n---\n tail\n\nExisting body',
+    );
+    expect(onChange).toHaveBeenCalledWith(
+      '---\nkey: memo-1\n---\n tail\n\nExisting body',
+    );
+    const content = container.querySelector<HTMLElement>('.cm-content');
+    const view = EditorView.findFromDOM(content!);
+    expect(view?.state.selection.main.from).toBe(bodyStart);
+  });
+
+  it('mounts a scroll header inside CodeMirror scrollDOM', async () => {
+    await act(async () => root.render(
+      <CodeEditor
+        filePath="/project/note.md"
+        content={'---\nkey: memo-1\n---\nBody'}
+        onChange={vi.fn()}
+        scrollHeader={<div data-testid="source-title">Title</div>}
+      />
+    ));
+
+    const scroller = container.querySelector('.cm-scroller');
+    expect(scroller).not.toBeNull();
+    expect(container.querySelector('.code-editor--with-scroll-header')).not.toBeNull();
+    expect(scroller?.querySelector('.cm-source-header [data-testid="source-title"]')?.textContent)
+      .toBe('Title');
+  });
+
+  it('focuses the source body after frontmatter', async () => {
+    const editorRef = createRef<CodeEditorHandle>();
+    const content = '---\nkey: memo-1\n---\nBody';
+    const bodyStart = '---\nkey: memo-1\n---\n'.length;
+
+    await act(async () => root.render(
+      <CodeEditor
+        ref={editorRef}
+        filePath="/project/note.md"
+        content={content}
+        onChange={vi.fn()}
+      />
+    ));
+
+    act(() => editorRef.current?.focusStart?.());
+
+    const codeContent = container.querySelector<HTMLElement>('.cm-content');
+    const view = EditorView.findFromDOM(codeContent!);
+    expect(view?.state.selection.main.from).toBe(bodyStart);
+    expect(view?.state.selection.main.to).toBe(bodyStart);
+  });
+
+  it('uses the current editability when moving the title tail', async () => {
+    const editorRef = createRef<CodeEditorHandle>();
+    const initialContent = '---\nkey: memo-1\n---\nExisting body';
+
+    await act(async () => root.render(
+      <CodeEditor
+        ref={editorRef}
+        filePath="/project/note.md"
+        content={initialContent}
+        editable={false}
+        onChange={vi.fn()}
+      />
+    ));
+
+    await act(async () => root.render(
+      <CodeEditor
+        ref={editorRef}
+        filePath="/project/note.md"
+        content={initialContent}
+        editable
+        onChange={vi.fn()}
+      />
+    ));
+
+    act(() => editorRef.current?.moveTitleToBody?.(' tail'));
+
+    expect(editorRef.current?.flushPendingChanges()).toContain(' tail\n\nExisting body');
+  });
+
   it('colors supported languages through Shiki inline styles', async () => {
     await act(async () => root.render(
       <CodeEditor

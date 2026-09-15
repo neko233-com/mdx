@@ -9,6 +9,8 @@ interface MemoTitleEditorProps {
   filename: string;
   editable: boolean;
   autoFocus?: boolean;
+  /** Rich-text mode may navigate across the boundary while read-only. */
+  allowReadOnlyBoundaryNavigation?: boolean;
   onMoveToBody: (request: MemoTitleBodyNavigation) => void;
 }
 
@@ -27,6 +29,7 @@ export const MemoTitleEditor = forwardRef<MemoTitleEditorHandle, MemoTitleEditor
   filename,
   editable,
   autoFocus = false,
+  allowReadOnlyBoundaryNavigation = false,
   onMoveToBody,
 }: MemoTitleEditorProps, ref) {
   const { t } = useI18n();
@@ -129,9 +132,22 @@ export const MemoTitleEditor = forwardRef<MemoTitleEditorHandle, MemoTitleEditor
         onCompositionEnd={titleInput.onCompositionEnd}
         onBlur={() => void session.commit()}
         onKeyDown={(event) => {
-          if (!editable) return;
           if (titleInput.isComposingKeyboardEvent(event.nativeEvent)) return;
-          if (event.key === 'Enter') {
+          if (
+            event.key === 'ArrowDown'
+            && event.currentTarget.selectionStart === event.currentTarget.value.length
+            && event.currentTarget.selectionEnd === event.currentTarget.value.length
+          ) {
+            if (!editable && !allowReadOnlyBoundaryNavigation) return;
+            event.preventDefault();
+            if (!editable) {
+              onMoveToBody({ insertEmptyLine: false });
+              return;
+            }
+            void session.commit().then(() => onMoveToBody({ insertEmptyLine: false }));
+          } else if (!editable) {
+            return;
+          } else if (event.key === 'Enter') {
             event.preventDefault();
             const value = event.currentTarget.value;
             const selectionStart = event.currentTarget.selectionStart ?? snapshot.draft.length;
@@ -143,13 +159,6 @@ export const MemoTitleEditor = forwardRef<MemoTitleEditorHandle, MemoTitleEditor
               trailingContent,
               insertEmptyLine: true,
             }));
-          } else if (
-            event.key === 'ArrowDown'
-            && event.currentTarget.selectionStart === event.currentTarget.value.length
-            && event.currentTarget.selectionEnd === event.currentTarget.value.length
-          ) {
-            event.preventDefault();
-            void session.commit().then(() => onMoveToBody({ insertEmptyLine: false }));
           } else if (event.key === 'Escape') {
             session.cancel();
             event.currentTarget.blur();

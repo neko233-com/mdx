@@ -10,6 +10,7 @@ import {
   hasDocumentUnsavedChanges,
   useDocumentMetricsStore,
   useDocumentStore,
+  useDocumentEditorMode,
   type DocumentIdentity,
 } from '@features/document';
 import { getDocumentInstanceKey } from '@/lib/path';
@@ -30,9 +31,13 @@ import { useExternalDocumentChangeWatch } from '@features/document/components/se
 import { useMemoDocumentChangeWatch } from '@features/document/components/session/use-memo-document-change-watch';
 import { LazyDocumentEditor } from '@features/document/components/lazy-document-editor';
 import { LazyCodeEditor } from '@features/document/components/lazy-code-editor';
+import { SourceMemoEditor } from '@features/document/components/source-memo-editor';
 import { NotePropertiesDialog } from '@features/document/components/note-properties-dialog';
 import { MemoDocumentHeader } from '@features/document/components/memo-document-header';
-import type { MemoTitleEditorHandle } from '@features/document/components/memo-title-editor';
+import type {
+  MemoTitleBodyNavigation,
+  MemoTitleEditorHandle,
+} from '@features/document/components/memo-title-editor';
 import type { MarkdownEditorHandle } from '@features/editor/markdown-editor';
 import { isEditableTextFilePath, isImageFilePath, isVideoFilePath } from '@features/editor/code-file';
 import { useI18n } from '@/lib/i18n';
@@ -76,6 +81,7 @@ export function DocumentContainer({
       : { kind: 'external', path: filePath },
     [filePath, isExternalDocument, memoId],
   );
+  const editorMode = useDocumentEditorMode(hostId, documentIdentity);
   const isImagePreview = isExternalDocument && isImageFilePath(filePath);
   const isVideoPreview = isExternalDocument && isVideoFilePath(filePath);
   const isUnsupportedExternalFile = isExternalDocument
@@ -83,8 +89,12 @@ export function DocumentContainer({
     && !isImagePreview
     && !isVideoPreview;
   // Every text file in the file tree, including Markdown, is source text and
-  // therefore uses CodeMirror. Memo documents retain their rich editor.
-  const usesCodeEditor = isExternalDocument && isEditableTextFilePath(filePath);
+  // therefore uses CodeMirror. Internal memo documents can opt into the same
+  // source editor without changing their document identity or persistence
+  // channel.
+  const usesCodeEditor = isExternalDocument
+    ? isEditableTextFilePath(filePath)
+    : editorMode === 'source';
   const loadedDocumentInstanceKeyRef = useRef<string | null>(null);
   const prevFilePathRef = useRef<string | null>(null);
   const editorHandleRef = useRef<MarkdownEditorHandle | null>(null);
@@ -113,9 +123,20 @@ export function DocumentContainer({
     return editorHandleRef.current?.flushPendingChanges() ?? null;
   }, []);
 
+  const handleMoveTitleToBody = useCallback(({
+    trailingContent,
+    insertEmptyLine,
+  }: MemoTitleBodyNavigation) => {
+    if (!insertEmptyLine) {
+      editorHandleRef.current?.focusStart?.();
+      return;
+    }
+    editorHandleRef.current?.moveTitleToBody?.(trailingContent ?? '');
+  }, []);
+
   useEffect(() => (
-    registerDocumentCapture(documentIdentity, flushPendingEditorChanges)
-  ), [documentIdentity, flushPendingEditorChanges]);
+    registerDocumentCapture(documentIdentity, flushPendingEditorChanges, hostId)
+  ), [documentIdentity, flushPendingEditorChanges, hostId]);
 
   const {
     clearSaveTimer,
@@ -408,6 +429,21 @@ export function DocumentContainer({
     return <UnavailableFileView filePath={filePath} />;
   }
 
+  const activeMemoUpdatedAt = activeMemo
+    ? state.updatedAtDate ?? (activeMemo.updatedAt ? new Date(activeMemo.updatedAt) : null)
+    : null;
+  const memoDocumentHeader = !isExternalDocument && memoId && activeMemo ? (
+    <MemoDocumentHeader
+      titleRef={titleEditorRef}
+      memoId={memoId}
+      filename={activeMemo.filename}
+      updatedAt={activeMemoUpdatedAt}
+      editable={!readOnly}
+      autoFocus={initialFocus === 'title'}
+      onMoveToBody={handleMoveTitleToBody}
+    />
+  ) : null;
+
   return (
     <div ref={containerRef} onFocusCapture={() => useWorkspaceFocusStore.getState().focusHost(hostId)} onPointerDownCapture={() => useWorkspaceFocusStore.getState().focusHost(hostId)} className="document-container h-full w-full min-w-0 flex flex-col bg-transparent relative overflow-hidden">
       <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
@@ -421,18 +457,40 @@ export function DocumentContainer({
           <VideoFilePreview filePath={filePath} />
         )}
         {!state.isLoading && usesCodeEditor && (
-          <LazyCodeEditor
-            ref={editorHandleRef}
-            key={documentInstanceKey}
-            filePath={filePath}
-            content={state.fullContent}
-            editable={!readOnly}
-            onChange={handleChange}
-            onEditorScroll={(scrollTop) => setState(prev => ({ ...prev, isScrolled: scrollTop > 90 }))}
-            onEditingFinished={flushPendingEditorChanges}
-            searchPanelOpen={searchPanelOpen}
-            onSearchPanelOpenChange={onSearchPanelOpenChange}
-          />
+          !isExternalDocument && memoId && activeMemo ? (
+            <SourceMemoEditor
+              ref={editorHandleRef}
+              key={documentInstanceKey}
+              filePath={filePath}
+              content={state.fullContent}
+              editable={!readOnly}
+              onChange={handleChange}
+              autoFocus={initialFocus === 'body'}
+              memoId={memoId}
+              filename={activeMemo.filename}
+              titleAutoFocus={initialFocus === 'title'}
+              titleRef={titleEditorRef}
+              onMoveToBody={handleMoveTitleToBody}
+              onEditorScroll={(scrollTop) => setState(prev => ({ ...prev, isScrolled: scrollTop > 90 }))}
+              onEditingFinished={flushPendingEditorChanges}
+              searchPanelOpen={searchPanelOpen}
+              onSearchPanelOpenChange={onSearchPanelOpenChange}
+            />
+          ) : (
+            <LazyCodeEditor
+              ref={editorHandleRef}
+              key={documentInstanceKey}
+              filePath={filePath}
+              content={state.fullContent}
+              editable={!readOnly}
+              onChange={handleChange}
+              autoFocus={initialFocus === 'body'}
+              onEditorScroll={(scrollTop) => setState(prev => ({ ...prev, isScrolled: scrollTop > 90 }))}
+              onEditingFinished={flushPendingEditorChanges}
+              searchPanelOpen={searchPanelOpen}
+              onSearchPanelOpenChange={onSearchPanelOpenChange}
+            />
+          )
         )}
         {!state.isLoading && !usesCodeEditor && state.fullContent && (
           <LazyDocumentEditor
@@ -440,23 +498,7 @@ export function DocumentContainer({
             ref={editorHandleRef}
             key={documentInstanceKey}
             content={state.fullContent}
-            header={!isExternalDocument && memoId && activeMemo ? (
-              <MemoDocumentHeader
-                titleRef={titleEditorRef}
-                memoId={memoId}
-                filename={activeMemo.filename}
-                updatedAt={state.updatedAtDate ?? (activeMemo.updatedAt ? new Date(activeMemo.updatedAt) : null)}
-                editable={!readOnly}
-                autoFocus={initialFocus === 'title'}
-                onMoveToBody={({ trailingContent, insertEmptyLine }) => {
-                  if (!insertEmptyLine) {
-                    editorHandleRef.current?.focusStart?.();
-                    return;
-                  }
-                  editorHandleRef.current?.moveTitleToBody?.(trailingContent ?? '');
-                }}
-              />
-            ) : null}
+            header={memoDocumentHeader}
             editable={!readOnly}
             onChange={(content) => {
               handleChange(content);

@@ -1409,10 +1409,28 @@
 }
 
 .markdown-editor .frontmatter-property__error {
+  display: inline-block;
   max-width: 32rem;
   overflow: hidden;
   color: var(--destructive);
   opacity: 0.8;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.markdown-editor .frontmatter-property__repair {
+  margin-left: 0.6rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.markdown-editor .frontmatter-property__repair:hover,
+.markdown-editor .frontmatter-property__repair:focus-visible {
+  color: var(--foreground);
 }

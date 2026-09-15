@@ -24,28 +24,37 @@ import { persistRecoveryDraft } from '@features/document/store/recovery-draft-st
 const RECOVERY_DRAFT_WRITE_TIMEOUT_MS = 3_000;
 
 type DocumentCapture = () => string | null;
-const documentCaptures = new Map<string, Set<DocumentCapture>>();
+interface RegisteredDocumentCapture {
+  hostId?: string;
+  capture: DocumentCapture;
+}
+const documentCaptures = new Map<string, Set<RegisteredDocumentCapture>>();
 
 /** Register a mounted editor capable of publishing its latest content. */
 export function registerDocumentCapture(
   identity: DocumentIdentity,
   capture: DocumentCapture,
+  hostId?: string,
 ): () => void {
   const key = documentIdentityKey(identity);
-  const captures = documentCaptures.get(key) ?? new Set<DocumentCapture>();
-  captures.add(capture);
+  const registration = { hostId, capture } satisfies RegisteredDocumentCapture;
+  const captures = documentCaptures.get(key) ?? new Set<RegisteredDocumentCapture>();
+  captures.add(registration);
   documentCaptures.set(key, captures);
   return () => {
-    captures.delete(capture);
+    captures.delete(registration);
     if (captures.size === 0) documentCaptures.delete(key);
   };
 }
 
 /** Publish all mounted surfaces before the save barrier reads the buffer. */
-export function captureLatestDocumentContent(identity: DocumentIdentity): void {
+export function captureLatestDocumentContent(identity: DocumentIdentity, hostId?: string): void {
   const captures = documentCaptures.get(documentIdentityKey(identity));
   if (!captures) return;
-  for (const capture of [...captures]) capture();
+  for (const registration of [...captures]) {
+    if (hostId !== undefined && registration.hostId !== hostId) continue;
+    registration.capture();
+  }
 }
 
 export async function protectDocumentDraft(

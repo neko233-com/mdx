@@ -327,6 +327,48 @@ describe('MarkdownEditor select all', () => {
     expect(onFocusTitle).toHaveBeenCalledTimes(1);
   });
 
+  it('uses the latest editable state for body-to-title navigation', async () => {
+    let editor: Editor | null = null;
+    const onFocusTitle = vi.fn();
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={'---\nkey: abc12345\n---\nFirst line'}
+            editable={false}
+            onFocusTitle={onFocusTitle}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={'---\nkey: abc12345\n---\nFirst line'}
+            editable
+            onFocusTitle={onFocusTitle}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    const frontmatter = editor!.state.doc.firstChild!;
+    act(() => {
+      editor!.commands.setTextSelection(frontmatter.nodeSize + 1);
+      editor!.view.dom.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'ArrowUp',
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(onFocusTitle).toHaveBeenCalledTimes(1);
+  });
+
   it('promotes the first body paragraph on Backspace at the body leading edge', async () => {
     let editor: Editor | null = null;
     const onAppendToTitle = vi.fn();

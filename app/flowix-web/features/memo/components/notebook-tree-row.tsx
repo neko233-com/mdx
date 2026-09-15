@@ -1,7 +1,9 @@
 'use client';
 
 import {
+  memo,
   useCallback,
+  useEffect,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -33,8 +35,11 @@ const TREE_MENU_DIVIDER_CLASS = 'mx-1 my-1 h-px bg-[var(--border-popup)] opacity
 const TREE_EDGE_GUTTER = 6;
 const INDENT_PER_LEVEL = 20;
 
-export function NotebookTreeRow({
+export const NotebookTreeRow = memo(function NotebookTreeRow({
   item,
+  parentPath,
+  posInSet,
+  setSize,
   depth,
   expanded,
   active,
@@ -49,29 +54,35 @@ export function NotebookTreeRow({
   onPointerDown,
   onKeyDown,
   onFocus,
+  onKeepAliveChange,
   tabIndex = 0,
   moveStatus,
 }: {
   item: DocTreeItem;
+  parentPath: string;
+  posInSet?: number;
+  setSize?: number;
   depth: number;
   expanded: boolean;
   active: boolean;
   selected: boolean;
-  onToggle: () => void;
-  onOpen: (event?: ReactMouseEvent<HTMLDivElement>) => void;
-  onOpenInNewTab?: () => void;
-  onCreateNote: () => void;
-  onCreateFolder: () => void;
-  onRename: (nextName: string) => Promise<void> | void;
-  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  onDeleteFolder?: () => Promise<void>;
-  onKeyDown?: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
-  onFocus?: () => void;
+  onToggle: (path: string) => void;
+  onOpen: (path: string, event?: ReactMouseEvent<HTMLDivElement>) => void;
+  onOpenInNewTab?: (path: string) => void;
+  onCreateNote: (parentPath: string) => void;
+  onCreateFolder: (parentPath: string) => void;
+  onRename: (item: DocTreeItem, nextName: string) => Promise<void> | void;
+  onPointerDown: (item: DocTreeItem, event: ReactPointerEvent<HTMLDivElement>) => void;
+  onDeleteFolder?: (path: string) => Promise<void>;
+  onKeyDown?: (path: string, event: ReactKeyboardEvent<HTMLDivElement>) => void;
+  onFocus?: (path: string) => void;
+  onKeepAliveChange?: (path: string, active: boolean) => void;
   tabIndex?: number;
   moveStatus?: 'moving' | 'success';
 }) {
   const { t } = useI18n();
   const isFolder = item.type === 'folder';
+  const actionParentPath = isFolder ? item.fullPath : parentPath;
   const resourceKind = isFolder ? null : item.resourceKind ?? resourceKindFromPath(item.name);
   const isNote = resourceKind === 'note';
   const [memo, setMemo] = useState<MemoItem | null>(null);
@@ -105,6 +116,14 @@ export function NotebookTreeRow({
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const keepsVirtualRowAlive = contextMenuOpen || renaming || confirmDelete || deleting;
+  useEffect(() => {
+    onKeepAliveChange?.(item.fullPath, keepsVirtualRowAlive);
+    return () => {
+      if (keepsVirtualRowAlive) onKeepAliveChange?.(item.fullPath, false);
+    };
+  }, [item.fullPath, keepsVirtualRowAlive, onKeepAliveChange]);
 
   const loadMemo = useCallback(async () => {
     if (isFolder || !isNote) return;
@@ -149,18 +168,18 @@ export function NotebookTreeRow({
     if (!onDeleteFolder || deleting) return;
     setDeleting(true);
     try {
-      await onDeleteFolder();
+      await onDeleteFolder(item.fullPath);
       setConfirmDelete(false);
     } finally {
       setDeleting(false);
     }
-  }, [deleting, onDeleteFolder]);
+  }, [deleting, item.fullPath, onDeleteFolder]);
 
   const submitRename = useCallback(() => {
     if (!renaming) return;
     setRenaming(false);
-    void onRename(renameValue);
-  }, [onRename, renameValue, renaming]);
+    void onRename(item, renameValue);
+  }, [item, onRename, renameValue, renaming]);
 
   const cancelRename = useCallback(() => {
     setRenaming(false);
@@ -179,29 +198,35 @@ export function NotebookTreeRow({
           aria-expanded={isFolder ? expanded : undefined}
           aria-selected={!isFolder ? active || selected : undefined}
           aria-level={depth + 1}
+          aria-posinset={posInSet}
+          aria-setsize={setSize}
           tabIndex={tabIndex}
           data-notebook-tree-path={item.fullPath}
           data-notebook-tree-kind={isFolder ? 'folder' : resourceKind}
           data-move-status={moveStatus}
           title={item.fullPath}
-          onClick={isFolder ? onToggle : onOpen}
-          onDoubleClick={!isFolder && onOpenInNewTab ? onOpenInNewTab : undefined}
-          onFocus={onFocus}
+          onClick={isFolder
+            ? () => onToggle(item.fullPath)
+            : (event) => onOpen(item.fullPath, event)}
+          onDoubleClick={!isFolder && onOpenInNewTab
+            ? () => onOpenInNewTab(item.fullPath)
+            : undefined}
+          onFocus={() => onFocus?.(item.fullPath)}
           onPointerDown={(event) => {
             if (renaming) {
               event.stopPropagation();
               return;
             }
             if (isFolder || event.button !== 0) return;
-            onPointerDown(event);
+            onPointerDown(item, event);
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
-              if (isFolder) onToggle(); else onOpen();
+              if (isFolder) onToggle(item.fullPath); else onOpen(item.fullPath);
               return;
             }
-            onKeyDown?.(event);
+            onKeyDown?.(item.fullPath, event);
           }}
           className={cn(
             'folder-file-tree__item group relative flex h-8 cursor-pointer items-center rounded-lg px-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--brand)]',
@@ -307,7 +332,7 @@ export function NotebookTreeRow({
                 title={t('memo.fileTree.newNote')}
                 onClick={(event) => {
                   event.stopPropagation();
-                  onCreateNote();
+                  onCreateNote(actionParentPath);
                 }}
                 onKeyDown={(event) => event.stopPropagation()}
                 className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand)]"
@@ -320,7 +345,7 @@ export function NotebookTreeRow({
                 title={t('memo.fileTree.newFolder')}
                 onClick={(event) => {
                   event.stopPropagation();
-                  onCreateFolder();
+                  onCreateFolder(actionParentPath);
                 }}
                 onKeyDown={(event) => event.stopPropagation()}
                 className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand)]"
@@ -367,11 +392,11 @@ export function NotebookTreeRow({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className={TREE_MENU_CLASS}>
-        <ContextMenuItem onClick={onCreateNote} className={TREE_MENU_ITEM_CLASS}>
+        <ContextMenuItem onClick={() => onCreateNote(actionParentPath)} className={TREE_MENU_ITEM_CLASS}>
           <FilePlusIcon className="mr-2 h-4 w-4" />
           {t('memo.fileTree.newNote')}
         </ContextMenuItem>
-        <ContextMenuItem onClick={onCreateFolder} className={TREE_MENU_ITEM_CLASS}>
+        <ContextMenuItem onClick={() => onCreateFolder(actionParentPath)} className={TREE_MENU_ITEM_CLASS}>
           <FolderPlusIcon className="mr-2 h-4 w-4" />
           {t('memo.fileTree.newFolder')}
         </ContextMenuItem>
@@ -420,7 +445,7 @@ export function NotebookTreeRow({
           <MemoCardActions
             memo={displayedMemo}
             onOpenInSplit={onOpenInNewTab
-              ? () => onOpenInNewTab()
+              ? () => onOpenInNewTab(item.fullPath)
               : undefined}
             onFavoriteToggle={(nextMemo) => { void toggleFavorite(nextMemo); }}
             onDelete={requestDelete}
@@ -453,7 +478,7 @@ export function NotebookTreeRow({
       </Dialog>
     </>
   );
-}
+});
 
 function NotebookTreeMoreButton({ label, active }: { label: string; active: boolean }) {
   const { openAt } = useContextMenuContext();

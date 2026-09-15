@@ -8,10 +8,33 @@ import {
   rebaseActiveDocumentPath,
   recordDocumentEdit,
   hasDocumentUnsavedChanges,
+  registerDocumentCapture,
+  captureLatestDocumentContent,
 } from './document-session-service';
 import { subscribeDocumentBufferChanges } from './buffer-registry';
 
 describe('document buffer change notifications', () => {
+  it('captures only the requested document host when one is provided', () => {
+    const identity = { kind: 'memo' as const, id: 'memo-capture-host' };
+    const mainCapture = vi.fn(() => '# main');
+    const browserCapture = vi.fn(() => '# browser');
+    const unregisterMain = registerDocumentCapture(identity, mainCapture, 'main-third');
+    const unregisterBrowser = registerDocumentCapture(identity, browserCapture, 'browser-column');
+
+    try {
+      captureLatestDocumentContent(identity, 'main-third');
+      expect(mainCapture).toHaveBeenCalledOnce();
+      expect(browserCapture).not.toHaveBeenCalled();
+
+      captureLatestDocumentContent(identity);
+      expect(mainCapture).toHaveBeenCalledTimes(2);
+      expect(browserCapture).toHaveBeenCalledOnce();
+    } finally {
+      unregisterMain();
+      unregisterBrowser();
+    }
+  });
+
   it('notifies listeners when a memo is loaded and edited', () => {
     const identity = { kind: 'memo' as const, id: 'memo-buffer-events' };
     const listener = vi.fn();

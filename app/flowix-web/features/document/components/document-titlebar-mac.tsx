@@ -55,6 +55,8 @@ export function DocumentTitlebarMac({
     onExportWord,
     onRequestDeleteMemo,
     onColorsChange,
+    editorMode,
+    onToggleEditorMode,
   },
 }: DocumentTitlebarProps) {
   const { t } = useI18n();
@@ -138,6 +140,8 @@ export function DocumentTitlebarMac({
             onExportWord={onExportWord}
             onRequestDeleteMemo={onRequestDeleteMemo}
             onColorsChange={onColorsChange ?? (() => {})}
+            editorMode={editorMode}
+            onToggleEditorMode={onToggleEditorMode}
             canCopyFullText={canCopyFullText}
             canExportContent={canExportContent}
             canSaveAsTemplate={canSaveAsTemplate}

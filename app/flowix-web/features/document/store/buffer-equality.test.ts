@@ -9,6 +9,12 @@ describe('document buffer semantic equality', () => {
     expect(isContentSemanticallyEqual(left, right)).toBe(true);
   });
 
+  it('recognizes frontmatter after leading blank lines', () => {
+    const withBlankLines = '\n  \n---\nkey: abc12345\nstatus: draft\n---\nbody\n';
+    const canonical = '---\nkey: abc12345\nstatus: draft\n---\nbody\n';
+    expect(isContentSemanticallyEqual(withBlankLines, canonical)).toBe(true);
+  });
+
   it('treats frontmatter field order as a real edit', () => {
     const left = '---\nkey: abc12345\nstatus: draft\npriority: high\n---\nbody\n';
     const right = '---\nkey: abc12345\npriority: high\nstatus: draft\n---\nbody\n';

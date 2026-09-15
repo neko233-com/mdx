@@ -7,7 +7,10 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
 } from 'react';
+import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { basicSetup } from 'codemirror';
 import { Compartment, EditorState } from '@codemirror/state';
 import {
@@ -31,6 +34,8 @@ import { pushHandler, useShortcutScope } from '@features/shortcuts';
 
 export interface CodeEditorHandle {
   flushPendingChanges: () => string | null;
+  focusStart?: () => void;
+  moveTitleToBody?: (trailingContent: string) => void;
 }
 
 interface CodeEditorProps {
@@ -44,6 +49,13 @@ interface CodeEditorProps {
   onSearchPanelOpenChange?: (open: boolean) => void;
   onEditorScroll?: (scrollTop: number) => void;
   onEditingFinished?: () => void;
+  /** React content mounted inside CodeMirror's actual scroll surface. */
+  scrollHeader?: ReactNode;
+}
+
+function getSourceBodyStart(content: string): number {
+  const frontmatter = /^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(content);
+  return frontmatter?.[0].length ?? 0;
 }
 
 const codeEditorTheme = EditorView.theme({
@@ -51,7 +63,7 @@ const codeEditorTheme = EditorView.theme({
     height: '100%',
     color: 'var(--document-foreground, var(--foreground, #1f2937))',
     backgroundColor: 'transparent',
-    fontSize: '13px',
+    fontSize: 'var(--code-editor-font-size, 13px)',
   },
   '&.cm-focused': {
     outline: 'none',
@@ -59,11 +71,11 @@ const codeEditorTheme = EditorView.theme({
   '.cm-scroller': {
     overflow: 'auto',
     fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
-    lineHeight: '1.65',
+    lineHeight: 'var(--code-editor-line-height, 1.65)',
   },
   '.cm-content': {
     minHeight: '100%',
-    padding: '14px 0 28px',
+    padding: 'var(--code-editor-content-padding-top, 14px) 0 var(--code-editor-content-padding-bottom, 28px)',
     // Keep the document text color on the actual content layer. Relying on
     // inheritance from `.cm-editor` makes text disappear in WebKit when a
     // theme variable is unavailable during the production-app startup.
@@ -71,7 +83,7 @@ const codeEditorTheme = EditorView.theme({
     caretColor: 'var(--foreground)',
   },
   '.cm-line': {
-    padding: '0 20px 0 10px',
+    padding: '0 var(--code-editor-line-padding-right, 20px) 0 var(--code-editor-line-padding-left, 10px)',
     color: 'var(--document-foreground, var(--foreground, #1f2937))',
   },
   '.cm-gutters': {
@@ -163,9 +175,11 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
   onSearchPanelOpenChange,
   onEditorScroll,
   onEditingFinished,
+  scrollHeader,
 }, ref) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const [scrollHeaderMount, setScrollHeaderMount] = useState<HTMLDivElement | null>(null);
   const syncingContentRef = useRef(false);
   const onChangeRef = useRef(onChange);
   const onSearchPanelOpenChangeRef = useRef(onSearchPanelOpenChange);
@@ -173,6 +187,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
   const onEditingFinishedRef = useRef(onEditingFinished);
   const languageCompartment = useMemo(() => new Compartment(), []);
   const editableCompartment = useMemo(() => new Compartment(), []);
+  const hasScrollHeader = Boolean(scrollHeader);
 
   onChangeRef.current = onChange;
   onSearchPanelOpenChangeRef.current = onSearchPanelOpenChange;
@@ -182,8 +197,41 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
   useShortcutScope('editor');
 
   useImperativeHandle(ref, () => ({
-    flushPendingChanges: () => viewRef.current?.state.doc.toString() ?? null,
-  }), []);
+    flushPendingChanges: () => {
+      const content = viewRef.current?.state.doc.toString() ?? null;
+      return content;
+    },
+    focusStart: () => {
+      const view = viewRef.current;
+      if (!view) return;
+      const bodyStart = getSourceBodyStart(view.state.doc.toString());
+      view.focus();
+      view.dispatch({
+        selection: { anchor: bodyStart, head: bodyStart },
+        effects: EditorView.scrollIntoView(bodyStart, { y: 'nearest' }),
+      });
+    },
+    moveTitleToBody: (trailingContent: string) => {
+      const view = viewRef.current;
+      if (!view || !editable) return;
+
+      const content = view.state.doc.toString();
+      const bodyStart = getSourceBodyStart(content);
+      const lineBreak = content.includes('\r\n') ? '\r\n' : '\n';
+      const insertion = trailingContent.length > 0
+        ? `${trailingContent}${lineBreak}${lineBreak}`
+        : lineBreak;
+
+      view.dispatch({
+        changes: { from: bodyStart, to: bodyStart, insert: insertion },
+        // Keep the caret at the split point, before the title tail that was
+        // moved into the first body paragraph.
+        selection: { anchor: bodyStart, head: bodyStart },
+        effects: EditorView.scrollIntoView(bodyStart, { y: 'nearest' }),
+      });
+      view.focus();
+    },
+  }), [editable]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -229,6 +277,15 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
     const view = new EditorView({ state, parent: mount });
     viewRef.current = view;
 
+    // Keep the title in the same scrolling element as the source document.
+    // The mount is created for every editor instance so a memo title can
+    // appear after the document metadata finishes loading without forcing a
+    // CodeMirror teardown/recreate.
+    const headerMount = document.createElement('div');
+    headerMount.className = 'cm-source-header';
+    view.scrollDOM.appendChild(headerMount);
+    setScrollHeaderMount(headerMount);
+
     const handleScroll = () => onEditorScrollRef.current?.(view.scrollDOM.scrollTop);
     const handleBlur = () => onEditingFinishedRef.current?.();
     view.scrollDOM.addEventListener('scroll', handleScroll, { passive: true });
@@ -239,6 +296,8 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
     return () => {
       view.scrollDOM.removeEventListener('scroll', handleScroll);
       view.contentDOM.removeEventListener('blur', handleBlur);
+      headerMount.remove();
+      setScrollHeaderMount((current) => current === headerMount ? null : current);
       view.destroy();
       viewRef.current = null;
     };
@@ -266,6 +325,18 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
       ]),
     });
   }, [editable, editableCompartment]);
+
+  useLayoutEffect(() => {
+    const view = viewRef.current;
+    const headerMount = scrollHeaderMount;
+    if (!view || !headerMount || !hasScrollHeader) return;
+
+    view.requestMeasure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => view.requestMeasure());
+    observer.observe(headerMount);
+    return () => observer.disconnect();
+  }, [hasScrollHeader, scrollHeaderMount]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -312,5 +383,17 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
     };
   }, [filePath, languageCompartment]);
 
-  return <div ref={mountRef} className={cn('code-editor h-full w-full min-h-0 min-w-0 overflow-hidden', className)} />;
+  return (
+    <>
+      <div
+        ref={mountRef}
+        className={cn(
+          'code-editor h-full w-full min-h-0 min-w-0 overflow-hidden',
+          hasScrollHeader && 'code-editor--with-scroll-header',
+          className,
+        )}
+      />
+      {hasScrollHeader && scrollHeaderMount && createPortal(scrollHeader, scrollHeaderMount)}
+    </>
+  );
 });

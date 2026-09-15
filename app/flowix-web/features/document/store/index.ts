@@ -36,6 +36,14 @@ export {
   normalizeDocumentIdentity,
   type DocumentIdentity,
 } from '@features/document/store/document-identity';
+export {
+  documentEditorViewKey,
+  getDocumentEditorMode,
+  setDocumentEditorMode,
+  useDocumentEditorMode,
+  useDocumentEditorViewStore,
+  type DocumentEditorMode,
+} from '@features/document/store/document-editor-view-store';
 export type { DocumentBuffer } from '@features/document/store/document-buffer';
 export { subscribeDocumentBufferChanges } from '@features/document/store/buffer-registry';
 export {

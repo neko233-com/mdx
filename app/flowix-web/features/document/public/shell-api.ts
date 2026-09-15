@@ -9,6 +9,13 @@ export {
   AgentThreadCardFullscreenExitButton,
   useFullscreenAgentThreadCardInfo,
 } from '@features/document/components/document-titlebar-shared';
+export {
+  captureLatestDocumentContent,
+  getDocumentEditorMode,
+  setDocumentEditorMode,
+  useDocumentEditorMode,
+  type DocumentEditorMode,
+} from '@features/document/store';
 export { navigateDocumentHistory } from '@features/document/use-cases/document-navigation';
 export {
   type DocumentHistoryEntry,

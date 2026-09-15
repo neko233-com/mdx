@@ -6,7 +6,7 @@ import type { MemoItem, MemoStore } from '@features/memo';
 export type { DocumentBuffer } from '@features/document/store/document-buffer';
 
 export function extractBodyContent(content: string): string {
-  return content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
+  return content.replace(/^\uFEFF?(?:[ \t]*\r?\n)*---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
 }
 
 export function countTextUnits(content: string): number {

@@ -24,6 +24,18 @@ const LEGACY_DSH_COMMANDS = new Set([
   "model",
 ]);
 
+const CONTROL_COMMANDS = new Set(["goal", "plan"]);
+
+function isControlCommand(command: string): boolean {
+  return CONTROL_COMMANDS.has(command.trim().toLowerCase());
+}
+
+function slashTokenClass(command: string): string {
+  return isControlCommand(command)
+    ? "agent-thread-card__slash-token agent-thread-card__slash-token--control"
+    : "agent-thread-card__slash-token";
+}
+
 export const ComposerSlashToken = Node.create<ComposerSlashTokenOptions>({
   name: "composerSlashToken",
   priority: 1000,
@@ -55,7 +67,7 @@ export const ComposerSlashToken = Node.create<ComposerSlashTokenOptions>({
       ...(agentType ? { "data-composer-slash-agent": agentType } : {}),
       class: "agent-thread-card__slash-token-wrapper",
     }, "\u200B", ["button", {
-      class: "agent-thread-card__slash-token",
+      class: slashTokenClass(command),
       type: "button",
     }, `/${command}`], "\u200B"];
   },
@@ -114,7 +126,7 @@ export const ComposerSlashToken = Node.create<ComposerSlashTokenOptions>({
       const button = document.createElement("button");
       const command = String(node.attrs.command ?? "");
       button.type = "button";
-      button.className = "agent-thread-card__slash-token";
+      button.className = slashTokenClass(command);
       button.textContent = `/${command}`;
       button.title = "点击移除命令";
       button.setAttribute("aria-label", `移除 /${command} 命令`);

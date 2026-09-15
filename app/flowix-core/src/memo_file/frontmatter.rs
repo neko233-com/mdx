@@ -35,8 +35,10 @@ use regex::Regex;
 use serde_json::{Map, Value};
 use thiserror::Error;
 
-pub static FRONTMATTER_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\u{FEFF}?---\r?\n([\s\S]*?)(?:\r?\n)?---\r?\n?([\s\S]*)$").unwrap());
+pub static FRONTMATTER_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^\u{FEFF}?(?:[ \t]*\r?\n)*---\r?\n([\s\S]*?)(?:\r?\n)?---\r?\n?([\s\S]*)$")
+        .unwrap()
+});
 
 /// Canonicalize UTF-8 BOM placement for Markdown without touching U+FEFF in
 /// authored body content. Besides a true file-leading BOM, this recognizes
@@ -573,6 +575,17 @@ mod tests {
     fn extracts_body_after_frontmatter() {
         let md = "---\nkey: x\n---\n# Title\nbody\n";
         assert_eq!(extract_body_content(md), "# Title\nbody\n");
+    }
+
+    #[test]
+    fn extracts_frontmatter_after_leading_blank_lines() {
+        let md = "\n  \n---\nkey: abc12345\ntags: [inbox]\n---\n# Title\n";
+        assert_eq!(extract_frontmatter_key(md), Some("abc12345".to_string()));
+        assert_eq!(extract_body_content(md), "# Title\n");
+        assert_eq!(
+            extract_document_metadata(md).unwrap().tags,
+            vec!["inbox".to_string()]
+        );
     }
 
     #[test]

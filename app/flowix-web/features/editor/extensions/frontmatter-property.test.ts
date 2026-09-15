@@ -12,9 +12,11 @@ import {
 } from './frontmatter-inline-value';
 import {
   FrontmatterPropertyError,
+  extractFrontmatter,
   formatFrontmatterPropertyValue,
   parseVisibleFrontmatter,
   replaceVisibleFrontmatterProperties,
+  suggestFrontmatterRepair,
   updateVisibleFrontmatterProperty,
 } from '@features/document/properties/frontmatter-model';
 import { generatePropertyKey } from '@features/document/properties/property-key';
@@ -32,6 +34,25 @@ describe('frontmatter property helpers', () => {
     expect(markdown).toContain('Body');
     expect(markdown).not.toContain('\uFEFF');
     expect(markdown).not.toContain('nbsp');
+    editor.destroy();
+  });
+
+  it('parses frontmatter after leading blank lines', () => {
+    const content = '\n  \n---\nkey: abc12345\nstatus: draft\n---\n# Body';
+    const extracted = extractFrontmatter(content);
+    expect(extracted.hasFrontmatter).toBe(true);
+    expect(extracted.userData).toEqual({ status: 'draft' });
+    expect(extracted.body).toBe('# Body');
+
+    const editor = new Editor({
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content,
+      contentType: 'markdown',
+    });
+    expect(editor.state.doc.firstChild?.type.name).toBe('frontmatter');
+    expect(editor.state.doc.firstChild?.attrs.yamlContent).toBe(
+      'key: abc12345\nstatus: draft',
+    );
     editor.destroy();
   });
 
@@ -54,6 +75,45 @@ describe('frontmatter property helpers', () => {
 
     expect(result.firstProperty).toBeNull();
     expect(result.parseError).toBeNull();
+  });
+
+  it('suggests moving the malformed suffix into the document body', () => {
+    const repair = suggestFrontmatterRepair(
+      'key: db9ixhlw\nname: "skill\\n"\n  skill\nflowix_colors: [green]',
+    );
+
+    expect(repair).toEqual({
+      yamlContent: 'key: db9ixhlw\nname: "skill\\n"',
+      bodyContent: '  skill\nflowix_colors: [green]',
+    });
+    expect(parseVisibleFrontmatter(repair?.yamlContent ?? '').parseError).toBeNull();
+  });
+
+  it('repairs malformed frontmatter from the error banner', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nkey: db9ixhlw\nname: "skill\\n"\n  skill\nflowix_colors: [green]\n---\n# Body',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    const repair = host.querySelector<HTMLButtonElement>('.frontmatter-property__repair');
+    expect(repair).not.toBeNull();
+    repair?.click();
+
+    expect(editor.state.doc.firstChild?.attrs.yamlContent).toBe(
+      'key: db9ixhlw\nname: "skill\\n"',
+    );
+    expect(editor.state.doc.child(1).type.name).toBe('codeBlock');
+    expect(editor.state.doc.child(1).textContent).toBe('  skill\nflowix_colors: [green]');
+    expect(editor.getMarkdown()).toContain('flowix_colors: [green]');
+
+    editor.destroy();
+    host.remove();
   });
 
   it('updates the first property in place and preserves later properties and comments', () => {

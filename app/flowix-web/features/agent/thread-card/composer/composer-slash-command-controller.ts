@@ -34,6 +34,7 @@ export const COMPOSER_SLASH_COMMANDS: readonly ComposerSlashCommand[] = [
   { name: "compact", description: "压缩较早的 Codex 对话上下文", agentType: "codex", owner: "flowix", interaction: "direct", execution: "codex-command" },
   { name: "skill", description: "选择一个 Codex Skill", agentType: "codex", owner: "flowix", interaction: "drilldown", execution: "codex-skill" },
   { name: "goal", description: "设置或查看 Codex 长时任务目标", agentType: "codex", owner: "flowix", interaction: "prompt", execution: "codex-command" },
+  { name: "plan", description: "进入或退出 Codex 计划模式", agentType: "codex", owner: "flowix", interaction: "prompt", execution: "codex-command" },
   { name: "model", description: "选择本次会话使用的模型", agentType: "codex", owner: "flowix", interaction: "drilldown", execution: "host-action" },
   { name: "permission", description: "切换权限预设", agentType: "codex", owner: "flowix", interaction: "drilldown", execution: "host-action" },
 ];

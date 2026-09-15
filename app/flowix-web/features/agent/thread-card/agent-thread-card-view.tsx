@@ -1729,7 +1729,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     }
     if (
       this.typeKey === "codex" &&
-      /^\/(?:compact|goal)(?:\s|$)/iu.test(rawPrompt)
+      /^\/(?:compact|goal|plan)(?:\s|$)/iu.test(rawPrompt)
     ) {
       if (hasPendingCodexCommand(this.threadId)) return;
       this.clearComposerAfterSlashCommand();

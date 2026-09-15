@@ -133,6 +133,44 @@ describe('MemoTitleEditor IME handling', () => {
     });
   });
 
+  it('keeps title-to-body navigation available when read-only', async () => {
+    await act(async () => {
+      root.render(createElement(MemoTitleEditor, {
+        memoId: 'memo-1',
+        filename: 'Original.md',
+        editable: false,
+        allowReadOnlyBoundaryNavigation: true,
+        onMoveToBody,
+      }));
+    });
+
+    const readOnlyTextarea = container.querySelector('textarea')!;
+    readOnlyTextarea.setSelectionRange(readOnlyTextarea.value.length, readOnlyTextarea.value.length);
+    const event = dispatchKey(readOnlyTextarea, 'ArrowDown');
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(titleSession.commit).not.toHaveBeenCalled();
+    expect(onMoveToBody).toHaveBeenCalledWith({ insertEmptyLine: false });
+  });
+
+  it('does not enable read-only boundary navigation without the mode opt-in', async () => {
+    await act(async () => {
+      root.render(createElement(MemoTitleEditor, {
+        memoId: 'memo-1',
+        filename: 'Original.md',
+        editable: false,
+        onMoveToBody,
+      }));
+    });
+
+    const readOnlyTextarea = container.querySelector('textarea')!;
+    readOnlyTextarea.setSelectionRange(readOnlyTextarea.value.length, readOnlyTextarea.value.length);
+    const event = dispatchKey(readOnlyTextarea, 'ArrowDown');
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(onMoveToBody).not.toHaveBeenCalled();
+  });
+
   it('does not cancel title editing when Escape belongs to the IME', () => {
     act(() => {
       textarea.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));

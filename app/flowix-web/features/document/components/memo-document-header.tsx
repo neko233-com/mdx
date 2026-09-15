@@ -66,6 +66,7 @@ export function MemoDocumentHeader({
         filename={filename}
         editable={editable}
         autoFocus={autoFocus}
+        allowReadOnlyBoundaryNavigation
         onMoveToBody={onMoveToBody}
       />
     </div>

@@ -973,7 +973,7 @@ const zhCN = {
     "memo.navigation.addFolder": "添加",
     // 资料文件夹文件树 (中间列, VSCode 风格)
     "memo.fileTree.backToList": "返回列表",
-    "memo.fileTree.sectionTitle": "文件树",
+    "memo.fileTree.sectionTitle": "文件",
     "memo.fileTree.refresh": "刷新文件树",
     "memo.fileTree.collapseAll": "折叠全部文件夹",
     "memo.fileTree.empty": "空文件夹",
@@ -1089,6 +1089,8 @@ const zhCN = {
     "document.action.saveAsTemplate": "保存为模板",
     "document.action.exportMarkdown": "导出为 Markdown",
     "document.action.exportWord": "导出为 Word",
+    "document.action.sourceMode": "切换到源码模式",
+    "document.action.richTextMode": "切换到富文本模式",
     "document.action.delete": "删除",
     "document.command.readFailed": "读取文档失败",
     "document.command.noDocumentToExport": "没有可导出的文档",
@@ -1130,7 +1132,8 @@ const zhCN = {
     "document.properties.prevMonth": "上个月",
     "document.properties.nextMonth": "下个月",
     "document.properties.yamlParseError":
-      "当前 YAML 无法解析，请先修复后再编辑属性。",
+      "属性内容无法解析，展示失败",
+    "document.properties.repair": "修复",
     "document.properties.fieldColumn": "字段",
     "document.properties.typeColumn": "类型",
     "document.properties.valueColumn": "值",

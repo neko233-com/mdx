@@ -3,7 +3,7 @@ import type { PropertyKind } from '@features/document/properties/presets';
 import { canonicalizePropertyKey } from '@features/document/properties/property-key';
 import { isValidTagPath } from '@/lib/tag-path';
 
-export const FRONTMATTER_RE = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+export const FRONTMATTER_RE = /^\uFEFF?(?:[ \t]*\r?\n)*---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 export const SYSTEM_FRONTMATTER_KEYS = new Set(['key']);
 
 const FLOWIX_COLOR_VALUES = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'gray'] as const;
@@ -41,6 +41,13 @@ export interface ParsedVisibleFrontmatter {
   data: Record<string, unknown>;
   userData: Record<string, unknown>;
   parseError: string | null;
+}
+
+export interface FrontmatterRepair {
+  /** The valid YAML prefix that remains in the frontmatter block. */
+  yamlContent: string;
+  /** The malformed suffix that should be displayed as document content. */
+  bodyContent: string;
 }
 
 export interface ExtractedFrontmatter extends ParsedVisibleFrontmatter {
@@ -119,6 +126,38 @@ export function parseVisibleFrontmatter(yamlContent: string): ParsedVisibleFront
       parseError: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/**
+ * Find a conservative repair for malformed frontmatter.
+ *
+ * The first parser error is treated as a boundary only when everything before
+ * that line is still a valid YAML mapping. The suffix is returned separately
+ * so callers can move it into the document body without silently discarding
+ * any authored text.
+ */
+export function suggestFrontmatterRepair(yamlContent: string): FrontmatterRepair | null {
+  const source = yamlContent.trim();
+  if (!source) return null;
+
+  const document = YAML.parseDocument(source);
+  const firstError = document.errors[0];
+  const errorStart = firstError?.pos?.[0];
+  if (typeof errorStart !== 'number' || errorStart < 0 || errorStart > source.length) {
+    return null;
+  }
+
+  const lineStart = source.lastIndexOf('\n', Math.max(0, errorStart - 1)) + 1;
+  const yamlPrefix = source.slice(0, lineStart).trimEnd();
+  const bodyContent = source.slice(lineStart);
+  if (!yamlPrefix || !bodyContent.trim()) return null;
+
+  const prefixDocument = YAML.parseDocument(yamlPrefix);
+  if (prefixDocument.errors.length > 0 || !isMap(prefixDocument.contents)) {
+    return null;
+  }
+
+  return { yamlContent: yamlPrefix, bodyContent };
 }
 
 /** Returns whether a property's YAML value uses flow collection syntax. */

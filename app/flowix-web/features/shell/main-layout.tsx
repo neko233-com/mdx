@@ -8,6 +8,9 @@ import {
   useDocumentCommands,
   useShellDocumentHistory,
   useShellDocumentViewModel,
+  captureLatestDocumentContent,
+  setDocumentEditorMode,
+  useDocumentEditorMode,
   type DocumentHistoryEntry,
   type MemoDocumentSession,
 } from '@features/document/public/shell-api';
@@ -275,6 +278,13 @@ export function MainLayout({
     currentDocumentSource === 'memo' && activeMemoSession
       ? activeMemoSession.id
       : activeExternalSession?.id ?? (currentDocumentPath ? getDocumentInstanceKey(currentDocumentPath) : null);
+  const mainMemoEditorIdentity = activeMemoSession
+    ? { kind: 'memo' as const, id: activeMemoSession.memoId }
+    : null;
+  const mainEditorMode = useDocumentEditorMode(
+    'main-third',
+    mainMemoEditorIdentity ?? { kind: 'external', path: currentDocumentPath ?? '' },
+  );
   const todoCount = useNotebookTodoCount(selectedNotebook?.id);
   const getCurrentDocumentContent = useCallback(() => currentDocumentContentRef.current, []);
   const {
@@ -345,6 +355,17 @@ export function MainLayout({
       new CustomEvent<MemoItem>('flowix:request-delete-memo', { detail: currentMemo })
     );
   }, [currentMemo]);
+
+  const handleToggleEditorMode = useCallback(() => {
+    if (!currentMemo || !activeMemoSession) return;
+    const identity = { kind: 'memo' as const, id: activeMemoSession.memoId };
+    // Publish the active editor's latest serialized content before replacing
+    // its React subtree. The autosave pipeline continues asynchronously from
+    // the shared document buffer; mode switching itself must stay immediate.
+    captureLatestDocumentContent(identity, 'main-third');
+    const nextMode = mainEditorMode === 'source' ? 'rich' : 'source';
+    setDocumentEditorMode('main-third', identity, nextMode);
+  }, [activeMemoSession, currentMemo, mainEditorMode]);
 
   const workColumnDocument = currentDocumentPath
     ? {
@@ -445,6 +466,8 @@ export function MainLayout({
       onExportWord: handleExportWord,
       onRequestDeleteMemo: handleRequestDeleteMemo,
       onColorsChange: handleColorsChange,
+      editorMode: mainEditorMode,
+      onToggleEditorMode: handleToggleEditorMode,
     },
   };
 

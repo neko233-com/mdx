@@ -20,7 +20,7 @@ const MARKDOWN_BLOCK_PATTERNS: RegExp[] = [
 ];
 
 const MARKDOWN_TABLE_SEPARATOR_RE = /^:?-{3,}:?$/;
-const FRONTMATTER_BLOCK_RE = /^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/;
+const FRONTMATTER_BLOCK_RE = /^\uFEFF?(?:[ \t]*\r?\n)*---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/;
 
 function splitMarkdownTableLine(line: string): string[] {
   const trimmed = line.trim();

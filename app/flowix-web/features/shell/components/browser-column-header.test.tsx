@@ -4,6 +4,8 @@ import { expect, it, vi } from 'vitest';
 import { BrowserColumnHeader } from './browser-column-header';
 import type { BrowserColumnTab } from '@features/workspace/public/browser-column-api';
 
+const useDocumentEditorModeMock = vi.hoisted(() => vi.fn((): 'rich' | 'source' => 'rich'));
+
 vi.mock('@/lib/i18n', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/i18n')>(),
   useI18n: () => ({ t: (key: string) => key }),
@@ -11,6 +13,7 @@ vi.mock('@/lib/i18n', async (importOriginal) => ({
 vi.mock('./work-column-titlebar-shell', () => ({ WORK_COLUMN_TITLEBAR_GRADIENT: 'none' }));
 vi.mock('@features/document/public/shell-api', () => ({
   AgentThreadCardFullscreenExitButton: () => null,
+  useDocumentEditorMode: useDocumentEditorModeMock,
   useFullscreenAgentThreadCardInfo: () => null,
 }));
 
@@ -27,7 +30,7 @@ it('moves actual focus across successive arrow presses and Home/End, and shows t
     const [activeTabId, setActiveTabId] = useState('one');
     return <BrowserColumnHeader tabs={tabs} activeTabId={activeTabId} activeSurfaceChrome="document" onSelectTab={setActiveTabId}
       onCloseTab={vi.fn()} onCloseOtherTabs={vi.fn()} onCloseTabsToRight={vi.fn()}
-      onCloseAllTabs={vi.fn()} onOpenTabInWorkColumn={vi.fn()} onReorderTab={vi.fn()}
+      onCloseAllTabs={vi.fn()} onToggleMemoEditorMode={vi.fn()} onOpenTabInWorkColumn={vi.fn()} onReorderTab={vi.fn()}
       isTabMenuOpen={false} onTabMenuOpenChange={vi.fn()} onContextMenuOpenChange={vi.fn()}
       isFocused={false} />;
   }
@@ -54,6 +57,10 @@ vi.mock('@/lib/toast', () => ({ toast: { error: vi.fn() } }));
 async function withHeader(
   onSelectTab: import('./browser-column-header').BrowserColumnHeaderProps['onSelectTab'],
   check: (buttons: HTMLButtonElement[], outside: HTMLInputElement) => Promise<void>,
+  options: {
+    tabs?: BrowserColumnTab[];
+    onToggleMemoEditorMode?: import('./browser-column-header').BrowserColumnHeaderProps['onToggleMemoEditorMode'];
+  } = {},
 ) {
   const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
   environment.IS_REACT_ACT_ENVIRONMENT = true;
@@ -61,13 +68,14 @@ async function withHeader(
   const outside = document.createElement('input');
   document.body.append(element, outside);
   const root = createRoot(element);
-  const tabs: BrowserColumnTab[] = ['one', 'two', 'three'].map((id) => ({
+  const defaultTabs: BrowserColumnTab[] = ['one', 'two', 'three'].map((id) => ({
     id, title: id, icon: null, target: { kind: 'web', url: `https://${id}.example` },
   }));
+  const tabs = options.tabs ?? defaultTabs;
   try {
     await act(async () => root.render(<BrowserColumnHeader tabs={tabs} activeTabId="one" activeSurfaceChrome="document" onSelectTab={onSelectTab}
       onCloseTab={vi.fn()} onCloseOtherTabs={vi.fn()} onCloseTabsToRight={vi.fn()}
-      onCloseAllTabs={vi.fn()} onOpenTabInWorkColumn={vi.fn()} onReorderTab={vi.fn()}
+      onCloseAllTabs={vi.fn()} onToggleMemoEditorMode={options.onToggleMemoEditorMode ?? vi.fn()} onOpenTabInWorkColumn={vi.fn()} onReorderTab={vi.fn()}
       isTabMenuOpen={false} onTabMenuOpenChange={vi.fn()} onContextMenuOpenChange={vi.fn()}
       isFocused={false} />));
     await check(Array.from(element.querySelectorAll<HTMLButtonElement>('[role="tab"]')), outside);
@@ -114,6 +122,7 @@ it('uses the Agent surface titlebar skin for an active Agent conversation', asyn
         onCloseOtherTabs={vi.fn()}
         onCloseTabsToRight={vi.fn()}
         onCloseAllTabs={vi.fn()}
+        onToggleMemoEditorMode={vi.fn()}
         onOpenTabInWorkColumn={vi.fn()}
         onReorderTab={vi.fn()}
         isTabMenuOpen={false}
@@ -197,5 +206,56 @@ it('shows the reason why a webpage cannot be moved in its context menu', async (
     const explanation = document.getElementById('move-unavailable-one');
     expect(explanation?.textContent).toBe('tabWindow.context.moveWebUnavailable');
     expect(document.querySelector<HTMLButtonElement>('[aria-describedby="move-unavailable-one"]')?.disabled).toBe(true);
+  });
+});
+
+it('shows the editor mode entry only for memo tabs and toggles its label', async () => {
+  useDocumentEditorModeMock.mockReturnValue('rich');
+  const onToggleMemoEditorMode = vi.fn();
+  const memoTab: BrowserColumnTab = {
+    id: 'memo-tab',
+    title: 'Memo',
+    icon: null,
+    target: {
+      kind: 'memo',
+      memoId: 'memo-1',
+      notebookId: 'notebook-1',
+      notebookPath: '/notes',
+      filePath: '/notes/memo.md',
+    },
+  };
+  await withHeader(vi.fn(), async () => {
+    await act(async () => {
+      document.querySelector<HTMLElement>('[role="tab"]')?.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }),
+      );
+    });
+    let modeItem = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+      .find((item) => item.textContent === 'document.action.sourceMode');
+    expect(modeItem).not.toBeUndefined();
+    await act(async () => { modeItem?.click(); });
+    expect(onToggleMemoEditorMode).toHaveBeenCalledWith('memo-tab');
+
+    useDocumentEditorModeMock.mockReturnValue('source');
+    await act(async () => {
+      document.querySelector<HTMLElement>('[role="tab"]')?.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }),
+      );
+    });
+    modeItem = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+      .find((item) => item.textContent === 'document.action.richTextMode');
+    expect(modeItem).not.toBeUndefined();
+  }, { tabs: [memoTab], onToggleMemoEditorMode });
+});
+
+it('does not show the editor mode entry for web tabs', async () => {
+  await withHeader(vi.fn(), async () => {
+    await act(async () => {
+      document.querySelector<HTMLElement>('[role="tab"]')?.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, clientX: 20, clientY: 20 }),
+      );
+    });
+    expect(Array.from(document.querySelectorAll('[role="menuitem"]'))
+      .some((item) => item.textContent?.includes('document.action.sourceMode'))).toBe(false);
   });
 });

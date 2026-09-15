@@ -12,6 +12,7 @@ import {
   isFrontmatterPropertyFlowSequence,
   moveVisibleFrontmatterProperty,
   parseVisibleFrontmatter,
+  suggestFrontmatterRepair,
   toFrontmatterPropertyInput,
   updateVisibleFrontmatterProperty,
 } from '@features/document/properties/frontmatter-model';
@@ -1392,6 +1393,29 @@ export class FrontmatterPropertyNodeView implements NodeView {
     container.append(add);
   }
 
+  private repairMalformedFrontmatter() {
+    const repair = suggestFrontmatterRepair(String(this.node.attrs.yamlContent ?? ''));
+    if (!repair) return;
+
+    const pos = this.getPos();
+    if (typeof pos !== 'number') return;
+    const currentNode = this.view.state.doc.nodeAt(pos);
+    if (!currentNode || currentNode.type.name !== 'frontmatter') return;
+
+    const { schema } = this.view.state;
+    const bodyType = schema.nodes.codeBlock ?? schema.nodes.paragraph;
+    const bodyNode = bodyType.create(null, schema.text(repair.bodyContent));
+    const transaction = this.view.state.tr
+      .setNodeMarkup(pos, undefined, {
+        ...currentNode.attrs,
+        yamlContent: repair.yamlContent,
+      })
+      .insert(pos + currentNode.nodeSize, bodyNode);
+
+    this.validationError = null;
+    this.view.dispatch(transaction);
+  }
+
   private render() {
     this.closePropertyMenu();
     this.closePropertyEditor();
@@ -1406,6 +1430,16 @@ export class FrontmatterPropertyNodeView implements NodeView {
       );
       error.title = parsed.parseError;
       container.append(error);
+      if (suggestFrontmatterRepair(String(this.node.attrs.yamlContent ?? ''))) {
+        const repair = createElement(
+          'button',
+          'frontmatter-property__repair',
+          this.t('document.properties.repair'),
+        );
+        repair.type = 'button';
+        repair.addEventListener('click', () => this.repairMalformedFrontmatter());
+        container.append(repair);
+      }
     } else {
       if (parsed.properties.length > 0) {
         const list = createElement('div', 'frontmatter-property__list');

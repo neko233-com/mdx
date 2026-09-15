@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import { flushSync } from 'react-dom';
-import { Blocks, Check, ChevronDown, File as FileIcon, FileText, Folder, Globe, MessageSquare, X } from 'lucide-react';
+import { Blocks, Check, ChevronDown, Code2, File as FileIcon, FileText, Folder, Globe, MessageSquare, X } from 'lucide-react';
 import {
   canMoveBrowserColumnTargetToWorkColumn,
   type BrowserColumnTab,
 } from '@features/workspace/public/browser-column-api';
 import {
   AgentThreadCardFullscreenExitButton,
+  useDocumentEditorMode,
   useFullscreenAgentThreadCardInfo,
 } from '@features/document/public/shell-api';
 import { AgentIcon } from '@features/agent/public/shell-api';
@@ -58,6 +59,31 @@ function tabIcon(tab: BrowserColumnTab) {
   return <FileText className="h-3.5 w-3.5" />;
 }
 
+function MemoEditorModeContextMenuItem({
+  memoId,
+  onToggle,
+}: {
+  memoId: string;
+  onToggle: () => void | Promise<void>;
+}) {
+  const { t } = useI18n();
+  const editorMode = useDocumentEditorMode('browser-column', { kind: 'memo', id: memoId });
+
+  return (
+    <ContextMenuItem
+      onClick={() => { void onToggle(); }}
+      className="h-7 items-center justify-start gap-0 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
+    >
+      <Code2 className="mr-2 h-4 w-4" />
+      <span className="leading-5">
+        {editorMode === 'source'
+          ? t('document.action.richTextMode')
+          : t('document.action.sourceMode')}
+      </span>
+    </ContextMenuItem>
+  );
+}
+
 export interface BrowserColumnHeaderProps {
   tabs: BrowserColumnTab[];
   activeTabId: string | null;
@@ -67,6 +93,7 @@ export interface BrowserColumnHeaderProps {
   onCloseOtherTabs: (tabId: string) => void | Promise<void>;
   onCloseTabsToRight: (tabId: string) => void | Promise<void>;
   onCloseAllTabs: () => void | Promise<void>;
+  onToggleMemoEditorMode: (tabId: string) => void | Promise<void>;
   onOpenTabInWorkColumn: (tabId: string) => void | Promise<void>;
   onReorderTab: (tabId: string, beforeTabId: string | null) => void;
   isTabMenuOpen: boolean;
@@ -85,6 +112,7 @@ export function BrowserColumnHeader({
   onCloseOtherTabs,
   onCloseTabsToRight,
   onCloseAllTabs,
+  onToggleMemoEditorMode,
   onOpenTabInWorkColumn,
   onReorderTab,
   isTabMenuOpen,
@@ -316,6 +344,12 @@ export function BrowserColumnHeader({
                 >
                   <span className="leading-5">{t('tabWindow.context.closeAll')}</span>
                 </ContextMenuItem>
+                {tab.target.kind === 'memo' && (
+                  <MemoEditorModeContextMenuItem
+                    memoId={tab.target.memoId}
+                    onToggle={() => onToggleMemoEditorMode(tab.id)}
+                  />
+                )}
                 <div
                   role="separator"
                   aria-hidden="true"

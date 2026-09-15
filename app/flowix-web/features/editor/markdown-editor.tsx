@@ -421,12 +421,14 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   const onEditingFinishedRef = useRef(onEditingFinished);
   const onFocusTitleRef = useRef(onFocusTitle);
   const onAppendToTitleRef = useRef(onAppendToTitle);
+  const editableRef = useRef(editable);
   onEditorScrollRef.current = onEditorScroll;
   onChangeRef.current = onChange;
   onSearchPanelOpenChangeRef.current = onSearchPanelOpenChange;
   onEditingFinishedRef.current = onEditingFinished;
   onFocusTitleRef.current = onFocusTitle;
   onAppendToTitleRef.current = onAppendToTitle;
+  editableRef.current = editable;
 
   const clearSerializeTimer = useCallback(() => {
     if (serializeTimerRef.current) {
@@ -639,13 +641,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           return content.content.textBetween(0, content.content.size, '\n', '\n');
         },
         handleKeyDown: (_view, event) => {
-          if (!editable || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) {
+          if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) {
             return false;
-          }
-
-          if (event.key === 'Backspace' && handleBackspaceAtBodyStart()) {
-            event.preventDefault();
-            return true;
           }
 
           const { selection } = editor.state;
@@ -654,6 +651,16 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           if (event.key === 'ArrowUp' && selection.from === getEditableBodyStart(editor).position + 1) {
             event.preventDefault();
             onFocusTitleRef.current?.();
+            return true;
+          }
+
+          // Boundary navigation remains available in a read-only host. Only
+          // mutations (such as promoting the first body line) require the
+          // current editable state.
+          if (!editableRef.current) return false;
+
+          if (event.key === 'Backspace' && handleBackspaceAtBodyStart()) {
+            event.preventDefault();
             return true;
           }
 

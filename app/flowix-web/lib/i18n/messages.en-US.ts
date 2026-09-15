@@ -1115,6 +1115,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "document.action.saveAsTemplate": "Save as template",
     "document.action.exportMarkdown": "Export as Markdown",
     "document.action.exportWord": "Export as Word",
+    "document.action.sourceMode": "Switch to source mode",
+    "document.action.richTextMode": "Switch to rich text mode",
     "document.action.delete": "Delete",
     "document.command.readFailed": "Failed to read note",
     "document.command.noDocumentToExport": "No note to export",
@@ -1158,6 +1160,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "document.properties.nextMonth": "Next month",
     "document.properties.yamlParseError":
       "Current YAML cannot be parsed. Fix it before editing properties.",
+    "document.properties.repair": "Repair",
     "document.properties.fieldColumn": "Field",
     "document.properties.typeColumn": "Type",
     "document.properties.valueColumn": "Value",

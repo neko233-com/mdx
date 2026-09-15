@@ -19,7 +19,26 @@ vi.mock('@/lib/i18n', async (importOriginal) => ({
 }));
 vi.mock('@/lib/toast', () => ({ toast: { error: vi.fn() } }));
 vi.mock('@shared/ui/overlay-scrollbar', () => ({
-  OverlayScrollbar: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  OverlayScrollbar: ({
+    children,
+    scrollerRef,
+    onScroll,
+  }: {
+    children: React.ReactNode;
+    scrollerRef?: React.MutableRefObject<HTMLDivElement | null> | React.RefCallback<HTMLDivElement>;
+    onScroll?: React.UIEventHandler<HTMLDivElement>;
+  }) => (
+    <div
+      data-test-tree-scroller="true"
+      ref={(node) => {
+        if (typeof scrollerRef === 'function') scrollerRef(node);
+        else if (scrollerRef) scrollerRef.current = node;
+      }}
+      onScroll={onScroll}
+    >
+      {children}
+    </div>
+  ),
 }));
 vi.mock('@shared/ui/context-menu', () => ({
   ContextMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -85,6 +104,7 @@ describe('NotebookFileTree pointer dragging', () => {
     host = document.createElement('div');
     document.body.append(host);
     captured = false;
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(204);
     HTMLElement.prototype.setPointerCapture = vi.fn(() => { captured = true; });
     HTMLElement.prototype.hasPointerCapture = vi.fn(() => captured);
     HTMLElement.prototype.releasePointerCapture = vi.fn(() => { captured = false; });
@@ -95,6 +115,7 @@ describe('NotebookFileTree pointer dragging', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     host.remove();
     environment.IS_REACT_ACT_ENVIRONMENT = false;
     vi.mocked(resolveMemoByPath).mockReset();
@@ -123,10 +144,10 @@ describe('NotebookFileTree pointer dragging', () => {
     } as unknown as FolderTreeController;
     const root = createRoot(host);
     await act(async () => root.render(
-      <NotebookFileTree notebookPath="/notes" notebookName="Notes" tree={tree}
+      <NotebookFileTree notebookPath="/notes" notebookName="Notes" tree={{ ...tree } as FolderTreeController}
         onNoteSelect={vi.fn()} onCreateNote={vi.fn()} onMoveNote={onMoveNote} />,
     ));
-    return { root, refresh };
+    return { root, refresh, tree };
   }
 
   async function mountNested(onMoveNote: TestMoveNote) {
@@ -172,11 +193,17 @@ describe('NotebookFileTree pointer dragging', () => {
     } as unknown as FolderTreeController;
     const root = createRoot(host);
     const onNoteSelect = vi.fn();
-    await act(async () => root.render(
-      <NotebookFileTree notebookPath="/notes" notebookName="Notes" tree={tree}
+    const render = () => root.render(
+      <NotebookFileTree notebookPath="/notes" notebookName="Notes" tree={{ ...tree } as FolderTreeController}
         onNoteSelect={onNoteSelect} onCreateNote={vi.fn()} onMoveNote={onMoveNote} />,
-    ));
-    return { root, tree, onNoteSelect };
+    );
+    await act(async () => render());
+    return {
+      root,
+      tree,
+      onNoteSelect,
+      rerender: async () => { await act(async () => render()); },
+    };
   }
 
   function clickEvent(modifiers: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean } = {}) {
@@ -309,14 +336,16 @@ describe('NotebookFileTree pointer dragging', () => {
     const firstFolderIndex = rows.findIndex((row) => row.getAttribute('data-notebook-tree-kind') === 'folder');
     const firstNoteIndex = rows.findIndex((row) => row.getAttribute('data-notebook-tree-kind') === 'note');
     const firstMatchingRow = rows[kind === 'folder' ? firstFolderIndex : firstNoteIndex];
-    // A draft and its siblings now live inside the same recursive subtree
-    // container instead of a flattened, absolutely-positioned root list.
-    expect(input.parentElement?.nextElementSibling).toBe(firstMatchingRow.parentElement);
+    const virtualRows = Array.from(host.querySelectorAll<HTMLElement>('[data-notebook-virtual-row]'));
+    const draftVirtualRow = input.closest<HTMLElement>('[data-notebook-virtual-row]')!;
+    const matchingVirtualRow = firstMatchingRow.closest<HTMLElement>('[data-notebook-virtual-row]')!;
+    expect(virtualRows.indexOf(draftVirtualRow) + 1).toBe(virtualRows.indexOf(matchingVirtualRow));
     expect(input.parentElement?.style.marginLeft).toBe(
       parentPath === '/notes' ? '6px' : '26px',
     );
     if (kind === 'note') {
-      expect(input.parentElement?.previousElementSibling).toBe(rows[firstFolderIndex].parentElement);
+      const folderVirtualRow = rows[firstFolderIndex].closest<HTMLElement>('[data-notebook-virtual-row]')!;
+      expect(virtualRows.indexOf(folderVirtualRow)).toBeLessThan(virtualRows.indexOf(draftVirtualRow));
     }
     await act(async () => root.unmount());
   });
@@ -438,16 +467,62 @@ describe('NotebookFileTree pointer dragging', () => {
     await act(async () => root.unmount());
   });
 
+  it('auto-expands a collapsed folder after a sustained drag hover', async () => {
+    vi.useFakeTimers();
+    const { root, tree } = await mount(successfulMove);
+    const noteRow = host.querySelector<HTMLElement>('[data-notebook-tree-kind="note"]')!;
+    const folderRow = host.querySelector<HTMLElement>('[data-notebook-tree-kind="folder"]')!;
+    vi.mocked(document.elementFromPoint).mockReturnValue(folderRow);
+
+    await act(async () => noteRow.dispatchEvent(pointerEvent('pointerdown', 10, 10)));
+    await act(async () => noteRow.dispatchEvent(pointerEvent('pointermove', 20, 10)));
+    expect(folderRow.closest<HTMLElement>('.folder-file-tree__group')?.dataset.dragOver).toBe('true');
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    await act(async () => { vi.advanceTimersByTime(650); });
+
+    expect(tree.toggle).toHaveBeenCalledWith('/notes/projects');
+    await act(async () => noteRow.dispatchEvent(pointerEvent('pointercancel', 20, 10)));
+    await act(async () => root.unmount());
+  });
+
+  it('auto-scrolls the virtual viewport while dragging near its lower edge', async () => {
+    const { root } = await mount(successfulMove);
+    const noteRow = host.querySelector<HTMLElement>('[data-notebook-tree-kind="note"]')!;
+    const folderRow = host.querySelector<HTMLElement>('[data-notebook-tree-kind="folder"]')!;
+    const scroller = host.querySelector<HTMLElement>('[data-test-tree-scroller="true"]')!;
+    vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      right: 240,
+      bottom: 204,
+      left: 0,
+      width: 240,
+      height: 204,
+      toJSON: () => ({}),
+    });
+    vi.mocked(document.elementFromPoint).mockReturnValue(folderRow);
+
+    await act(async () => noteRow.dispatchEvent(pointerEvent('pointerdown', 10, 180)));
+    await act(async () => {
+      noteRow.dispatchEvent(pointerEvent('pointermove', 20, 200));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+
+    expect(scroller.scrollTop).toBeGreaterThan(0);
+    await act(async () => noteRow.dispatchEvent(pointerEvent('pointercancel', 20, 200)));
+    await act(async () => root.unmount());
+  });
+
   it('prefers the nested folder target over the root target', async () => {
     const onMoveNote = vi.fn<TestMoveNote>(successfulMove);
     const { root } = await mountNested(onMoveNote);
     const noteRows = host.querySelectorAll<HTMLElement>('[data-notebook-tree-kind="note"]');
     const childNoteRow = noteRows[0];
     const rootNoteRow = noteRows[1];
-    const childList = host.querySelector<HTMLElement>('.notebook-file-tree__subtree-items')!;
     const folderGroup = host.querySelector<HTMLElement>('.folder-file-tree__group')!;
     const treeRoot = host.querySelector<HTMLElement>('[data-notebook-tree-root="true"]')!;
-    vi.mocked(document.elementFromPoint).mockReturnValue(childList);
+    vi.mocked(document.elementFromPoint).mockReturnValue(childNoteRow);
 
     await act(async () => rootNoteRow.dispatchEvent(pointerEvent('pointerdown', 10, 10)));
     await act(async () => rootNoteRow.dispatchEvent(pointerEvent('pointermove', 20, 10)));
@@ -455,6 +530,9 @@ describe('NotebookFileTree pointer dragging', () => {
     expect(folderGroup.dataset.dragOver).toBe('true');
     expect(treeRoot.className).not.toContain('bg-[color-mix(in_oklch,var(--brand)_10%,transparent)]');
     expect(childNoteRow.hasAttribute('data-notebook-drop-path')).toBe(false);
+    const dropRange = host.querySelector<HTMLElement>('.notebook-file-tree__drop-range')!;
+    expect(dropRange.style.top).toBe('0px');
+    expect(dropRange.style.height).toBe('66px');
 
     await act(async () => rootNoteRow.dispatchEvent(pointerEvent('pointerup', 20, 10)));
     await vi.waitFor(() => expect(onMoveNote).toHaveBeenCalledWith([moveSource('/notes/root.md')], '/notes/projects'));
@@ -636,7 +714,7 @@ describe('NotebookFileTree pointer dragging', () => {
 
   it('keeps the moved notes selected in their new folder', async () => {
     const onMoveNote = vi.fn<TestMoveNote>(successfulMove);
-    const { root, tree } = await mountFlatNotes(onMoveNote);
+    const { root, tree, rerender } = await mountFlatNotes(onMoveNote);
     const noteRows = host.querySelectorAll<HTMLElement>('[data-notebook-tree-kind="note"]');
     const folderRow = host.querySelector<HTMLElement>('[data-notebook-tree-kind="folder"]')!;
     const folder = tree.rootChildren.find((item) => item.type === 'folder')!;
@@ -665,6 +743,9 @@ describe('NotebookFileTree pointer dragging', () => {
     await act(async () => noteRows[1].dispatchEvent(pointerEvent('pointermove', 20, 10)));
     await act(async () => noteRows[1].dispatchEvent(pointerEvent('pointerup', 20, 10)));
 
+    await vi.waitFor(() => expect(onMoveNote).toHaveBeenCalled());
+    await rerender();
+
     await vi.waitFor(() => {
       const selectedRows = host.querySelectorAll<HTMLElement>(
         '[data-notebook-tree-kind="note"][aria-selected="true"]',
@@ -681,7 +762,7 @@ describe('NotebookFileTree pointer dragging', () => {
   it('keeps moved and failed notes selected and reports partial failures', async () => {
     vi.mocked(toast.error).mockClear();
     const onMoveNote = vi.fn<TestMoveNote>(successfulMove);
-    const { root, tree } = await mountFlatNotes(onMoveNote);
+    const { root, tree, rerender } = await mountFlatNotes(onMoveNote);
     const noteRows = host.querySelectorAll<HTMLElement>('[data-notebook-tree-kind="note"]');
     const folderRow = host.querySelector<HTMLElement>('[data-notebook-tree-kind="folder"]')!;
     const folder = tree.rootChildren.find((item) => item.type === 'folder')!;
@@ -702,6 +783,9 @@ describe('NotebookFileTree pointer dragging', () => {
     await act(async () => noteRows[1].dispatchEvent(pointerEvent('pointerdown', 10, 10)));
     await act(async () => noteRows[1].dispatchEvent(pointerEvent('pointermove', 20, 10)));
     await act(async () => noteRows[1].dispatchEvent(pointerEvent('pointerup', 20, 10)));
+
+    await vi.waitFor(() => expect(onMoveNote).toHaveBeenCalled());
+    await rerender();
 
     await vi.waitFor(() => {
       const selectedRows = host.querySelectorAll<HTMLElement>(
@@ -820,6 +904,51 @@ describe('NotebookFileTree pointer dragging', () => {
     await act(async () => noteRow.dispatchEvent(pointerEvent('pointerup', 20, 10)));
 
     expect(onMoveNote).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
+  it('bounds mounted rows for a large mixed file tree and updates the window on scroll', async () => {
+    const rootChildren = Array.from({ length: 500 }, (_, index) => ({
+      ...item(`/notes/item-${String(index).padStart(3, '0')}.md`, 'document'),
+      resourceKind: index % 3 === 0 ? 'image' as const : index % 3 === 1 ? 'video' as const : 'note' as const,
+    }));
+    const tree = {
+      rootChildren,
+      nodes: new Map(rootChildren.map((child) => [child.fullPath, child])),
+      expanded: new Set<string>(),
+      loading: false,
+      error: null,
+      toggle: vi.fn(),
+      expandTo: vi.fn(async () => {}),
+      collapseAll: vi.fn(),
+      refresh: vi.fn(async () => {}),
+      refreshDirectories: vi.fn(async () => {}),
+      reload: vi.fn(async () => {}),
+    } as unknown as FolderTreeController;
+    const root = createRoot(host);
+
+    await act(async () => root.render(
+      <NotebookFileTree notebookPath="/notes" notebookName="Notes" tree={tree}
+        onNoteSelect={vi.fn()} onCreateNote={vi.fn()} onMoveNote={successfulMove} />,
+    ));
+    await vi.waitFor(() => {
+      expect(host.querySelectorAll('[data-notebook-virtual-row]').length).toBeLessThan(40);
+    });
+    expect(host.querySelector('[title="/notes/item-000.md"]')).not.toBeNull();
+    expect(host.querySelector('[title="/notes/item-300.md"]')).toBeNull();
+
+    const scroller = host.querySelector<HTMLElement>('[data-test-tree-scroller="true"]')!;
+    await act(async () => {
+      scroller.scrollTop = 300 * 34;
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+    await vi.waitFor(() => {
+      expect(host.querySelector('[title="/notes/item-300.md"]')).not.toBeNull();
+    });
+    expect(host.querySelectorAll('[data-notebook-virtual-row]').length).toBeLessThan(40);
+    expect(host.querySelector('[title="/notes/item-000.md"]')).not.toBeNull();
+
     await act(async () => root.unmount());
   });
 });

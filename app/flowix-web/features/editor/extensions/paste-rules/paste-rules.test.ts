@@ -80,6 +80,8 @@ describe('paste rule helpers', () => {
 
   it('detects pasted markdown with YAML frontmatter', () => {
     const markdown = [
+      '',
+      '  ',
       '---',
       'title: Paste target',
       'tags:',

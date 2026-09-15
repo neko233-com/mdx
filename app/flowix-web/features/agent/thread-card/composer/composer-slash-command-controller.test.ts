@@ -124,6 +124,7 @@ describe('ComposerSlashCommandController', () => {
 
     expect(editor.getMarkdown()).toBe('[/goal](flowix://slash/deepseek-harness/goal)');
     expect(composer.querySelector('.agent-thread-card__slash-token')?.textContent).toBe('/goal');
+    expect(composer.querySelector('.agent-thread-card__slash-token--control')).not.toBeNull();
     const wrapper = composer.querySelector('.agent-thread-card__slash-token-wrapper');
     expect(wrapper?.childNodes).toHaveLength(3);
     expect(wrapper?.firstChild?.textContent).toBe('\u200B');
@@ -291,10 +292,8 @@ describe('ComposerSlashCommandController', () => {
     type(editor, '/');
     expect([...document.querySelectorAll('.agent-composer-slash-menu__name')]
       .map((node) => node.textContent)).toEqual([
-        '/compact', '/skill', '/goal', '/model', '/permission',
+        '/compact', '/skill', '/goal', '/plan', '/model', '/permission',
       ]);
-    expect([...document.querySelectorAll('.agent-composer-slash-menu__name')]
-      .map((node) => node.textContent)).not.toContain('/plan');
     expect([...document.querySelectorAll('.agent-composer-slash-menu__name')]
       .map((node) => node.textContent)).not.toContain('/export');
     expect(document.querySelector('.agent-composer-slash-menu')).not.toBeNull();

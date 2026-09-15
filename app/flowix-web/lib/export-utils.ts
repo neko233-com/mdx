@@ -1,4 +1,4 @@
-const FRONTMATTER_PATTERN = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+const FRONTMATTER_PATTERN = /^\uFEFF?(?:[ \t]*\r?\n)*---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 const MAX_FILE_NAME_LENGTH = 120;
 
 const ILLEGAL_FILENAME_CHARS = new Set(['\\', '/', ':', '*', '?', '"', '<', '>', '|']);

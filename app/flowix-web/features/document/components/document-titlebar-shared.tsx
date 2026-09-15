@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronRight, Ellipsis, Loader2, Palette } from 'lucide-react';
+import { Check, ChevronRight, Code2, Ellipsis, Loader2, Palette } from 'lucide-react';
 import {
   LinkSimpleIcon,
   CopyIcon,
@@ -33,6 +33,7 @@ import {
   type MemoColor,
   type MemoItem,
 } from '@features/memo';
+import type { DocumentEditorMode } from '@features/document/store/document-editor-view-store';
 import {
   flushDocumentPath,
   getDocumentBuffer,
@@ -99,6 +100,8 @@ export interface DocumentTitlebarProps {
     onExportWord: () => void;
     onRequestDeleteMemo: () => void;
     onColorsChange?: (next: MemoColor[]) => void;
+    editorMode: DocumentEditorMode;
+    onToggleEditorMode: () => void;
   };
 }
 
@@ -702,6 +705,8 @@ export function MemoActions({
   onExportWord,
   onRequestDeleteMemo,
   onColorsChange,
+  editorMode,
+  onToggleEditorMode,
   canCopyFullText,
   canExportContent,
   canSaveAsTemplate,
@@ -717,6 +722,8 @@ export function MemoActions({
   onExportWord: () => void;
   onRequestDeleteMemo: () => void;
   onColorsChange: (next: MemoColor[]) => void;
+  editorMode: DocumentEditorMode;
+  onToggleEditorMode: () => void;
   canCopyFullText: boolean;
   canExportContent: boolean;
   canSaveAsTemplate: boolean;
@@ -821,6 +828,15 @@ export function MemoActions({
             ) : (
               <><PushPinIcon className="w-4 h-4 mr-2" /> {t("document.action.pin")}</>
             )}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={onToggleEditorMode}
+            className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
+          >
+            <Code2 className="mr-2 h-4 w-4" />
+            {editorMode === 'source'
+              ? t("document.action.richTextMode")
+              : t("document.action.sourceMode")}
           </DropdownMenuItem>
           {(canSaveAsTemplate || canExportContent) && (
             <div role="separator" aria-hidden="true" className="mx-2 my-1 h-px bg-[var(--border-popup)] opacity-60" />

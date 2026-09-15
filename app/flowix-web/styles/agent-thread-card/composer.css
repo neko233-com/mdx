@@ -756,6 +756,31 @@
   outline: none;
 }
 
+/* Goal and plan are persistent composer controls. Give them the same compact
+ * chip treatment as Skill cards so the selected action is visible at a glance
+ * and feels like one removable input unit. */
+.markdown-editor .agent-thread-card__slash-token--control {
+  display: inline-flex;
+  height: 20px;
+  max-width: 100%;
+  align-items: center;
+  padding: 0 0.45rem;
+  border: 1px solid color-mix(in oklch, var(--border) 90%, var(--foreground) 10%);
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.9em;
+  line-height: 20px;
+  vertical-align: top;
+}
+
+.markdown-editor .agent-thread-card__slash-token--control:hover,
+.markdown-editor .agent-thread-card__slash-token--control:focus-visible {
+  border-color: color-mix(in oklch, var(--border) 68%, var(--foreground) 32%);
+  background: transparent;
+  color: var(--foreground);
+}
+
 .markdown-editor .agent-thread-card__skill-token {
   display: inline-flex;
   height: 20px;

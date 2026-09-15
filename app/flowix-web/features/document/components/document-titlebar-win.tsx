@@ -52,6 +52,8 @@ export function DocumentTitlebarWin({
     onExportWord,
     onRequestDeleteMemo,
     onColorsChange,
+    editorMode,
+    onToggleEditorMode,
   },
 }: DocumentTitlebarProps) {
   const { t } = useI18n();
@@ -135,6 +137,8 @@ export function DocumentTitlebarWin({
             onExportWord={onExportWord}
             onRequestDeleteMemo={onRequestDeleteMemo}
             onColorsChange={onColorsChange ?? (() => {})}
+            editorMode={editorMode}
+            onToggleEditorMode={onToggleEditorMode}
             canCopyFullText={canCopyFullText}
             canExportContent={canExportContent}
             canSaveAsTemplate={canSaveAsTemplate}

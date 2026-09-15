@@ -8,7 +8,7 @@ import { FrontmatterPropertyNodeView } from '@features/editor/extensions/frontma
 // Consume a BOM both at the true file boundary and immediately after the
 // frontmatter block. The latter repairs legacy imports where key injection
 // displaced the UTF-8 signature into the Markdown body.
-const FRONTMATTER_TOKEN_RE = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n\uFEFF?|$)/;
+const FRONTMATTER_TOKEN_RE = /^\uFEFF?(?:[ \t]*\r?\n)*---\r?\n([\s\S]*?)\r?\n---(?:\r?\n\uFEFF?|$)/;
 
 const Frontmatter = Node.create({
   name: 'frontmatter',
@@ -95,7 +95,7 @@ const Frontmatter = Node.create({
     name: 'frontmatter',
     level: 'block',
     start(src: string) {
-      return /^\uFEFF?---/.test(src) ? 0 : -1;
+      return /^\uFEFF?(?:[ \t]*\r?\n)*---/.test(src) ? 0 : -1;
     },
     tokenize(src: string, tokens?: unknown[]): { type: string; raw: string } | undefined {
       if (tokens && tokens.length > 0) return undefined;

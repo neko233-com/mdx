@@ -13,7 +13,7 @@
 	box-sizing: border-box;
 	color: var(--document-foreground, var(--foreground, #1f2937));
 	background: transparent;
-	font-size: 13px;
+	font-size: var(--code-editor-font-size, 13px);
 }
 
 .code-editor > .cm-editor.cm-focused {
@@ -30,15 +30,89 @@
 	position: relative;
 	z-index: 0;
 	font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-	line-height: 1.65;
+	line-height: var(--code-editor-line-height, 1.65);
 	overflow-anchor: none;
+}
+
+/* A memo's source title is part of the source scroll surface. CodeMirror's
+ * default scroller is a two-column flex row (gutter + content), so use a
+ * second row for the gutter/content when the title mount is present. This
+ * keeps the title aligned with the source text while preserving line-number
+ * alignment for the first body line. */
+.code-editor {
+	--code-editor-font-size: 13px;
+	--code-editor-line-height: 1.65;
+	--code-editor-line-padding-left: 10px;
+	--code-editor-line-padding-right: 20px;
+	--code-editor-content-padding-top: 14px;
+	--code-editor-content-padding-bottom: 28px;
+}
+
+.code-editor.code-editor--with-scroll-header .cm-scroller {
+	display: grid !important;
+	align-items: stretch !important;
+	grid-template-columns: auto minmax(0, 1fr);
+	grid-template-rows: auto minmax(0, 1fr);
+}
+
+.code-editor.code-editor--with-scroll-header .cm-source-header {
+	grid-column: 2;
+	grid-row: 1;
+	min-width: 0;
+	box-sizing: border-box;
+	font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+	font-size: var(--code-editor-font-size, 13px);
+	line-height: var(--code-editor-line-height, 1.65);
+	color: var(--document-foreground, var(--foreground, #1f2937));
+}
+
+.code-editor.code-editor--with-scroll-header .cm-gutters {
+	grid-column: 1;
+	grid-row: 2;
+	align-self: stretch;
+}
+
+.code-editor.code-editor--with-scroll-header .cm-content {
+	grid-column: 2;
+	grid-row: 2;
+	align-self: stretch;
+	width: 100%;
+	padding-top: 0 !important;
+}
+
+.code-editor .source-memo-title-row {
+	box-sizing: border-box;
+	width: 100%;
+	min-width: 0;
+	--source-memo-title-font-size: 16px;
+	padding-top: var(--code-editor-content-padding-top, 14px);
+	/* Preserve the former separator footprint: 0.5em above + 1px line +
+	 * 0.5em below, without drawing a visible rule. */
+	padding-bottom: calc(1em + 0.0625rem);
+}
+
+.code-editor .source-memo-title-row .memo-title-shell {
+	width: 100%;
+}
+
+.code-editor .source-memo-title-row .memo-title-editor {
+	box-sizing: border-box;
+	min-height: calc(var(--source-memo-title-font-size, 16px) * var(--code-editor-line-height, 1.65));
+	padding: 0 var(--code-editor-line-padding-right, 20px) 0 var(--code-editor-line-padding-left, 10px);
+	font-family: inherit;
+	font-size: var(--source-memo-title-font-size, 16px);
+	font-weight: 600;
+	line-height: inherit;
+	white-space: pre-wrap;
+	word-break: break-word;
+	overflow-wrap: anywhere;
 }
 
 .code-editor .cm-content {
 	display: block;
 	min-height: 100%;
 	margin: 0;
-	padding: 14px 0 28px;
+	padding: var(--code-editor-content-padding-top, 14px) 0 var(--code-editor-content-padding-bottom, 28px);
 	box-sizing: border-box;
 	flex-grow: 2;
 	flex-shrink: 0;
@@ -78,7 +152,7 @@
 .code-editor .cm-line {
 	display: block;
 	max-width: 100%;
-	padding: 0 20px 0 10px;
+	padding: 0 var(--code-editor-line-padding-right, 20px) 0 var(--code-editor-line-padding-left, 10px);
 	color: var(--document-foreground, var(--foreground, #1f2937));
 }
 

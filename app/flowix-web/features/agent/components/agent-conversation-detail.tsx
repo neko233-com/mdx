@@ -382,7 +382,7 @@ export function AgentConversationDetail({
       void runDshCommandFromDetail(content, imagePaths);
       return;
     }
-    if (typeKeyRef.current === 'codex' && /^\/(?:compact|goal)(?:\s|$)/iu.test(content)) {
+    if (typeKeyRef.current === 'codex' && /^\/(?:compact|goal|plan)(?:\s|$)/iu.test(content)) {
       clearComposerAfterSlashCommand();
       void runCodexSlashCommandFromDetail(content);
       return;

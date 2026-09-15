@@ -241,6 +241,15 @@
 	pointer-events: none;
 }
 
+/* The notebook tree uses a flat virtual row model. Its drop background is a
+ * separate absolute range spanning the target folder and loaded descendants,
+ * so the legacy nested-group pseudo element must not paint the first row a
+ * second time. The generic FolderFileTree keeps the nested behavior above. */
+.notebook-file-tree__virtual-items
+	.folder-file-tree__group[data-drag-over='true']::before {
+	display: none;
+}
+
 .folder-file-tree__group[data-drag-over='true'] > .folder-file-tree__item,
 .folder-file-tree__group[data-drag-over='true'] > .folder-file-tree__subtree {
 	z-index: 1;

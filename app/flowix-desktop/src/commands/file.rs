@@ -138,20 +138,31 @@ fn canonical_path(path: &Path) -> std::path::PathBuf {
     dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// 读取目录所属笔记本的业务创建时间，按规范化物理路径建立索引。
+fn relative_memo_is_direct_child(relative_path: &Path, relative_directory: &Path) -> bool {
+    relative_path.parent().unwrap_or_else(|| Path::new("")) == relative_directory
+}
+
+/// 读取当前目录直接子项所需的笔记元数据。MemoFile 已缓存当前笔记本
+/// index；这里进一步只为当前目录的 Markdown 条目建立 path map，避免每次
+/// 展开小目录都为整个笔记本执行路径拼接与 canonicalize。
 /// 非笔记本目录返回 None，外部 Markdown 文件继续使用文件系统时间。
-fn memo_tree_metadata_for_path(
-    scope_path: &Path,
+fn memo_tree_metadata_for_directory(
+    directory_path: &Path,
     state: &State<AppState>,
 ) -> Option<HashMap<std::path::PathBuf, MemoTreeMetadata>> {
     let memo_file = read_lock(&state.memo_file, "memo_file");
-    let scope_path = canonical_path(scope_path);
+    let canonical_directory = canonical_path(directory_path);
     let config = memo_file
         .read_notebook_configs()
         .ok()?
         .into_iter()
-        .filter(|config| path_is_inside(&scope_path, Path::new(&config.path)))
+        .filter(|config| path_is_inside(&canonical_directory, Path::new(&config.path)))
         .max_by_key(|config| Path::new(&config.path).components().count())?;
+    let notebook_root = canonical_path(Path::new(&config.path));
+    let relative_directory = canonical_directory
+        .strip_prefix(&notebook_root)
+        .ok()?
+        .to_path_buf();
     let index = memo_file
         .read_index_for_notebook_id(Some(&config.id))
         .ok()??;
@@ -166,6 +177,9 @@ fn memo_tree_metadata_for_path(
                 } else {
                     entry.relative_path
                 };
+                if !relative_memo_is_direct_child(Path::new(&relative_path), &relative_directory) {
+                    return None;
+                }
                 let path =
                     notebook_path_from_relative(Path::new(&config.path), &relative_path).ok()?;
                 Some((
@@ -229,7 +243,18 @@ fn read_dir_single_level(
             };
             let modified_ms = meta.as_ref().and_then(modified_time_ms);
             let created_ms = meta.as_ref().and_then(created_time_ms);
-            let memo_metadata = memo_metadata.and_then(|items| items.get(&canonical_path(&path)));
+            let resource_kind = if is_dir {
+                None
+            } else {
+                resource_kind_for_path(&path)
+            };
+            // Only Markdown notes can have memo metadata. Images, videos,
+            // generic files and folders skip the canonicalize syscall.
+            let memo_metadata = if matches!(&resource_kind, Some(DocTreeResourceKind::Note)) {
+                memo_metadata.and_then(|items| items.get(&canonical_path(&path)))
+            } else {
+                None
+            };
             let item = DocTreeItem {
                 id: generate_stable_id(&path.to_string_lossy()),
                 full_path: path.to_string_lossy().to_string(),
@@ -246,11 +271,7 @@ fn read_dir_single_level(
                 created_ms,
                 memo_created_ms: memo_metadata.and_then(|metadata| metadata.created_ms),
                 memo_meta: memo_metadata.map(|metadata| metadata.memo.clone()),
-                resource_kind: if is_dir {
-                    None
-                } else {
-                    resource_kind_for_path(&path)
-                },
+                resource_kind,
             };
 
             items.push(item);
@@ -286,7 +307,7 @@ pub fn get_file_tree(
     if !path.exists() || !is_browsable_scope(path, &state) {
         return None;
     }
-    let memo_metadata = memo_tree_metadata_for_path(path, &state);
+    let memo_metadata = memo_tree_metadata_for_directory(path, &state);
     Some(read_dir_single_level(
         path,
         memo_metadata.as_ref(),
@@ -305,7 +326,7 @@ pub fn get_dir_children(
     if !path.exists() || !is_browsable_scope(path, &state) {
         return vec![];
     }
-    let memo_metadata = memo_tree_metadata_for_path(path, &state);
+    let memo_metadata = memo_tree_metadata_for_directory(path, &state);
     read_dir_single_level(
         path,
         memo_metadata.as_ref(),
@@ -789,6 +810,22 @@ mod tests {
         assert_eq!(memo.icon.as_deref(), Some("flashlight"));
         assert_eq!(memo.colors, vec![MemoColor::Blue]);
         assert!(memo.favorited);
+    }
+
+    #[test]
+    fn memo_metadata_scope_only_matches_direct_directory_children() {
+        assert!(relative_memo_is_direct_child(
+            Path::new("root.md"),
+            Path::new("")
+        ));
+        assert!(relative_memo_is_direct_child(
+            Path::new("projects/note.md"),
+            Path::new("projects")
+        ));
+        assert!(!relative_memo_is_direct_child(
+            Path::new("projects/archive/note.md"),
+            Path::new("projects")
+        ));
     }
 
     #[test]
