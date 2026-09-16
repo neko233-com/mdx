@@ -34,7 +34,11 @@ import { LazyGlobalSearchCommand } from '@features/memo/components/lazy-global-s
 import { subscribe } from '@platform/tauri/event-bus';
 import { externalDocuments } from '@platform/tauri/client';
 import { openNoteByTarget, resolveMemoById } from '@features/memo/use-cases/open-by-target';
-import { openBrowserColumnMemoById } from '@features/workspace/use-cases/browser-column-navigation';
+import {
+  openBrowserColumnMarkdown,
+  openBrowserColumnMemoById,
+} from '@features/workspace/use-cases/browser-column-navigation';
+import { openExternalTarget } from '@features/workspace/use-cases/workspace-navigation';
 import { setCurrentWorkspaceNotebook } from '@features/memo/public/workspace-api';
 import {
   FLOWIX_EXTERNAL_MARKDOWN_OPEN_EVENT,
@@ -157,18 +161,42 @@ function ExternalMarkdownOpenDialog() {
     }
   }, [notebookId, request, t]);
 
+  const openDirectly = useCallback(async () => {
+    if (!request) return;
+    setOpening(true);
+    try {
+      if (request.destination === 'browser-column') {
+        for (const filePath of request.filePaths) {
+          await openBrowserColumnMarkdown(filePath);
+        }
+      } else {
+        for (const filePath of request.filePaths) {
+          await openExternalTarget(filePath, {
+            destination: 'main-third',
+            scopePath: selectedNotebook?.path ?? null,
+          });
+        }
+      }
+      setRequest(null);
+    } catch (error) {
+      toast.error(`${t('memo.externalOpen.failed')}: ${String(error)}`);
+    } finally {
+      setOpening(false);
+    }
+  }, [request, selectedNotebook?.path, t]);
+
   const filenames = request?.filePaths.map((path) => path.split(/[\\/]/).pop() || path) ?? [];
   return (
     <Dialog open={!!request} onOpenChange={(openState) => !openState && close()}>
       <DialogContent showCloseButton={!opening}>
         <DialogHeader>
           <DialogTitle>{t('memo.externalOpen.title')}</DialogTitle>
-          <DialogDescription>
-            {t('memo.externalOpen.description', { count: filenames.length } satisfies I18nParams)}
-          </DialogDescription>
         </DialogHeader>
+        <div className="mt-3 max-h-24 overflow-auto rounded-lg border border-[var(--border)] px-3 py-2 text-xs text-[var(--muted-foreground)]">
+          {filenames.map((filename) => <div key={filename} className="truncate">{filename}</div>)}
+        </div>
         <label className="mt-4 block text-sm text-[var(--foreground)]">
-          {t('memo.externalOpen.notebook')}
+          {t('memo.externalOpen.saveTo')}
           <Select
             value={notebookId}
             onValueChange={setNotebookId}
@@ -186,15 +214,15 @@ function ExternalMarkdownOpenDialog() {
             </SelectContent>
           </Select>
         </label>
-        <div className="mt-3 max-h-24 overflow-auto rounded-lg bg-[var(--muted)] px-3 py-2 text-xs text-[var(--muted-foreground)]">
-          {filenames.map((filename) => <div key={filename} className="truncate">{filename}</div>)}
-        </div>
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" onClick={close} disabled={opening} className="h-8 rounded-lg px-3 text-sm hover:bg-[var(--muted)]">
             {t('dialog.cancel')}
           </button>
+          <button type="button" onClick={() => void openDirectly()} disabled={opening} className="h-8 rounded-lg border border-[var(--border)] px-3 text-sm hover:bg-[var(--muted)] disabled:opacity-50">
+            {t('memo.externalOpen.openDirectly')}
+          </button>
           <button type="button" onClick={() => void open()} disabled={opening || !notebookId} className="h-8 rounded-lg bg-[var(--primary)] px-4 text-sm text-[var(--primary-foreground)] disabled:opacity-50">
-            {opening ? t('memo.externalOpen.opening') : t('dialog.open')}
+            {opening ? t('memo.externalOpen.opening') : t('memo.externalOpen.save')}
           </button>
         </div>
       </DialogContent>
