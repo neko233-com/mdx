@@ -16,7 +16,10 @@ import { SelectValueInput } from '@features/document/properties/select-value-inp
 import { MultiSelectValueInput } from '@features/document/properties/multi-select-value-input';
 import { IconValueInput } from '@features/document/properties/icon-value-input';
 import { generatePropertyKey } from '@features/document/properties/property-key';
-import { extractFrontmatter } from '@features/document/properties/frontmatter-model';
+import {
+  extractFrontmatter,
+  SYSTEM_FRONTMATTER_KEYS,
+} from '@features/document/properties/frontmatter-model';
 import type { PropertyFieldConfig } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 
@@ -116,7 +119,12 @@ export function NotePropertiesDialog({
 
   const duplicateKeys = useMemo(() => getDuplicateKeys(rows), [rows]);
   const hasInvalidKey = rows.some((row) => !row.key.trim());
-  const canSave = !isSaving && !frontmatter.parseError && !hasInvalidKey && duplicateKeys.size === 0;
+  const hasReservedKey = rows.some((row) => SYSTEM_FRONTMATTER_KEYS.has(row.key.trim()));
+  const canSave = !isSaving
+    && !frontmatter.parseError
+    && !hasInvalidKey
+    && !hasReservedKey
+    && duplicateKeys.size === 0;
 
   const updateRow = (id: string, patch: Partial<PropertyRow>) => {
     setRows((current) => current.map((row) => {
@@ -300,7 +308,7 @@ export function NotePropertiesDialog({
             <div className="space-y-2">
               {rows.map((row) => {
                 const keyInvalid = !row.key.trim() || duplicateKeys.has(row.key.trim());
-                const isKeyField = row.key.trim() === 'key';
+                const isKeyField = SYSTEM_FRONTMATTER_KEYS.has(row.key.trim());
                 // 类型列已去掉: 类型只在 Custom 弹窗内设置一次, 行内不再
                 // 暴露 type 编辑入口。 row.type 仍用于值列分发 (MultiSelect /
                 // Select / Date / 通用 Input) 与 Select 选项。
@@ -391,6 +399,11 @@ export function NotePropertiesDialog({
           )}
           {hasInvalidKey && (
             <div className="text-xs text-[var(--destructive)]">{t('document.properties.emptyKey')}</div>
+          )}
+          {hasReservedKey && (
+            <div className="text-xs text-[var(--destructive)]">
+              {t('document.properties.picker.reservedKeyError', { key: 'flowix_key' })}
+            </div>
           )}
 
           {popoverState.open && popoverState.anchor && (

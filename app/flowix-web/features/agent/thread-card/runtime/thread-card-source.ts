@@ -1,5 +1,5 @@
-import { useDocumentStore } from "@features/document";
-import { useMemoStore } from "@features/memo";
+import { useDocumentStore } from "@features/document/store/document-store";
+import { useMemoStore } from "@features/memo/store/memo-store";
 import type { AgentConversationSource } from "@features/agent/store/agent-conversation-types";
 
 export function getCurrentThreadCardSource(): AgentConversationSource {

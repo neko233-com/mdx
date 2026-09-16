@@ -36,6 +36,7 @@ export function SourceMemoTitleRow({
         filename={filename}
         editable={editable}
         autoFocus={autoFocus}
+        useDocumentSelection
         allowReadOnlyBoundaryNavigation={false}
         onMoveToBody={onMoveToBody}
       />

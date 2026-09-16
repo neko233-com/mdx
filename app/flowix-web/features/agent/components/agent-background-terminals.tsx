@@ -63,11 +63,15 @@ export function AgentBackgroundTerminals({ threadId, agentType, enabled, queuedM
 
   useEffect(() => {
     let disposed = false;
+    let running = false;
+    let timer: number | undefined;
     const refresh = async () => {
+      if (running) return;
       if (!threadId || !enabled) {
         setTerminals([]);
         return;
       }
+      running = true;
       try {
         const result = agentType === 'codex'
           ? await agentClient.backgroundTerminals(threadId)
@@ -79,11 +83,33 @@ export function AgentBackgroundTerminals({ threadId, agentType, enabled, queuedM
       } catch {
         // An older Codex app-server may not implement this experimental API.
         if (!disposed) setFailed(true);
+      } finally {
+        running = false;
+        // Schedule from completion so slow IPC calls never overlap. Hidden
+        // windows resume through visibilitychange instead of polling.
+        if (!disposed && document.visibilityState === 'visible') {
+          timer = window.setTimeout(() => {
+            timer = undefined;
+            void refresh();
+          }, 2000);
+        }
       }
     };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 2000);
-    return () => { disposed = true; window.clearInterval(timer); };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        if (timer !== undefined) window.clearTimeout(timer);
+        timer = undefined;
+        return;
+      }
+      if (timer === undefined && !running) void refresh();
+    };
+    if (document.visibilityState === 'visible') void refresh();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      disposed = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [agentType, enabled, threadId]);
 
   const countLabel = useMemo(() => t('agent.backgroundTerminals.count', { count: terminals.length }), [t, terminals.length]);

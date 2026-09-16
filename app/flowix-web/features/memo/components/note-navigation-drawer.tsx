@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import type { PluginDescriptor } from '@platform/tauri/client';
-import type { Notebook } from '@features/memo';
+import type { Notebook } from '@features/memo/store/memo-store';
 import { NoteNavigationPanel } from '@features/memo/components/note-navigation-panel';
 
 interface NoteNavigationDrawerProps {

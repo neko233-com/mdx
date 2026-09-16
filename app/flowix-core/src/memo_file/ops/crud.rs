@@ -157,7 +157,11 @@ impl MemoFile {
             .map(|entry| entry.filename)
             .collect();
 
-        let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();
+        // A newly created memo is an explicit import/copy boundary: the
+        // generated canonical id must replace an id carried by source Markdown.
+        let overrides: MergeOverrides = [(CANONICAL_FRONTMATTER_KEY.to_string(), id.clone())]
+            .into_iter()
+            .collect();
         let content_with_key = if super::super::frontmatter::FRONTMATTER_RE.is_match(body) {
             merge_frontmatter(body, &overrides)
         } else {

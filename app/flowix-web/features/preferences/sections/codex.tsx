@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, CircleAlert, FolderKanban, Gauge, Loader2, LockKeyhole, MessageSquareText, Plug, Sparkles, UsersRound, Wrench } from 'lucide-react';
 import { agent, type CodexProjectCapabilities } from '@platform/tauri/client';
-import { useMemoStore, type Notebook } from '@features/memo';
+import { useMemoStore, type Notebook } from '@features/memo/store/memo-store';
 import { Button } from '@shared/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@shared/ui/select';
 import { displayNameForComposerSkill } from '@features/agent/thread-card/composer/composer-skill-token';

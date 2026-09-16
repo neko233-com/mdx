@@ -11,8 +11,8 @@ import {
   recordDocumentEdit,
   protectDocumentDraft,
   saveDocumentContent,
-  type DocumentIdentity,
-} from '@features/document';
+} from '@features/document/store/document-session-service';
+import type { DocumentIdentity } from '@features/document/store/document-identity';
 import { translate } from '@/lib/i18n';
 import { replaceActiveMemoPath } from '@features/workspace/use-cases/workspace-navigation';
 import { replaceBrowserColumnMemoPath } from '@features/workspace/use-cases/browser-column-navigation';

@@ -179,4 +179,21 @@ describe('MemoTitleEditor IME handling', () => {
 
     expect(titleSession.cancel).not.toHaveBeenCalled();
   });
+
+  it('uses a document-selection surface in source mode', async () => {
+    await act(async () => {
+      root.render(createElement(MemoTitleEditor, {
+        memoId: 'memo-1',
+        filename: 'Original.md',
+        editable: true,
+        useDocumentSelection: true,
+        onMoveToBody,
+      }));
+    });
+
+    const title = container.querySelector<HTMLElement>('.memo-title-editor--document-selection');
+    expect(title?.tagName).toBe('DIV');
+    expect(title?.getAttribute('contenteditable')).toBe('plaintext-only');
+    expect(container.querySelector('textarea')).toBeNull();
+  });
 });

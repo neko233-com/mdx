@@ -24,6 +24,12 @@
   line-height: 1.25rem;
 }
 
+.markdown-editor .frontmatter-property--error {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .markdown-editor .frontmatter-property__heading {
   display: flex;
   width: 100%;
@@ -1418,19 +1424,20 @@
   white-space: nowrap;
 }
 
-.markdown-editor .frontmatter-property__repair {
-  margin-left: 0.6rem;
+.markdown-editor .frontmatter-property__repair,
+.markdown-editor .frontmatter-property__source {
+  flex: 0 0 auto;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--primary);
   cursor: pointer;
   font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 0.15em;
 }
 
 .markdown-editor .frontmatter-property__repair:hover,
-.markdown-editor .frontmatter-property__repair:focus-visible {
+.markdown-editor .frontmatter-property__repair:focus-visible,
+.markdown-editor .frontmatter-property__source:hover,
+.markdown-editor .frontmatter-property__source:focus-visible {
   color: var(--foreground);
 }

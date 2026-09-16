@@ -20,11 +20,11 @@ import { Button } from '@shared/ui/button';
 import { Input } from '@shared/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@shared/ui/select';
 import {
-  useMemoLibraryMetadataStore,
   useMemoStore,
-  useTagStore,
-  type Notebook,
-} from '@features/memo';
+} from '@features/memo/store/memo-store';
+import { useMemoLibraryMetadataStore } from '@features/memo/store/memo-library-metadata-store';
+import { useTagStore } from '@features/memo/store/tag-store';
+import type { Notebook } from '@features/memo/store/memo-store';
 import {
   persistTagLayout,
   rebaseSelectedTagId,

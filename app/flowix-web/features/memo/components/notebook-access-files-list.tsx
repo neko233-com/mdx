@@ -10,7 +10,8 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { Tooltip } from '@shared/ui/tooltip';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@shared/ui/context-menu';
-import { NotebookIcon, type Notebook } from '@features/memo';
+import { NotebookIcon } from '@features/memo/components/notebook-icon';
+import type { Notebook } from '@features/memo/store/memo-store';
 import { openBrowserColumnFileBrowser } from '@features/workspace/use-cases/browser-column-navigation';
 
 /**

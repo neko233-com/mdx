@@ -1,4 +1,4 @@
-//! Delayed remove coalescing for watcher rename/delete events.
+﻿//! Delayed remove coalescing for watcher rename/delete events.
 //!
 //! A filesystem rename often arrives as `Remove(old)` followed by
 //! `Create/Modify(new)`. The coalescer keeps the old path briefly and lets the
@@ -203,7 +203,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&tmp).unwrap();
         let new_path = tmp.join("New.md");
-        std::fs::write(&new_path, "---\nkey: abc123\n---\n# New\n").unwrap();
+        std::fs::write(&new_path, "---\nflowix_key: abc123\n---\n# New\n").unwrap();
 
         coalescer.cancel_by_disk_key(&new_path);
 
@@ -251,7 +251,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&tmp).unwrap();
         let new_path = tmp.join("New.md");
-        std::fs::write(&new_path, "---\nkey: other\n---\n# New\n").unwrap();
+        std::fs::write(&new_path, "---\nflowix_key: other\n---\n# New\n").unwrap();
 
         coalescer.cancel_by_disk_key(&new_path);
 

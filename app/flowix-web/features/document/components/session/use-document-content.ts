@@ -1,17 +1,16 @@
 import { useCallback, useRef, useState } from 'react';
 
 import { externalDocuments, memos as memosClient } from '@platform/tauri/client';
-import { useMemoStore } from '@features/memo';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import {
   setActiveDocumentPath,
   applyLoadedDocumentContent,
   consumeStagedDocumentSnapshot,
   applyRecoveryDraftContent,
-  readRecoveryDraft,
-  useDocumentStore,
-  type DocumentIdentity,
-  type RecoveryDraft,
-} from '@features/document';
+} from '@features/document/store/document-session-service';
+import { readRecoveryDraft, type RecoveryDraft } from '@features/document/store/recovery-draft-store';
+import { useDocumentStore } from '@features/document/store/document-store';
+import type { DocumentIdentity } from '@features/document/store/document-identity';
 import { translate } from '@/lib/i18n';
 import { replaceActiveMemoPath } from '@features/workspace/use-cases/workspace-navigation';
 import { replaceBrowserColumnMemoPath } from '@features/workspace/use-cases/browser-column-navigation';

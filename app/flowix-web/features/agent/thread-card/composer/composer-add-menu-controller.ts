@@ -14,6 +14,7 @@ export interface ComposerAddMenuControllerOptions {
   isDestroyed: () => boolean;
   getAgentType: () => AgentTypeKey;
   openCodexSettings: () => void;
+  openNotebookAgentSettings: () => void;
 }
 
 export class ComposerAddMenuController {
@@ -79,6 +80,11 @@ export class ComposerAddMenuController {
       });
       items.push(codex);
     }
+    const projectAiSettings = this.createItem(this.options.t("editor.threadCard.projectAiSettings"), false, () => {
+      this.setOpen(false);
+      this.options.openNotebookAgentSettings();
+    });
+    items.push(projectAiSettings);
     this.options.popover.replaceChildren(...items);
     this.noteItem = note;
     // The parent item and level-2 popover form one continuous hover region.

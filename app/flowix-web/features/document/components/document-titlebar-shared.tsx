@@ -30,16 +30,15 @@ import {
 import {
   MEMO_COLORS,
   MEMO_COLOR_HEX,
-  type MemoColor,
-  type MemoItem,
-} from '@features/memo';
+} from '@features/memo/store/memo-store';
+import type { MemoColor, MemoItem } from '@/types/memo-item';
 import type { DocumentEditorMode } from '@features/document/store/document-editor-view-store';
 import {
   flushDocumentPath,
   getDocumentBuffer,
-  useDocumentStore,
-  type DocumentIdentity,
-} from '@features/document';
+} from '@features/document/store/document-session-service';
+import { useDocumentStore } from '@features/document/store/document-store';
+import type { DocumentIdentity } from '@features/document/store/document-identity';
 import { memos as memosClient, type MemoVersionMeta } from '@platform/tauri/client';
 import { toast } from '@/lib/toast';
 import { replaceActiveMemoPath } from '@features/workspace/use-cases/workspace-navigation';

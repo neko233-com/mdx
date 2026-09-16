@@ -3,7 +3,7 @@ import type { EditorView, NodeView } from '@tiptap/pm/view';
 import { createElement as createReactElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { translate, type I18nKey } from '@/lib/i18n';
-import { MEMO_COLORS, MEMO_COLOR_HEX } from '@features/memo';
+import { MEMO_COLORS, MEMO_COLOR_HEX } from '@features/memo/store/memo-store';
 import type { MemoColor } from '@/types/memo-item';
 import {
   deleteVisibleFrontmatterProperty,
@@ -330,7 +330,7 @@ export class FrontmatterPropertyNodeView implements NodeView {
       case 'duplicate-key':
         return this.t('document.properties.duplicateKey');
       case 'reserved-key':
-        return this.t('document.properties.picker.reservedKeyError', { key: 'key' });
+        return this.t('document.properties.picker.reservedKeyError', { key: 'flowix_key' });
       case 'invalid-tag':
         return this.t('document.properties.invalidTag');
       case 'invalid-color':
@@ -1423,6 +1423,7 @@ export class FrontmatterPropertyNodeView implements NodeView {
     const container = createElement('div', 'frontmatter-property');
 
     if (parsed.parseError) {
+      container.classList.add('frontmatter-property--error');
       const error = createElement(
         'div',
         'frontmatter-property__error',
@@ -1439,6 +1440,17 @@ export class FrontmatterPropertyNodeView implements NodeView {
         repair.type = 'button';
         repair.addEventListener('click', () => this.repairMalformedFrontmatter());
         container.append(repair);
+
+        const source = createElement(
+          'button',
+          'frontmatter-property__source',
+          this.t('document.action.viewSource'),
+        );
+        source.type = 'button';
+        source.addEventListener('click', () => {
+          window.dispatchEvent(new CustomEvent('flowix:view-source-mode'));
+        });
+        container.append(source);
       }
     } else {
       if (parsed.properties.length > 0) {

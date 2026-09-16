@@ -634,14 +634,14 @@ export function PropertyKeyButton({
 }) {
   const { t } = useI18n();
   const preset = resolvePreset(row.key);
-  const isReservedMemoId = row.key.trim() === 'key';
+  const isReservedMemoId = row.key.trim() === 'key' || row.key.trim() === 'flowix_key';
 
   let display: React.ReactNode;
   if (preset) {
     display = <span className="min-w-0 flex-1 truncate">{t(preset.labelKey)}</span>;
   } else if (isReservedMemoId) {
     display = (
-      <span className="font-mono text-xs text-[var(--muted-foreground)]">key</span>
+      <span className="font-mono text-xs text-[var(--muted-foreground)]">{row.key.trim()}</span>
     );
   } else if (row.customLabel?.trim()) {
     display = <span className="min-w-0 flex-1 truncate">{row.customLabel}</span>;

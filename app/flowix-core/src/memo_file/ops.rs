@@ -27,8 +27,9 @@ use super::derivation::{apply_derived_memo_fields, extract_title_and_preview};
 pub(super) use super::file_io::{atomic_create_bytes, atomic_write_bytes, rename_file_noclobber};
 use super::frontmatter::{
     build_md_content, extract_document_metadata,
-    extract_document_metadata_preserving_invalid_tag_paths, merge_frontmatter,
-    replace_frontmatter_tags, replace_frontmatter_tags_preserving_invalid_paths, MergeOverrides,
+    extract_document_metadata_preserving_invalid_tag_paths, is_system_frontmatter_key,
+    merge_frontmatter, replace_frontmatter_tags, replace_frontmatter_tags_preserving_invalid_paths,
+    MergeOverrides, CANONICAL_FRONTMATTER_KEY,
 };
 use super::notebook::sqlite_to_io;
 use super::types::{DeleteTagReport, Memo, MoveTagReport, ReconcileReport};

@@ -860,6 +860,49 @@ describe('NotebookFileTree pointer dragging', () => {
     await act(async () => root.unmount());
   });
 
+  it('does not select or open an unselected note when a drag is abandoned', async () => {
+    const onMoveNote = vi.fn<TestMoveNote>(successfulMove);
+    const { root, onNoteSelect } = await mountFlatNotes(onMoveNote);
+    const noteRows = host.querySelectorAll<HTMLElement>('[data-notebook-tree-kind="note"]');
+    vi.mocked(document.elementFromPoint).mockReturnValue(document.body);
+
+    await act(async () => noteRows[1].dispatchEvent(pointerEvent('pointerdown', 10, 10)));
+    await act(async () => noteRows[1].dispatchEvent(pointerEvent('pointermove', 20, 10)));
+    await act(async () => {
+      noteRows[1].dispatchEvent(pointerEvent('pointerup', 20, 10));
+      noteRows[1].dispatchEvent(clickEvent());
+    });
+
+    expect(onMoveNote).not.toHaveBeenCalled();
+    expect(onNoteSelect).not.toHaveBeenCalled();
+    expect(Array.from(noteRows).map((row) => row.getAttribute('aria-selected'))).toEqual([
+      'false', 'false', 'false', 'false',
+    ]);
+    await act(async () => root.unmount());
+  });
+
+  it('does not select an unselected note after a successful drag', async () => {
+    const onMoveNote = vi.fn<TestMoveNote>(successfulMove);
+    const { root, onNoteSelect } = await mountFlatNotes(onMoveNote);
+    const noteRows = host.querySelectorAll<HTMLElement>('[data-notebook-tree-kind="note"]');
+    const folderRow = host.querySelector<HTMLElement>('[data-notebook-tree-kind="folder"]')!;
+    vi.mocked(document.elementFromPoint).mockReturnValue(folderRow);
+
+    await act(async () => noteRows[1].dispatchEvent(pointerEvent('pointerdown', 10, 10)));
+    await act(async () => noteRows[1].dispatchEvent(pointerEvent('pointermove', 20, 10)));
+    await act(async () => {
+      noteRows[1].dispatchEvent(pointerEvent('pointerup', 20, 10));
+      noteRows[1].dispatchEvent(clickEvent());
+    });
+
+    await vi.waitFor(() => expect(onMoveNote).toHaveBeenCalled());
+    expect(onNoteSelect).not.toHaveBeenCalled();
+    expect(Array.from(noteRows).map((row) => row.getAttribute('aria-selected'))).toEqual([
+      'false', 'false', 'false', 'false',
+    ]);
+    await act(async () => root.unmount());
+  });
+
   it('supports keyboard navigation across visible tree items', async () => {
     const { root } = await mountFlatNotes(successfulMove);
     const rows = Array.from(host.querySelectorAll<HTMLElement>('[role="treeitem"]'));

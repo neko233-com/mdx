@@ -465,6 +465,27 @@
 		color: inherit !important;
 	}
 
+	/* CodeMirror deliberately forces selection on a focused nested editing host
+	 * to the system Highlight color. The source title is such a host, so this
+	 * focused selector must be more specific than CodeMirror's runtime rule. */
+	.code-editor .cm-editor .cm-content .cm-source-header .memo-title-editor:focus::selection,
+	.code-editor .memo-title-editor::selection,
+	.source-memo-title-row .memo-title-editor::selection,
+	.memo-title-editor::selection {
+		background: color-mix(in oklch, var(--brand) 26%, transparent) !important;
+		background-color: color-mix(in oklch, var(--brand) 26%, transparent) !important;
+		color: inherit !important;
+	}
+
+	.code-editor .cm-editor .cm-content .cm-source-header .memo-title-editor:focus::-moz-selection,
+	.code-editor .memo-title-editor::-moz-selection,
+	.source-memo-title-row .memo-title-editor::-moz-selection,
+	.memo-title-editor::-moz-selection {
+		background: color-mix(in oklch, var(--brand) 26%, transparent) !important;
+		background-color: color-mix(in oklch, var(--brand) 26%, transparent) !important;
+		color: inherit !important;
+	}
+
 	/* Dialog pop + slide-up + fade (替代了 tw-animate-css v4 插件,
 	 * 该插件在 Tailwind v3 下不生成任何 class)。 */
 	@keyframes flowix-dialog-in {
@@ -782,6 +803,27 @@
 /* agent-* 元素的样式已合并到组件 className (Tailwind 工具类);
  * 关键帧由 animate-[<name>_<duration>_<timing>] arbitrary value 引用,
  * 必须保留 CSS。 */
+
+@keyframes notebookAgentSettingsDialogIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.notebook-agent-settings-dialog {
+  animation: notebookAgentSettingsDialogIn 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notebook-agent-settings-dialog {
+    animation: none;
+  }
+}
 
 @keyframes agentThinkingDot {
 	0%, 100% {

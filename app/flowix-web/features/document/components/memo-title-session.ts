@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 
-import { markSelfDocumentPathUpdate, rebaseActiveDocumentPath } from '@features/document';
-import { useMemoStore } from '@features/memo';
+import { markSelfDocumentPathUpdate, rebaseActiveDocumentPath } from '@features/document/store/document-session-service';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import { replaceBrowserColumnMemoPath } from '@features/workspace/use-cases/browser-column-navigation';
 import { replaceActiveMemoPath } from '@features/workspace/use-cases/workspace-navigation';
 import { memos as memosClient } from '@platform/tauri/client';

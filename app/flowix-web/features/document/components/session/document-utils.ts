@@ -1,4 +1,5 @@
-import type { MemoItem, MemoStore } from '@features/memo';
+import type { MemoItem } from '@/types/memo-item';
+import type { MemoStore } from '@features/memo/store/memo-store';
 
 // Re-exported for callers that import DocumentBuffer from this module.
 // The canonical definition lives in lib/store/document-buffer.ts so that

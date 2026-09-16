@@ -6,7 +6,7 @@ import { useI18n } from '@/lib/i18n';
 import { createLogger } from '@/lib/logger';
 import { toast } from '@/lib/toast';
 import { useSettingsStore } from '@/lib/store/settings-store';
-import { useMemoStore, type Notebook } from '@features/memo';
+import { type Notebook, useWorkspaceMemoViewModel } from '@features/memo/public/workspace-api';
 import {
   clearPluginWorkbenchTarget,
   flushWorkspaceDocument,
@@ -33,10 +33,12 @@ export interface MainWindowBusinessController {
 
 export function useMainWindowBusinessController(): MainWindowBusinessController {
   const { t } = useI18n();
-  const selectedNotebook = useMemoStore((state) => state.selectedNotebook);
-  const setActiveFilter = useMemoStore((state) => state.setActiveFilter);
-  const setActivePluginId = useMemoStore((state) => state.setActivePluginId);
-  const triggerRefresh = useMemoStore((state) => state.triggerRefresh);
+  const {
+    selectedNotebook,
+    setActiveFilter,
+    setActivePluginId,
+    triggerRefresh,
+  } = useWorkspaceMemoViewModel();
   const setMemoListVisible = useSettingsStore((state) => state.setMemoListVisible);
   const workColumnTargetKind = useWorkspaceTargetKind();
   const navigationPhase = useWorkspaceNavigationPhase();

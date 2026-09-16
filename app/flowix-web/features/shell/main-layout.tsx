@@ -26,7 +26,7 @@ import {
   type Notebook,
 } from '@features/memo/public/shell-api';
 import { AgentConversationTitlebar } from '@features/agent/public/shell-api';
-import { useSettingsStore } from '@features/shell';
+import { useSettingsStore } from '@/lib/store/settings-store';
 import { useShallow } from 'zustand/react/shallow';
 import {
   windows,
@@ -366,6 +366,19 @@ export function MainLayout({
     const nextMode = mainEditorMode === 'source' ? 'rich' : 'source';
     setDocumentEditorMode('main-third', identity, nextMode);
   }, [activeMemoSession, currentMemo, mainEditorMode]);
+
+  const handleViewSourceMode = useCallback(() => {
+    if (!currentMemo || !activeMemoSession || mainEditorMode === 'source') return;
+    const identity = { kind: 'memo' as const, id: activeMemoSession.memoId };
+    captureLatestDocumentContent(identity, 'main-third');
+    setDocumentEditorMode('main-third', identity, 'source');
+  }, [activeMemoSession, currentMemo, mainEditorMode]);
+
+  useEffect(() => {
+    const handleViewSource = () => handleViewSourceMode();
+    window.addEventListener('flowix:view-source-mode', handleViewSource);
+    return () => window.removeEventListener('flowix:view-source-mode', handleViewSource);
+  }, [handleViewSourceMode]);
 
   const workColumnDocument = currentDocumentPath
     ? {

@@ -29,7 +29,7 @@ import { useI18n } from '@/lib/i18n';
 import { useComposingValue } from '@shared/hooks/use-composing-value';
 import { OverlayScrollbar } from '@shared/ui/overlay-scrollbar';
 import { FileTypeIcon } from '@features/memo/components/file-type-icon';
-import { useMemoStore } from '@features/memo';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import { useDocumentStore } from '@features/document/store';
 import {
   elementFromExternalDropPosition,
@@ -135,6 +135,7 @@ interface PointerNoteDrag {
   sourcePath: string;
   sourcePaths: string[];
   sourceItems: NotebookMoveSource[];
+  preserveSelectionAfterMove: boolean;
   sourceName: string;
   pointerId: number;
   captureElement: HTMLElement;
@@ -704,7 +705,6 @@ export function NotebookFileTree({
     if (item.type !== 'document' || dropPendingRef.current) return;
     const currentPaths = selectedFilePathsRef.current;
     const isSelected = currentPaths.some((path) => samePath(path, item.fullPath));
-    const hasModifier = event.shiftKey || event.ctrlKey || event.metaKey;
     const sourcePaths = isSelected ? currentPaths : [item.fullPath];
     const sourceItems = sourcePaths.map((path) => {
       const sourceItem = path === item.fullPath ? item : treeItemByPath.get(canonicalPath(path));
@@ -716,10 +716,9 @@ export function NotebookFileTree({
         ? { path, memoId, ...resourceMetadata }
         : { path, ...resourceMetadata };
     });
-    if (!isSelected && !hasModifier) updateSelection([item.fullPath], item.fullPath);
     // Capture on the row that started the gesture. Capturing on the tree root
-    // retargets the browser's follow-up click to the root, so a normal click
-    // updates the selection during pointerdown but never opens the document.
+    // retargets the browser's follow-up click to the root. Selection stays a
+    // click concern: starting a drag must not select an unselected document.
     // Pointer events still bubble through the tree root while the row remains
     // mounted, which keeps drag handling unchanged without swallowing clicks.
     const captureElement = event.currentTarget;
@@ -728,6 +727,7 @@ export function NotebookFileTree({
       sourcePath: item.fullPath,
       sourcePaths,
       sourceItems,
+      preserveSelectionAfterMove: isSelected,
       sourceName: displayTitleFromFilename(item.name),
       pointerId: event.pointerId,
       captureElement,
@@ -736,7 +736,7 @@ export function NotebookFileTree({
       active: false,
       targetDirectoryPath: null,
     };
-  }, [memoIdByPath, treeItemByPath, updateSelection]);
+  }, [memoIdByPath, treeItemByPath]);
 
   const renderDraft = (draftState: NotebookTreeDraftState, depth: number) => (
     <NotebookTreeDraft
@@ -834,6 +834,7 @@ export function NotebookFileTree({
   const handleDrop = useCallback(async (
     targetDirectoryPath: string,
     sourceItemsOverride?: NotebookMoveSource[],
+    preserveSelectionAfterMove = false,
   ) => {
     if (dropPendingRef.current) return;
     const sourceItems = sourceItemsOverride ?? pointerDragRef.current?.sourceItems ?? [];
@@ -899,7 +900,7 @@ export function NotebookFileTree({
           : selectedAnchor && unchangedSelection.some((path) => samePath(path, selectedAnchor))
             ? selectedAnchor
             : nextSelection[nextSelection.length - 1] ?? null);
-      updateSelection(nextSelection, nextAnchor);
+      if (preserveSelectionAfterMove) updateSelection(nextSelection, nextAnchor);
       if (moveResult.movedPaths.length > 0) {
         setMoveFeedback({
           paths: moveResult.movedPaths,
@@ -1180,7 +1181,7 @@ export function NotebookFileTree({
               pointerDragRef.current = null;
               setDragOverFolderPath(null);
               setDragPreview(null);
-              if (!drag.active || !drag.targetDirectoryPath) return;
+              if (!drag.active) return;
               event.preventDefault();
               const suppressedPaths = new Set(
                 drag.sourcePaths.map((sourcePath) => canonicalPath(sourcePath)),
@@ -1191,7 +1192,12 @@ export function NotebookFileTree({
                   suppressOpenPathsRef.current = new Set();
                 }
               }, 0);
-              void handleDrop(drag.targetDirectoryPath, drag.sourceItems);
+              if (!drag.targetDirectoryPath) return;
+              void handleDrop(
+                drag.targetDirectoryPath,
+                drag.sourceItems,
+                drag.preserveSelectionAfterMove,
+              );
             }}
             onPointerCancel={(event) => {
               const drag = pointerDragRef.current;

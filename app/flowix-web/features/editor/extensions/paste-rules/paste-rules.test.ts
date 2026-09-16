@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import type { JSONContent } from '@tiptap/core';
 
 vi.mock('@features/editor/extensions/attachment-link/upload/plugin', () => ({
@@ -95,15 +95,15 @@ describe('paste rule helpers', () => {
 
   it('merges pasted frontmatter into the existing document frontmatter', () => {
     const merged = mergeFrontmatterYaml(
-      ['key: sg8qgwdq', 'title: Existing'].join('\n'),
-      ['name: guizang-ppt-skill', 'description: deck generator', 'key: pasted1'].join('\n'),
+      ['flowix_key: sg8qgwdq', 'title: Existing'].join('\n'),
+      ['name: guizang-ppt-skill', 'description: deck generator', 'flowix_key: pasted1'].join('\n'),
     );
 
-    expect(merged).toContain('key: sg8qgwdq');
+    expect(merged).toContain('flowix_key: sg8qgwdq');
     expect(merged).toContain('title: Existing');
     expect(merged).toContain('name: guizang-ppt-skill');
     expect(merged).toContain('description: deck generator');
-    expect(merged).not.toContain('key: pasted1');
+    expect(merged).not.toContain('flowix_key: pasted1');
     expect(parseVisibleFrontmatter(merged).userData).toMatchObject({
       title: 'Existing',
       name: 'guizang-ppt-skill',

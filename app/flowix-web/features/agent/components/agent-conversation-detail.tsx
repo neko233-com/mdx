@@ -29,6 +29,7 @@ import {
 import { AgentRolePickerController } from '@features/agent/thread-card/role/agent-role-picker-controller';
 import { ExternalAgentSettingsController } from '@features/agent/thread-card/settings/external-agent-settings-controller';
 import { CodexSettingsDialogController } from '@features/agent/thread-card/settings/codex-settings-dialog';
+import { NotebookAgentSettingsDialogController } from '@features/agent/thread-card/settings/notebook-agent-settings-dialog';
 import { AgentConversationSurfaceController } from '@features/agent/thread-card/surface/agent-conversation-surface-controller';
 import { createExternalAgentRuntimeHandle } from '@features/agent/services/external-agent-runtime-service';
 import { ensureAgentConversationDetailThread } from '@features/agent/components/agent-conversation-detail-submit';
@@ -161,6 +162,7 @@ export function AgentConversationDetail({
   const rolePickerRef = useRef<AgentRolePickerController | null>(null);
   const addMenuRef = useRef<ComposerAddMenuController | null>(null);
   const codexSettingsDialogRef = useRef<CodexSettingsDialogController | null>(null);
+  const notebookAgentSettingsDialogRef = useRef<NotebookAgentSettingsDialogController | null>(null);
   const surfaceRef = useRef<AgentConversationSurfaceController | null>(null);
   const draftRef = useRef<string | null>(null);
   const destroyedRef = useRef(false);
@@ -738,6 +740,16 @@ export function AgentConversationDetail({
           codexSettingsDialogRef.current.open(notebookPath);
         }
       },
+      openNotebookAgentSettings: () => {
+        const runtimeConfig = instanceRef.current?.runtimeConfig;
+        const notebookPath = runtimeConfig?.workspaceSnapshot?.cwd
+          ?? runtimeConfig?.cwd
+          ?? useMemoStore.getState().selectedNotebook?.path;
+        if (notebookPath) {
+          notebookAgentSettingsDialogRef.current ??= new NotebookAgentSettingsDialogController();
+          notebookAgentSettingsDialogRef.current.open(notebookPath);
+        }
+      },
     });
     rolePicker.refreshIcon();
     messagesControllerRef.current = messageController;
@@ -776,6 +788,8 @@ export function AgentConversationDetail({
       externalSettings.dispose();
       codexSettingsDialogRef.current?.close();
       codexSettingsDialogRef.current = null;
+      notebookAgentSettingsDialogRef.current?.close();
+      notebookAgentSettingsDialogRef.current = null;
       externalSettingsRef.current = null;
       disposeAgentComposerDom(composerParts);
       inputRef.current = null;

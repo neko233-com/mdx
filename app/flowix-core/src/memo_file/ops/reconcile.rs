@@ -466,6 +466,10 @@ impl MemoFile {
         let colors = serde_json::to_string(&memo.colors).map_err(std::io::Error::other)?;
         let icon = serde_json::to_string(&memo.icon).map_err(std::io::Error::other)?;
         let mut overrides: MergeOverrides = [
+            // Ordinary metadata saves also perform the legacy identity
+            // migration: an existing valid `flowix_key` is preserved, while
+            // a legacy-only note copies its `key` value into `flowix_key`.
+            ("key".to_string(), memo.id.clone()),
             ("flowix_favorited".to_string(), memo.favorited.to_string()),
             ("flowix_icon".to_string(), icon),
             ("flowix_colors".to_string(), colors),
@@ -474,10 +478,12 @@ impl MemoFile {
         .collect();
         if let serde_json::Value::Object(properties) = &memo.properties {
             for (key, value) in properties {
-                if matches!(
-                    key.as_str(),
-                    "key" | "tag" | "tags" | "flowix_favorited" | "flowix_icon" | "flowix_colors"
-                ) {
+                if is_system_frontmatter_key(key)
+                    || matches!(
+                        key.as_str(),
+                        "tag" | "tags" | "flowix_favorited" | "flowix_icon" | "flowix_colors"
+                    )
+                {
                     continue;
                 }
                 overrides.insert(

@@ -151,6 +151,14 @@ vi.mock("@features/document", () => ({
     }),
   },
 }));
+vi.mock("@features/document/store/document-session-service", () => ({
+  getActiveDocumentDraft: () => null,
+}));
+vi.mock("@features/document/store/document-store", () => ({
+  useDocumentStore: {
+    getState: () => ({ currentDocumentPath: "" }),
+  },
+}));
 
 vi.mock("@features/memo/use-cases/open-by-target", () => ({
   openNoteByDeepLink: vi.fn(),

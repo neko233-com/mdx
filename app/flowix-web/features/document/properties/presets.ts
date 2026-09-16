@@ -159,6 +159,7 @@ export function resolvePreset(key: string): PropertyPreset | null {
  * confusion.
  */
 export const RESERVED_KEYS: readonly string[] = [
+  'flowix_key',
   'key',
   'icon',
   'colors',

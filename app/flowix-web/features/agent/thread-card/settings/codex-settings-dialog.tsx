@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { X } from "lucide-react";
-import { CodexSettingsSection } from "@features/preferences/sections/codex";
+import { CodexSettingsSection } from "@features/preferences/public/codex-api";
 
 function CodexSettingsDialog({ notebookPath, onClose }: { notebookPath: string; onClose: () => void }) {
   const [open, setOpen] = useState(true);

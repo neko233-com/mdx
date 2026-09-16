@@ -24,10 +24,9 @@ import {
   MEMO_COLORS,
   MEMO_COLOR_HEX,
   useMemoStore,
-  type MemoItem,
-  type MemoColor,
-} from '@features/memo';
-import { openMemoSession } from '@features/memo';
+} from '@features/memo/store/memo-store';
+import type { MemoItem, MemoColor } from '@/types/memo-item';
+import { openMemoSession } from '@features/memo/use-cases/open-memo-session';
 import { resolveMemoSessionPath } from '@features/memo/use-cases/open-memo-session';
 
 // Minimal contract every shadcn-style item primitive in this app satisfies:

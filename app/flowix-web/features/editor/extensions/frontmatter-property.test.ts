@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from '@tiptap/markdown';
@@ -25,12 +25,12 @@ describe('frontmatter property helpers', () => {
   it('consumes a legacy BOM displaced behind frontmatter', () => {
     const editor = new Editor({
       extensions: [StarterKit, Markdown, Frontmatter],
-      content: '---\nkey: abc12345\n---\n\uFEFFBody',
+      content: '---\nflowix_key: abc12345\n---\n\uFEFFBody',
       contentType: 'markdown',
     });
 
     const markdown = editor.getMarkdown();
-    expect(markdown).toContain('key: abc12345');
+    expect(markdown).toContain('flowix_key: abc12345');
     expect(markdown).toContain('Body');
     expect(markdown).not.toContain('\uFEFF');
     expect(markdown).not.toContain('nbsp');
@@ -38,7 +38,7 @@ describe('frontmatter property helpers', () => {
   });
 
   it('parses frontmatter after leading blank lines', () => {
-    const content = '\n  \n---\nkey: abc12345\nstatus: draft\n---\n# Body';
+    const content = '\n  \n---\nflowix_key: abc12345\nstatus: draft\n---\n# Body';
     const extracted = extractFrontmatter(content);
     expect(extracted.hasFrontmatter).toBe(true);
     expect(extracted.userData).toEqual({ status: 'draft' });
@@ -51,13 +51,13 @@ describe('frontmatter property helpers', () => {
     });
     expect(editor.state.doc.firstChild?.type.name).toBe('frontmatter');
     expect(editor.state.doc.firstChild?.attrs.yamlContent).toBe(
-      'key: abc12345\nstatus: draft',
+      'flowix_key: abc12345\nstatus: draft',
     );
     editor.destroy();
   });
 
   it('skips the system key and returns every property from the first group', () => {
-    const result = parseVisibleFrontmatter('key: ra61em97\nstatus: in-progress\nkeywords: [推广, 归类]');
+    const result = parseVisibleFrontmatter('flowix_key: ra61em97\nstatus: in-progress\nkeywords: [推广, 归类]');
 
     expect(result.firstProperty).toEqual({ key: 'status', value: 'in-progress' });
     expect(result.properties).toEqual([
@@ -71,19 +71,26 @@ describe('frontmatter property helpers', () => {
   });
 
   it('returns an empty visible property when frontmatter only has the system key', () => {
-    const result = parseVisibleFrontmatter('key: ra61em97');
+    const result = parseVisibleFrontmatter('flowix_key: ra61em97');
 
     expect(result.firstProperty).toBeNull();
     expect(result.parseError).toBeNull();
   });
 
+  it('hides the deprecated legacy key from visible properties', () => {
+    const result = parseVisibleFrontmatter('key: legacy-id\nstatus: draft');
+
+    expect(result.properties).toEqual([{ key: 'status', value: 'draft' }]);
+    expect(result.userData).toEqual({ status: 'draft' });
+  });
+
   it('suggests moving the malformed suffix into the document body', () => {
     const repair = suggestFrontmatterRepair(
-      'key: db9ixhlw\nname: "skill\\n"\n  skill\nflowix_colors: [green]',
+      'flowix_key: db9ixhlw\nname: "skill\\n"\n  skill\nflowix_colors: [green]',
     );
 
     expect(repair).toEqual({
-      yamlContent: 'key: db9ixhlw\nname: "skill\\n"',
+      yamlContent: 'flowix_key: db9ixhlw\nname: "skill\\n"',
       bodyContent: '  skill\nflowix_colors: [green]',
     });
     expect(parseVisibleFrontmatter(repair?.yamlContent ?? '').parseError).toBeNull();
@@ -95,7 +102,7 @@ describe('frontmatter property helpers', () => {
     const editor = new Editor({
       element: host,
       extensions: [StarterKit, Markdown, Frontmatter],
-      content: '---\nkey: db9ixhlw\nname: "skill\\n"\n  skill\nflowix_colors: [green]\n---\n# Body',
+      content: '---\nflowix_key: db9ixhlw\nname: "skill\\n"\n  skill\nflowix_colors: [green]\n---\n# Body',
       contentType: 'markdown',
     });
 
@@ -106,7 +113,7 @@ describe('frontmatter property helpers', () => {
     repair?.click();
 
     expect(editor.state.doc.firstChild?.attrs.yamlContent).toBe(
-      'key: db9ixhlw\nname: "skill\\n"',
+      'flowix_key: db9ixhlw\nname: "skill\\n"',
     );
     expect(editor.state.doc.child(1).type.name).toBe('codeBlock');
     expect(editor.state.doc.child(1).textContent).toBe('  skill\nflowix_colors: [green]');
@@ -118,7 +125,7 @@ describe('frontmatter property helpers', () => {
 
   it('updates the first property in place and preserves later properties and comments', () => {
     const result = updateVisibleFrontmatterProperty(
-      'key: ra61em97\n# workflow state\nstatus: todo\nkeywords: [推广, 归类]',
+      'flowix_key: ra61em97\n# workflow state\nstatus: todo\nkeywords: [推广, 归类]',
       'status',
       'stage',
       'in-progress',
@@ -135,19 +142,19 @@ describe('frontmatter property helpers', () => {
 
   it('adds a first user property after the system key', () => {
     const result = updateVisibleFrontmatterProperty(
-      'key: ra61em97',
+      'flowix_key: ra61em97',
       null,
       'status',
       'todo',
     );
 
-    expect(result).toBe('key: ra61em97\nstatus: todo');
+    expect(result).toBe('flowix_key: ra61em97\nstatus: todo');
     expect(parseVisibleFrontmatter(result).userData).toEqual({ status: 'todo' });
   });
 
   it('rejects editing the system key', () => {
     expect(() => updateVisibleFrontmatterProperty(
-      'key: ra61em97',
+      'flowix_key: ra61em97',
       null,
       'key',
       'another-id',
@@ -166,7 +173,7 @@ describe('frontmatter property helpers', () => {
 
   it('keeps text-looking values as strings and validates numeric properties', () => {
     const text = updateVisibleFrontmatterProperty(
-      'key: ra61em97\ncode: old',
+      'flowix_key: ra61em97\ncode: old',
       'code',
       'code',
       '0123',
@@ -175,7 +182,7 @@ describe('frontmatter property helpers', () => {
     expect(parseVisibleFrontmatter(text).userData.code).toBe('0123');
 
     expect(() => updateVisibleFrontmatterProperty(
-      'key: ra61em97\nscore: 1',
+      'flowix_key: ra61em97\nscore: 1',
       'score',
       'score',
       'not-a-number',
@@ -185,7 +192,7 @@ describe('frontmatter property helpers', () => {
 
   it('normalizes document tags and rejects invalid membership values', () => {
     const next = updateVisibleFrontmatterProperty(
-      'key: ra61em97',
+      'flowix_key: ra61em97',
       null,
       'tags',
       'work/path, work/path, 中文',
@@ -194,21 +201,21 @@ describe('frontmatter property helpers', () => {
     expect(parseVisibleFrontmatter(next).userData.tags).toEqual(['work/path', '中文']);
 
     expect(() => updateVisibleFrontmatterProperty(
-      'key: ra61em97',
+      'flowix_key: ra61em97',
       null,
       'tags',
       'has space',
       'MultiSelect',
     )).toThrow(/Tags cannot contain/);
     expect(() => replaceVisibleFrontmatterProperties(
-      '---\nkey: ra61em97\n---\nBody',
+      '---\nflowix_key: ra61em97\n---\nBody',
       [{ key: 'tags', value: 'not-an-array' }],
     )).toThrow(/Tags must be a list/);
   });
 
   it('uses the Flowix product palette for internal note colors', () => {
     const next = updateVisibleFrontmatterProperty(
-      'key: ra61em97',
+      'flowix_key: ra61em97',
       null,
       'flowix_colors',
       'blue, red',
@@ -218,7 +225,7 @@ describe('frontmatter property helpers', () => {
       .toEqual(['red', 'blue']);
 
     expect(() => updateVisibleFrontmatterProperty(
-      'key: ra61em97',
+      'flowix_key: ra61em97',
       null,
       'flowix_colors',
       'purple',
@@ -232,7 +239,7 @@ describe('frontmatter property helpers', () => {
     const editor = new Editor({
       element: host,
       extensions: [StarterKit, Markdown, Frontmatter],
-      content: '---\nkey: ra61em97\nflowix_colors: [blue]\n---\nBody',
+      content: '---\nflowix_key: ra61em97\nflowix_colors: [blue]\n---\nBody',
       contentType: 'markdown',
     });
 
@@ -275,7 +282,7 @@ describe('frontmatter property helpers', () => {
     const editor = new Editor({
       element: host,
       extensions: [StarterKit, Markdown, Frontmatter],
-      content: '---\nkey: ra61em97\nflowix_colors: [blue]\ntags: [work]\nflowix_icon: smile\nname: Demo\ndescription: Note\nflowix_favorited: true\n---\nBody',
+      content: '---\nflowix_key: ra61em97\nflowix_colors: [blue]\ntags: [work]\nflowix_icon: smile\nname: Demo\ndescription: Note\nflowix_favorited: true\n---\nBody',
       contentType: 'markdown',
     });
 
@@ -335,7 +342,7 @@ describe('frontmatter property helpers', () => {
     const editor = new Editor({
       element: host,
       extensions: [StarterKit, Markdown, Frontmatter],
-      content: '---\nkey: ra61em97\nenabled: false\n---\nBody',
+      content: '---\nflowix_key: ra61em97\nenabled: false\n---\nBody',
       contentType: 'markdown',
     });
 
@@ -368,7 +375,7 @@ describe('frontmatter property helpers', () => {
   it('canonicalizes the singular tag key to tags', async () => {
     expect(await generatePropertyKey('tag')).toBe('tags');
     const next = updateVisibleFrontmatterProperty(
-      'key: ra61em97\ntag: [legacy]',
+      'flowix_key: ra61em97\ntag: [legacy]',
       'tag',
       'tag',
       'legacy, current',
@@ -382,7 +389,7 @@ describe('frontmatter property helpers', () => {
   it('preserves system metadata and comments when dialog properties are saved', () => {
     const content = [
       '---',
-      'key: ra61em97',
+      'flowix_key: ra61em97',
       '# workflow state',
       'status: todo',
       'keywords: [one, two]',
@@ -393,7 +400,7 @@ describe('frontmatter property helpers', () => {
       { key: 'status', value: 'done' },
     ]);
 
-    expect(next).toContain('key: ra61em97');
+    expect(next).toContain('flowix_key: ra61em97');
     expect(next).toContain('# workflow state');
     expect(next).toContain('status: done');
     expect(next).not.toContain('keywords:');
@@ -490,7 +497,7 @@ describe('frontmatter property helpers', () => {
       ],
       content: [
         '---',
-        'key: 8c7dxu0l',
+        'flowix_key: 8c7dxu0l',
         'tags: [alpha, beta]',
         'type: prompt',
         'status: todo',
@@ -544,7 +551,7 @@ describe('frontmatter property helpers', () => {
     const editor = new Editor({
       element: host,
       extensions: [StarterKit, Markdown, Frontmatter],
-      content: '---\nkey: 8c7dxu0l\ndescription: Before\n---\nBody',
+      content: '---\nflowix_key: 8c7dxu0l\ndescription: Before\n---\nBody',
       contentType: 'markdown',
     });
 
@@ -607,7 +614,7 @@ describe('frontmatter property helpers', () => {
     const editor = new Editor({
       element: host,
       extensions: [StarterKit, Markdown, Frontmatter],
-      content: '---\nkey: 8c7dxu0l\nlanguages:\n  - JavaScript\n  - TypeScript\n  - Rust\n---\nBody',
+      content: '---\nflowix_key: 8c7dxu0l\nlanguages:\n  - JavaScript\n  - TypeScript\n  - Rust\n---\nBody',
       contentType: 'markdown',
     });
 
@@ -649,7 +656,7 @@ describe('frontmatter property helpers', () => {
     const editor = new Editor({
       element: host,
       extensions: [StarterKit, Markdown, Frontmatter],
-      content: '---\nkey: 8c7dxu0l\ndescription: Before\n---\nBody',
+      content: '---\nflowix_key: 8c7dxu0l\ndescription: Before\n---\nBody',
       contentType: 'markdown',
     });
 
@@ -731,7 +738,7 @@ describe('frontmatter property helpers', () => {
     const editor = new Editor({
       element: host,
       extensions: [StarterKit, Markdown, Frontmatter],
-      content: '---\nkey: 8c7dxu0l\nstatus: todo\npriority: high\n---\nBody',
+      content: '---\nflowix_key: 8c7dxu0l\nstatus: todo\npriority: high\n---\nBody',
       contentType: 'markdown',
     });
 
@@ -779,7 +786,7 @@ describe('frontmatter property helpers', () => {
     const editor = new Editor({
       element: host,
       extensions: [StarterKit, Markdown, Frontmatter],
-      content: '---\nkey: 8c7dxu0l\nscore: "42"\n---\nBody',
+      content: '---\nflowix_key: 8c7dxu0l\nscore: "42"\n---\nBody',
       contentType: 'markdown',
     });
 
@@ -845,7 +852,7 @@ describe('frontmatter property helpers', () => {
     const editor = new Editor({
       element: host,
       extensions: [StarterKit, Markdown, Frontmatter],
-      content: '---\nkey: 8c7dxu0l\nlabels:\n---\nBody',
+      content: '---\nflowix_key: 8c7dxu0l\nlabels:\n---\nBody',
       contentType: 'markdown',
     });
 
@@ -940,7 +947,7 @@ describe('frontmatter property helpers', () => {
     const editor = new Editor({
       element: host,
       extensions: [StarterKit, Markdown, Frontmatter],
-      content: '---\nkey: 8c7dxu0l\ntags: []\n---\nBody',
+      content: '---\nflowix_key: 8c7dxu0l\ntags: []\n---\nBody',
       contentType: 'markdown',
     });
 
@@ -961,7 +968,7 @@ describe('frontmatter property helpers', () => {
     const editor = new Editor({
       element: host,
       extensions: [StarterKit, Markdown, Frontmatter],
-      content: '---\nkey: 8c7dxu0l\ntags: [alpha, beta]\nstatus: todo\n---\nBody',
+      content: '---\nflowix_key: 8c7dxu0l\ntags: [alpha, beta]\nstatus: todo\n---\nBody',
       contentType: 'markdown',
     });
 
@@ -1022,7 +1029,7 @@ describe('frontmatter property helpers', () => {
     const editor = new Editor({
       element: host,
       extensions: [StarterKit, Markdown, Frontmatter.configure({ memoId: '8c7dxu0l' })],
-      content: '---\nkey: 8c7dxu0l\nstatus: todo\n---\nBody',
+      content: '---\nflowix_key: 8c7dxu0l\nstatus: todo\n---\nBody',
       contentType: 'markdown',
     });
 
@@ -1056,7 +1063,7 @@ describe('frontmatter property helpers', () => {
     const editor = new Editor({
       element: host,
       extensions: [StarterKit, Markdown, Frontmatter.configure({ memoId: '8c7dxu0l' })],
-      content: '---\nkey: 8c7dxu0l\n---\nBody',
+      content: '---\nflowix_key: 8c7dxu0l\n---\nBody',
       contentType: 'markdown',
     });
 

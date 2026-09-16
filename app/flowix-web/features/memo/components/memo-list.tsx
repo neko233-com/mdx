@@ -13,13 +13,12 @@ import { PencilSimpleLineIcon } from '@phosphor-icons/react';
 import {
   getVisibleCreateFilter,
   MEMO_COLOR_HEX,
-  useMemoLibraryMetadataStore,
   useMemoStore,
-  useTagStore,
   type ColorFilterValue,
-  type MemoColor,
-  type MemoItem,
-} from '@features/memo';
+} from '@features/memo/store/memo-store';
+import { useMemoLibraryMetadataStore } from '@features/memo/store/memo-library-metadata-store';
+import { useTagStore } from '@features/memo/store/tag-store';
+import type { MemoColor, MemoItem } from '@/types/memo-item';
 import { resolveSelectedTagId } from '@features/memo/services/memo-list-metadata-service';
 import { useMemoInsertAnimation } from '@features/memo/hooks/use-memo-insert-animation';
 import { toast } from '@/lib/toast';

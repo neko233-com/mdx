@@ -4,13 +4,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Hash, ListTodo, SlidersHorizontal } from 'lucide-react';
 import { PlugIcon } from '@phosphor-icons/react';
 import { Tooltip } from '@shared/ui/tooltip';
-import type { Notebook } from '@features/memo';
+import type { Notebook } from '@features/memo/store/memo-store';
 import { NotebookSelectorPopup } from '@features/shell/components/status-bar/notebook-selector-popup';
 import { AgentRuntimeStatusMenu } from '@features/shell/components/status-bar/agent-runtime-status-menu';
 import { ProductUpdatePill } from '@features/shell/components/status-bar/product-update-pill';
 import { useI18n } from '@/lib/i18n';
-import { useDocumentMetricsStore } from '@features/document';
-import { useMemoStore } from '@features/memo';
+import { useDocumentMetricsStore } from '@features/document/store/document-metrics-store';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import { CloudStatusIcon } from '@shared/icons/cloud-status-icon';
 import {
   cloud,

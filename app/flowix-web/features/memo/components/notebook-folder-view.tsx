@@ -6,7 +6,7 @@ import { canonicalDirectoryPath, canonicalPath } from '@/lib/path';
 import { createLogger } from '@/lib/logger';
 import { toast } from '@/lib/toast';
 import { useI18n } from '@/lib/i18n';
-import { useUserSettings } from '@features/preferences/hooks/use-user-settings';
+import { useShowHiddenNotebookFiles } from '@features/preferences/public/runtime-api';
 import { useDocumentStore } from '@features/document/store';
 import { resourceKindFromPath } from '@features/editor/code-file';
 import {
@@ -110,7 +110,7 @@ export function NotebookFolderView({
   isActive?: boolean;
 }) {
   const { t } = useI18n();
-  const showHiddenNotebookFiles = useUserSettings((settings) => settings.showHiddenNotebookFiles);
+  const showHiddenNotebookFiles = useShowHiddenNotebookFiles();
   const tree = useFolderTree(notebook.path, {
     includeHiddenDirectories: showHiddenNotebookFiles,
   });

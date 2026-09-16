@@ -12,7 +12,7 @@ import {
 import { AGENT_TYPES, isAgentTypeSelectable } from '@/lib/agent-types';
 import { canonicalPath } from '@/lib/path';
 import type { AgentTypeKey } from '@/types/agent';
-import { useMemoStore } from '@features/memo';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import { openArtifactTarget } from '@features/workspace/use-cases/workspace-navigation';
 import {
   memos,

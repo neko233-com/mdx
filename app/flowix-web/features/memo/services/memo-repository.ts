@@ -8,7 +8,8 @@ import {
   type NotebookSortEntry,
   type SortType,
 } from '@platform/tauri/client';
-import type { MemoColor, Notebook } from '@features/memo';
+import type { MemoColor } from '@/types/memo-item';
+import type { Notebook } from '@features/memo/store/memo-store';
 
 export type { FilterType, SortType } from '@platform/tauri/client';
 

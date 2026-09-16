@@ -179,7 +179,11 @@ const codeEditorTheme = EditorView.theme({
     backgroundColor: 'color-mix(in oklch, var(--muted) 58%, transparent)',
   },
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': {
-    backgroundColor: 'color-mix(in oklch, var(--primary) 24%, transparent)',
+    backgroundColor: 'color-mix(in oklch, var(--brand, var(--primary)) 26%, transparent)',
+    color: 'inherit',
+  },
+  '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
+    backgroundColor: 'color-mix(in oklch, var(--brand, var(--primary)) 26%, transparent)',
   },
   '.cm-cursor, .cm-dropCursor': {
     borderLeftColor: 'var(--foreground)',

@@ -4,7 +4,7 @@ import { canonicalizePropertyKey } from '@features/document/properties/property-
 import { isValidTagPath } from '@/lib/tag-path';
 
 export const FRONTMATTER_RE = /^\uFEFF?(?:[ \t]*\r?\n)*---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
-export const SYSTEM_FRONTMATTER_KEYS = new Set(['key']);
+export const SYSTEM_FRONTMATTER_KEYS = new Set(['flowix_key', 'key']);
 
 const FLOWIX_COLOR_VALUES = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'gray'] as const;
 const FLOWIX_COLOR_SET = new Set<string>(FLOWIX_COLOR_VALUES);
@@ -342,7 +342,7 @@ export function updateVisibleFrontmatterProperty(
   if (SYSTEM_FRONTMATTER_KEYS.has(nextKey)) {
     throw new FrontmatterPropertyError(
       'reserved-key',
-      'The key property is managed by Flowix',
+      'The system key property is managed by Flowix',
     );
   }
 
@@ -477,6 +477,7 @@ export function replaceVisibleFrontmatterProperties(
   }
   properties.forEach(({ key, value }) => {
     const canonicalKey = canonicalizePropertyKey(key);
+    if (SYSTEM_FRONTMATTER_KEYS.has(canonicalKey)) return;
     map.set(
       canonicalKey,
       canonicalKey === 'tags'

@@ -6,7 +6,7 @@ import { memos as memosClient, dialogs, type SaveFileFilter } from '@platform/ta
 import { translate } from '@/lib/i18n';
 import { getCurrentAppLanguage } from '@features/preferences/public/runtime-api';
 import { toast } from '@/lib/toast';
-import type { MemoColor, MemoItem } from '@features/memo';
+import type { MemoColor, MemoItem } from '@/types/memo-item';
 
 type ExportableDocument = { title: string; markdown: string };
 

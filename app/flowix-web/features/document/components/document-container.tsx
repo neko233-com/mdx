@@ -1,18 +1,18 @@
 ﻿'use client';
 
 import { useEffect, useCallback, useRef, useMemo, useState } from 'react';
-import { useMemoStore } from '@features/memo';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import { files } from '@platform/tauri/client';
 import {
   applyLoadedDocumentContent,
   registerDocumentCapture,
   consumeSelfDocumentPathUpdate,
   hasDocumentUnsavedChanges,
-  useDocumentMetricsStore,
-  useDocumentStore,
-  useDocumentEditorMode,
-  type DocumentIdentity,
-} from '@features/document';
+} from '@features/document/store/document-session-service';
+import { useDocumentMetricsStore } from '@features/document/store/document-metrics-store';
+import { useDocumentStore } from '@features/document/store/document-store';
+import { useDocumentEditorMode } from '@features/document/store/document-editor-view-store';
+import type { DocumentIdentity } from '@features/document/store/document-identity';
 import { getDocumentInstanceKey } from '@/lib/path';
 import { toast } from '@/lib/toast';
 import { product } from '@platform/tauri/client/desktop';

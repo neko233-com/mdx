@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import { notebooks as notebooksClient } from '@platform/tauri/client';
 import {
   useMemoStore,
@@ -27,6 +28,16 @@ export type WorkspaceMemoState = Pick<
 
 export function getWorkspaceMemoState(): WorkspaceMemoState {
   return useMemoStore.getState();
+}
+
+/** Reactive workspace selectors for app-level notebook navigation. */
+export function useWorkspaceMemoViewModel() {
+  return useMemoStore(useShallow((state) => ({
+    selectedNotebook: state.selectedNotebook,
+    setActiveFilter: state.setActiveFilter,
+    setActivePluginId: state.setActivePluginId,
+    triggerRefresh: state.triggerRefresh,
+  })));
 }
 
 export function getSelectedWorkspaceNotebookId(): string | null {

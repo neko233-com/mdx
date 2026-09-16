@@ -1,6 +1,9 @@
 import type { PropertyFieldConfig } from '@/lib/constants';
 import { canonicalizePropertyKey } from '@features/document/properties/property-key';
-import { replaceVisibleFrontmatterProperties } from '@features/document/properties/frontmatter-model';
+import {
+  replaceVisibleFrontmatterProperties,
+  SYSTEM_FRONTMATTER_KEYS,
+} from '@features/document/properties/frontmatter-model';
 import { resolvePreset, type PropertyKind, type PropertyPreset } from '@features/document/properties/presets';
 
 export type PropertyType = PropertyKind;
@@ -62,7 +65,7 @@ export function rowsFromData(
 ): PropertyRow[] {
   const hasCanonicalTags = Object.prototype.hasOwnProperty.call(data, 'tags');
   return Object.entries(data)
-    .filter(([key]) => key.trim() !== 'key' && !(key === 'tag' && hasCanonicalTags))
+    .filter(([key]) => !SYSTEM_FRONTMATTER_KEYS.has(key.trim()) && !(key === 'tag' && hasCanonicalTags))
     .map(([sourceKey, value]) => {
       const key = canonicalizePropertyKey(sourceKey);
       const preset = resolvePreset(key);

@@ -119,6 +119,14 @@ vi.mock("@features/document", () => ({
     }),
   },
 }));
+vi.mock("@features/document/store/document-session-service", () => ({
+  getActiveDocumentDraft: () => null,
+}));
+vi.mock("@features/document/store/document-store", () => ({
+  useDocumentStore: {
+    getState: () => ({ currentDocumentPath: "" }),
+  },
+}));
 
 vi.mock("@features/agent/store/agent-access-store", () => ({
   useAgentAccessStore: {

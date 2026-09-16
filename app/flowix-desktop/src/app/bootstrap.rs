@@ -804,6 +804,8 @@ pub fn run() {
             commands::agent::codex_catalog::codex_mcp_reload,
             commands::agent::codex_catalog::codex_project_mcp_upsert,
             commands::agent::codex_catalog::codex_project_skill_write,
+            commands::agent::notebook_agents::notebook_agent_workspace_read,
+            commands::agent::notebook_agents::notebook_agent_workspace_write,
             commands::thread::claude_thread_list,
             commands::thread::claude_thread_get,
             commands::thread::claude_thread_get_page,

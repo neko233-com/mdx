@@ -58,6 +58,7 @@ import { createAgentThreadCardDom } from "@features/agent/thread-card/view/agent
 import { AgentThreadCardChromeController } from "@features/agent/thread-card/chrome";
 import { ExternalAgentSettingsController } from "@features/agent/thread-card/settings/external-agent-settings-controller";
 import { CodexSettingsDialogController } from "@features/agent/thread-card/settings/codex-settings-dialog";
+import { NotebookAgentSettingsDialogController } from "@features/agent/thread-card/settings/notebook-agent-settings-dialog";
 import { AgentRolePickerController } from "@features/agent/thread-card/role/agent-role-picker-controller";
 import { FullscreenLayoutController } from "@features/agent/thread-card/fullscreen/fullscreen-layout-controller";
 import {
@@ -190,6 +191,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
   private agentRolePicker: AgentRolePickerController;
   private composerAddMenu: ComposerAddMenuController;
   private codexSettingsDialog = new CodexSettingsDialogController();
+  private notebookAgentSettingsDialog = new NotebookAgentSettingsDialogController();
   private isCreating = false;
   private isDestroyed = false;
   // Guards late async completions (thread creation / role loading) from
@@ -469,6 +471,10 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
       openCodexSettings: () => {
         const notebookPath = this.cwd ?? useMemoStore.getState().selectedNotebook?.path;
         if (notebookPath) this.codexSettingsDialog.open(notebookPath);
+      },
+      openNotebookAgentSettings: () => {
+        const notebookPath = this.cwd ?? useMemoStore.getState().selectedNotebook?.path;
+        if (notebookPath) this.notebookAgentSettingsDialog.open(notebookPath);
       },
     });
     this.runtime = new AgentThreadCardRuntimeController({
@@ -1928,6 +1934,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     this.agentRolePicker.dispose();
     this.composerAddMenu.dispose();
     this.codexSettingsDialog.close();
+    this.notebookAgentSettingsDialog.close();
     this.fullscreenLayout.dispose();
     this.composerImages.dispose();
   }

@@ -20,7 +20,8 @@
  */
 
 import { memos as memosClient } from '@platform/tauri/client';
-import { useMemoStore, type MemoItem, type Notebook } from '@features/memo';
+import { useMemoStore, type Notebook } from '@features/memo/store/memo-store';
+import type { MemoItem } from '@/types/memo-item';
 import { resolveAbsolutePath } from '@platform/open-target/path-helper';
 import type { ResolvedOpenTarget } from '@platform/open-target/types';
 import { openMemoTarget } from '@features/workspace/use-cases/workspace-navigation';

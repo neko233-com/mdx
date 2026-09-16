@@ -5,7 +5,8 @@ import { Check, ChevronDown, ChevronRight, Hash, Layers, ListTodo, X } from 'luc
 
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { useMemoStore, useTagStore } from '@features/memo';
+import { useMemoStore } from '@features/memo/store/memo-store';
+import { useTagStore } from '@features/memo/store/tag-store';
 import { TagMentionName } from '@features/editor/extensions/tag-mention/tag-mention-label';
 import {
   DropdownMenu,

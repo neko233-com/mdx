@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react';
-import { MEMO_COLORS, MEMO_COLOR_HEX, type ColorFilterValue, type MemoColor } from '@features/memo';
+import { MEMO_COLORS, MEMO_COLOR_HEX, type ColorFilterValue } from '@features/memo/store/memo-store';
+import type { MemoColor } from '@/types/memo-item';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { DROPDOWN_DIVIDER_SKIN } from '@shared/ui/dropdown-divider';

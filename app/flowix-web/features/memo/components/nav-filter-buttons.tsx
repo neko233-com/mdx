@@ -3,7 +3,7 @@
 import { Layers, ListTodo } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { useMemoStore } from '@features/memo';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import { useI18n } from '@/lib/i18n';
 
 interface NavFilterButtonsProps {

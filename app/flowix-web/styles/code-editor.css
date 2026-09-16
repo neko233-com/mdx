@@ -83,6 +83,8 @@
 	box-sizing: border-box;
 	min-height: calc(var(--source-memo-title-font-size, 16px) * var(--code-editor-line-height, 1.65));
 	padding: 0 var(--code-editor-line-padding-right, 20px) 0 var(--code-editor-line-padding-left, 10px);
+	user-select: text;
+	-webkit-user-select: text;
 	font-family: inherit;
 	font-size: var(--source-memo-title-font-size, 16px);
 	font-weight: 600;
@@ -198,7 +200,15 @@
 .code-editor .cm-selectionBackground,
 .code-editor .cm-editor.cm-focused .cm-selectionBackground,
 .code-editor ::selection {
-	background-color: color-mix(in oklch, var(--primary, #7c3aed) 24%, transparent);
+	background-color: color-mix(in oklch, var(--brand, var(--primary, #7c3aed)) 26%, transparent);
+	color: inherit;
+}
+
+/* CodeMirror's default focused-selection rule is more specific than the
+ * broad fallback above. Match its selection-layer path so the focused state
+ * keeps the same themed background as the unfocused state. */
+.code-editor > .cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
+	background-color: color-mix(in oklch, var(--brand, var(--primary, #7c3aed)) 26%, transparent);
 }
 
 .code-editor .cm-panels {

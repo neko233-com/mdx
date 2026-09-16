@@ -2,7 +2,7 @@ import { Extension, type Editor } from '@tiptap/core';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import { createRoot, type Root } from 'react-dom/client';
-import { useMemoStore } from '@features/memo';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import { openNoteMention, invalidateMentionNotes } from '@features/editor/extensions/note-mention';
 import {
   SLASH_MENU_ITEMS,

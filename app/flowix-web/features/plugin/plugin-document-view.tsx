@@ -7,7 +7,7 @@ import {
   ArrowClockwiseIcon,
 } from '@phosphor-icons/react';
 import { artifacts, type ArtifactSession } from '@platform/tauri/client';
-import { useDocumentStore } from '@features/document';
+import { useDocumentStore } from '@features/document/store/document-store';
 import { PluginArtifactRenderer, type PluginArtifactRendererHandle } from './plugin-artifact-renderer';
 import { PluginMarkmapControls } from './plugin-markmap-controls';
 

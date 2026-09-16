@@ -17,6 +17,14 @@ vi.mock("@features/document", () => ({
     getState: () => ({ currentDocumentPath: "" }),
   },
 }));
+vi.mock("@features/document/store/document-session-service", () => ({
+  getActiveDocumentDraft: () => null,
+}));
+vi.mock("@features/document/store/document-store", () => ({
+  useDocumentStore: {
+    getState: () => ({ currentDocumentPath: "" }),
+  },
+}));
 
 vi.mock("@features/memo/store/memo-store", () => ({
   useMemoStore: {

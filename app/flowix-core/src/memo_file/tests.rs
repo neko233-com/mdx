@@ -1,4 +1,4 @@
-//! v3 单测 — 围绕 `ops` 原语 + memo index 真源语义。
+﻿//! v3 单测 — 围绕 `ops` 原语 + memo index 真源语义。
 //!
 //! 覆盖:
 //! - helpers: `sanitize_filename_component` / `base_filename` / `resolve_filename_conflict` /
@@ -764,7 +764,7 @@ fn pasted_file_with_key_from_other_notebook_gets_new_id_in_current_notebook() {
     let pasted_path = tmp.join("Copied.md");
     fs::write(
         &pasted_path,
-        format!("---\nkey: {}\n---\n# Copied\n", other_memo.id),
+        format!("---\nflowix_key: {}\n---\n# Copied\n", other_memo.id),
     )
     .unwrap();
     let copied = mf
@@ -961,7 +961,7 @@ fn resolve_filename_conflict_picks_first_free() {
 #[test]
 fn build_md_content_writes_frontmatter_then_body() {
     let content = build_md_content("abc123", "world\n");
-    assert_eq!(content, "---\nkey: abc123\n---\nworld\n");
+    assert_eq!(content, "---\nflowix_key: abc123\n---\nworld\n");
 }
 
 // =====================================================================
@@ -1001,7 +1001,7 @@ fn create_memo_merges_key_into_existing_frontmatter() {
     let memo = mf.create_memo("Imported", body, None).expect("create ok");
     let content = fs::read_to_string(memo.filename_full_path(&mf)).unwrap();
 
-    assert!(content.starts_with("---\nkey: "));
+    assert!(content.starts_with("---\nflowix_key: "));
     assert!(content.contains("\nname: guizang-ppt-skill\n"));
     assert!(content.contains("\ndescription: deck generator\n"));
     assert_eq!(
@@ -1029,7 +1029,7 @@ fn create_memo_persists_frontmatter_properties_to_index_db() {
     let memo = mf.create_memo("Imported", body, None).expect("create ok");
 
     let from_index = mf.read_memo(&memo.id).expect("memo in index");
-    assert_eq!(from_index.properties["key"], memo.id);
+    assert_eq!(from_index.properties["flowix_key"], memo.id);
     assert_eq!(from_index.properties["name"], "guizang-ppt-skill");
     assert_eq!(from_index.properties["status"], "draft");
     assert_eq!(from_index.properties["tags"][0], "ppt");
@@ -1186,7 +1186,7 @@ fn rename_memo_renames_disk_file_and_keeps_key_in_frontmatter() {
     let _ = mf.rename_memo(&memo.id, "Second").unwrap();
     let content = fs::read_to_string(_base.join("Second.md")).unwrap();
     assert!(
-        content.contains(&format!("key: {}", original_id)),
+        content.contains(&format!("flowix_key: {}", original_id)),
         "frontmatter key must equal memo id after rename: {content}"
     );
     assert!(
@@ -1238,7 +1238,7 @@ fn write_memo_preserves_key_in_frontmatter() {
     // filename 不冲突时保持不变, 直接读 Stable.md
     let content = fs::read_to_string(base.join("Stable.md")).unwrap();
     assert!(
-        content.contains(&format!("key: {}", original_id)),
+        content.contains(&format!("flowix_key: {}", original_id)),
         "frontmatter key must equal memo id after write: {content}"
     );
     assert!(
@@ -1396,7 +1396,7 @@ fn write_rename_keeps_key_in_frontmatter() {
         .expect("write+rename ok");
     let content = fs::read_to_string(base.join("End.md")).unwrap();
     assert!(
-        content.contains(&format!("key: {}", original_id)),
+        content.contains(&format!("flowix_key: {}", original_id)),
         "frontmatter key must equal memo id: {content}"
     );
     assert!(!content.contains("filename:"));
@@ -1565,7 +1565,7 @@ fn register_existing_file_injects_key_and_preserves_body() {
     // 磁盘文件被改写: frontmatter 块注入 + 原 body 保留
     let content = fs::read_to_string(&abs).unwrap();
     assert!(
-        content.contains(&format!("key: {}", memo.id)),
+        content.contains(&format!("flowix_key: {}", memo.id)),
         "frontmatter must contain injected key: {content}"
     );
     assert!(
@@ -2409,8 +2409,8 @@ fn rename_memo_file_rejects_when_new_filename_occupied() {
     // 准备两个文件都注册进 memo index
     let a = mf.get_memo_base().join("A.md");
     let b = mf.get_memo_base().join("B.md");
-    fs::write(&a, "---\nkey: aaa\n---\n# a\n").unwrap();
-    fs::write(&b, "---\nkey: bbb\n---\n# b\n").unwrap();
+    fs::write(&a, "---\nflowix_key: aaa\n---\n# a\n").unwrap();
+    fs::write(&b, "---\nflowix_key: bbb\n---\n# b\n").unwrap();
     mf.register_existing_file(&a).expect("register a");
     mf.register_existing_file(&b).expect("register b");
 
@@ -2645,7 +2645,7 @@ fn rename_via_remove_create_pair_id_preserved_even_if_remove_already_called() {
 fn atomic_write_bytes_writes_complete_content() {
     let (_mf, tmp) = fresh_memo_file();
     let target = tmp.join("note.md");
-    let body = "---\nkey: abc123\n---\n# Hello\n\nbody content\n";
+    let body = "---\nflowix_key: abc123\n---\n# Hello\n\nbody content\n";
     atomic_write_bytes(&target, body.as_bytes()).unwrap();
     let on_disk = fs::read_to_string(&target).unwrap();
     assert_eq!(on_disk, body);
@@ -2665,7 +2665,7 @@ fn atomic_write_bytes_overwrites_existing_file() {
     let (_mf, tmp) = fresh_memo_file();
     let target = tmp.join("note.md");
     fs::write(&target, "old content").unwrap();
-    let new_body = "new content\n---\nkey: z9y8x7\n";
+    let new_body = "new content\n---\nflowix_key: z9y8x7\n";
     atomic_write_bytes(&target, new_body.as_bytes()).unwrap();
     assert_eq!(fs::read_to_string(&target).unwrap(), new_body);
 }
@@ -3023,8 +3023,8 @@ fn delete_tag_ignores_unrelated_invalid_legacy_frontmatter_path() {
     let path = base.join(&memo.filename);
     let content = std::fs::read_to_string(&path).unwrap();
     let content = content.replacen(
-        &format!("key: {}\n", memo.id),
-        &format!("key: {}\ntags:\n  - \"legacy tag\"\n", memo.id),
+        &format!("flowix_key: {}\n", memo.id),
+        &format!("flowix_key: {}\ntags:\n  - \"legacy tag\"\n", memo.id),
         1,
     );
     std::fs::write(&path, content).unwrap();

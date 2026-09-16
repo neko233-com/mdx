@@ -1,4 +1,4 @@
-// ==================== Helpers ====================
+﻿// ==================== Helpers ====================
 //
 // Helpers shared by every other section in this module. Marked
 // `pub(super)` so the sibling sections (`reads`, `creates`, `versions`,
@@ -11,7 +11,7 @@ use tauri::AppHandle;
 use crate::document_mutation::DocumentCommit;
 use crate::lock_utils::read_lock;
 use crate::memo_events::{self, MemoChangeSource, MemoDerivedChanged, MemoEvent};
-use flowix_core::memo_file::{extract_body_content, Memo};
+use flowix_core::memo_file::{extract_body_content, is_system_frontmatter_key, Memo};
 use flowix_core::MemoService;
 
 use crate::app::search_index::try_index_upsert;
@@ -222,7 +222,11 @@ pub(super) fn cas_content_matches(current: &str, expected: &str, incoming: &str)
             .ok()
             .map(|mut metadata| {
                 if let Some(properties) = metadata.properties.as_object_mut() {
-                    properties.remove("key");
+                    for key in properties.keys().cloned().collect::<Vec<_>>() {
+                        if is_system_frontmatter_key(&key) {
+                            properties.remove(&key);
+                        }
+                    }
                 }
                 metadata
             })
@@ -246,8 +250,8 @@ mod tests {
 
     #[test]
     fn cas_rejects_frontmatter_only_changes() {
-        let current = "---\nkey: note\nstatus: changed\n---\n# Title\n";
-        let expected = "---\nkey: note\nstatus: original\n---\n# Title\n";
+        let current = "---\nflowix_key: note\nstatus: changed\n---\n# Title\n";
+        let expected = "---\nflowix_key: note\nstatus: original\n---\n# Title\n";
         assert!(!cas_content_matches(current, expected, "# Title\nnew body"));
     }
 
@@ -269,24 +273,24 @@ mod tests {
     #[test]
     fn cas_does_not_treat_invalid_metadata_as_empty() {
         let current = "---\nstatus: [broken\n---\n# Title\n";
-        let expected = "---\nkey: note\n---\n# Title\n";
+        let expected = "---\nflowix_key: note\n---\n# Title\n";
         assert!(!cas_content_matches(current, expected, "# Title\nnew body"));
     }
 
     #[test]
     fn cas_accepts_markdown_serialization_noise() {
-        let current = "---\nkey: abc123\n---\r\n\r\n# Title\r\n&nbsp;\r\nBody  \r\n";
-        let expected = "---\nkey: oldkey\n---\n\n# Title\n\nBody\n";
-        let incoming = "---\nkey: abc123\n---\n\n# Title\n&nbsp;\nBody\n";
+        let current = "---\nflowix_key: abc123\nkey: legacy-current\n---\r\n\r\n# Title\r\n&nbsp;\r\nBody  \r\n";
+        let expected = "---\nflowix_key: oldkey\nkey: legacy-expected\n---\n\n# Title\n\nBody\n";
+        let incoming = "---\nflowix_key: abc123\n---\n\n# Title\n&nbsp;\nBody\n";
 
         assert!(cas_content_matches(current, expected, incoming));
     }
 
     #[test]
     fn cas_rejects_real_body_change() {
-        let current = "---\nkey: abc123\n---\n\n# Title\nChanged\n";
-        let expected = "---\nkey: abc123\n---\n\n# Title\nBody\n";
-        let incoming = "---\nkey: abc123\n---\n\n# Title\nBody plus local edit\n";
+        let current = "---\nflowix_key: abc123\n---\n\n# Title\nChanged\n";
+        let expected = "---\nflowix_key: abc123\n---\n\n# Title\nBody\n";
+        let incoming = "---\nflowix_key: abc123\n---\n\n# Title\nBody plus local edit\n";
 
         assert!(!cas_content_matches(current, expected, incoming));
     }
@@ -302,18 +306,18 @@ mod tests {
 
     #[test]
     fn cas_accepts_legacy_bom_boundary_normalization() {
-        let current = "---\nkey: abc123\n---\n\u{FEFF}Body\n";
-        let expected = "---\nkey: abc123\n---\nBody\n";
-        let incoming = "---\nkey: abc123\n---\nEdited body\n";
+        let current = "---\nflowix_key: abc123\n---\n\u{FEFF}Body\n";
+        let expected = "---\nflowix_key: abc123\n---\nBody\n";
+        let incoming = "---\nflowix_key: abc123\n---\nEdited body\n";
 
         assert!(cas_content_matches(current, expected, incoming));
     }
 
     #[test]
     fn cas_accepts_frontmatter_body_leading_blank_drift() {
-        let current = "---\nkey: d7ngibb3\n---\n\n# 2026-07-05\n";
-        let expected = "---\nkey: d7ngibb3\n---\n# 2026-07-05\n";
-        let incoming = "---\nkey: d7ngibb3\n---\n\n\n# 2026-07-05\n\n浣犲ソ";
+        let current = "---\nflowix_key: d7ngibb3\n---\n\n# 2026-07-05\n";
+        let expected = "---\nflowix_key: d7ngibb3\n---\n# 2026-07-05\n";
+        let incoming = "---\nflowix_key: d7ngibb3\n---\n\n\n# 2026-07-05\n\n浣犲ソ";
 
         assert!(cas_content_matches(current, expected, incoming));
     }

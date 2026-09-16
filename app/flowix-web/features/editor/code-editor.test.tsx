@@ -1,4 +1,4 @@
-import { act, createRef } from 'react';
+﻿import { act, createRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorView } from '@codemirror/view';
@@ -87,8 +87,8 @@ describe('CodeEditor', () => {
   it('moves title tail into the source body after frontmatter', async () => {
     const editorRef = createRef<CodeEditorHandle>();
     const onChange = vi.fn();
-    const initialContent = '---\nkey: memo-1\n---\nExisting body';
-    const bodyStart = '---\nkey: memo-1\n---\n'.length;
+    const initialContent = '---\nflowix_key: memo-1\n---\nExisting body';
+    const bodyStart = '---\nflowix_key: memo-1\n---\n'.length;
 
     await act(async () => root.render(
       <CodeEditor
@@ -102,10 +102,10 @@ describe('CodeEditor', () => {
     act(() => editorRef.current?.moveTitleToBody?.(' tail'));
 
     expect(editorRef.current?.flushPendingChanges()).toBe(
-      '---\nkey: memo-1\n---\n tail\n\nExisting body',
+      '---\nflowix_key: memo-1\n---\n tail\n\nExisting body',
     );
     expect(onChange).toHaveBeenCalledWith(
-      '---\nkey: memo-1\n---\n tail\n\nExisting body',
+      '---\nflowix_key: memo-1\n---\n tail\n\nExisting body',
     );
     const content = container.querySelector<HTMLElement>('.cm-content');
     const view = EditorView.findFromDOM(content!);
@@ -116,7 +116,7 @@ describe('CodeEditor', () => {
     await act(async () => root.render(
       <CodeEditor
         filePath="/project/note.md"
-        content={'---\nkey: memo-1\n---\nBody'}
+        content={'---\nflowix_key: memo-1\n---\nBody'}
         onChange={vi.fn()}
         scrollHeader={<div data-testid="source-title">Title</div>}
       />
@@ -136,7 +136,7 @@ describe('CodeEditor', () => {
     await act(async () => root.render(
       <CodeEditor
         filePath="/project/note.md"
-        content={'---\nkey: memo-1\n---\nFirst'}
+        content={'---\nflowix_key: memo-1\n---\nFirst'}
         onChange={vi.fn()}
         scrollHeader={header}
       />
@@ -145,7 +145,7 @@ describe('CodeEditor', () => {
     await act(async () => root.render(
       <CodeEditor
         filePath="/project/note.md"
-        content={'---\nkey: memo-1\n---\nFirst\nSecond'}
+        content={'---\nflowix_key: memo-1\n---\nFirst\nSecond'}
         onChange={vi.fn()}
         scrollHeader={header}
       />
@@ -157,8 +157,8 @@ describe('CodeEditor', () => {
 
   it('focuses the source body after frontmatter', async () => {
     const editorRef = createRef<CodeEditorHandle>();
-    const content = '---\nkey: memo-1\n---\nBody';
-    const bodyStart = '---\nkey: memo-1\n---\n'.length;
+    const content = '---\nflowix_key: memo-1\n---\nBody';
+    const bodyStart = '---\nflowix_key: memo-1\n---\n'.length;
 
     await act(async () => root.render(
       <CodeEditor
@@ -179,7 +179,7 @@ describe('CodeEditor', () => {
 
   it('uses the current editability when moving the title tail', async () => {
     const editorRef = createRef<CodeEditorHandle>();
-    const initialContent = '---\nkey: memo-1\n---\nExisting body';
+    const initialContent = '---\nflowix_key: memo-1\n---\nExisting body';
 
     await act(async () => root.render(
       <CodeEditor

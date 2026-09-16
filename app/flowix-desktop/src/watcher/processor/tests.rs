@@ -1,4 +1,4 @@
-//! 覆盖 `dispatch_modify_event` �?��数的两�?分流�?���?    //!
+﻿//! 覆盖 `dispatch_modify_event` �?��数的两�?分流�?���?    //!
 //! 不依�?Tauri AppHandle / MemoWatcher / inode tracker ── �?MemoFile
 //! 直接调纯函数, �?�� emit 出来的事�?kind/path/memo 字�?�?    //!
 //! setup pattern �?flowix-core �?`fresh_memo_file` 一�? tempdir +
@@ -514,7 +514,7 @@ fn dispatch_modify_event_rekeys_orphan_disk_key_as_new_document() {
     let orphan_id = "abc123";
     std::fs::write(
         &orphan_path,
-        format!("---\nkey: {orphan_id}\n---\n# Orphan\n\nbody content\n"),
+        format!("---\nflowix_key: {orphan_id}\n---\n# Orphan\n\nbody content\n"),
     )
     .unwrap();
 

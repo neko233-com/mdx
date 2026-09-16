@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { OverlayScrollbar } from '@shared/ui/overlay-scrollbar';
-import { NotebookIcon, useMemoStore, type Notebook } from '@features/memo';
+import { NotebookIcon } from '@features/memo/components/notebook-icon';
+import { useMemoStore, type Notebook } from '@features/memo/store/memo-store';
 import { useI18n } from '@/lib/i18n';
 import {
   cloud,

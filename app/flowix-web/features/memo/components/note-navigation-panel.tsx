@@ -9,10 +9,10 @@ import { NotebookAccessFilesList } from '@features/memo/components/notebook-acce
 import { NotebookList } from '@features/memo/components/notebook-list';
 import { NavFilterButtons } from '@features/memo/components/nav-filter-buttons';
 import { TagTree } from '@features/memo/components/tag-tree';
-import { type Notebook } from '@features/memo';
+import { type Notebook } from '@features/memo/store/memo-store';
 import { cn } from '@/lib/utils';
 import { isWindowsPlatform } from '@/lib/shortcuts/platform';
-import { PluginNavItems } from '@features/plugin';
+import { PluginNavItems } from '@features/plugin/public/shell-api';
 import type { PluginDescriptor } from '@platform/tauri/client';
 
 interface NoteNavigationPanelProps {

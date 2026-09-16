@@ -1,4 +1,4 @@
-import { act, createRef } from 'react';
+﻿import { act, createRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { Editor } from '@tiptap/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -210,7 +210,7 @@ describe('MarkdownEditor select all', () => {
         root.render(
           <ShortcutsProvider overrides={{}}>
             <MarkdownEditor
-              content={'---\nkey: buvbaqmc\n---\n# First\n\nSecond'}
+              content={'---\nflowix_key: buvbaqmc\n---\n# First\n\nSecond'}
               onBeforeCreate={(instance) => { editor = instance; }}
             />
           </ShortcutsProvider>,
@@ -238,7 +238,7 @@ describe('MarkdownEditor select all', () => {
         <ShortcutsProvider overrides={{}}>
           <MarkdownEditor
             ref={handle}
-            content={'---\nkey: abc12345\ntags: [work]\n---\nExisting body'}
+            content={'---\nflowix_key: abc12345\ntags: [work]\n---\nExisting body'}
             onBeforeCreate={(instance) => { editor = instance; }}
           />
         </ShortcutsProvider>,
@@ -260,7 +260,7 @@ describe('MarkdownEditor select all', () => {
         <ShortcutsProvider overrides={{}}>
           <MarkdownEditor
             ref={handle}
-            content={'---\nkey: abc12345\n---\nExisting body'}
+            content={'---\nflowix_key: abc12345\n---\nExisting body'}
             onBeforeCreate={(instance) => { editor = instance; }}
           />
         </ShortcutsProvider>,
@@ -278,7 +278,7 @@ describe('MarkdownEditor select all', () => {
       root.render(
         <ShortcutsProvider overrides={{}}>
           <MarkdownEditor
-            content={'---\nkey: abc12345\ntags: [work]\n---\nFirst line\n\nRemaining'}
+            content={'---\nflowix_key: abc12345\ntags: [work]\n---\nFirst line\n\nRemaining'}
             onBeforeCreate={(instance) => { editor = instance; }}
           />
         </ShortcutsProvider>,
@@ -306,7 +306,7 @@ describe('MarkdownEditor select all', () => {
       root.render(
         <ShortcutsProvider overrides={{}}>
           <MarkdownEditor
-            content={'---\nkey: abc12345\n---\nFirst line'}
+            content={'---\nflowix_key: abc12345\n---\nFirst line'}
             onFocusTitle={onFocusTitle}
             onBeforeCreate={(instance) => { editor = instance; }}
           />
@@ -334,7 +334,7 @@ describe('MarkdownEditor select all', () => {
       root.render(
         <ShortcutsProvider overrides={{}}>
           <MarkdownEditor
-            content={'---\nkey: abc12345\n---\nFirst line'}
+            content={'---\nflowix_key: abc12345\n---\nFirst line'}
             editable={false}
             onFocusTitle={onFocusTitle}
             onBeforeCreate={(instance) => { editor = instance; }}
@@ -347,7 +347,7 @@ describe('MarkdownEditor select all', () => {
       root.render(
         <ShortcutsProvider overrides={{}}>
           <MarkdownEditor
-            content={'---\nkey: abc12345\n---\nFirst line'}
+            content={'---\nflowix_key: abc12345\n---\nFirst line'}
             editable
             onFocusTitle={onFocusTitle}
             onBeforeCreate={(instance) => { editor = instance; }}
@@ -376,7 +376,7 @@ describe('MarkdownEditor select all', () => {
       root.render(
         <ShortcutsProvider overrides={{}}>
           <MarkdownEditor
-            content={'---\nkey: abc12345\ntags: [work]\n---\nFirst line\n\nRemaining'}
+            content={'---\nflowix_key: abc12345\ntags: [work]\n---\nFirst line\n\nRemaining'}
             onAppendToTitle={onAppendToTitle}
             onBeforeCreate={(instance) => { editor = instance; }}
           />
@@ -406,7 +406,7 @@ describe('MarkdownEditor select all', () => {
       root.render(
         <ShortcutsProvider overrides={{}}>
           <MarkdownEditor
-            content={'---\nkey: abc12345\ntags: [work]\n---\n&nbsp;\n\nRemaining'}
+            content={'---\nflowix_key: abc12345\ntags: [work]\n---\n&nbsp;\n\nRemaining'}
             onFocusTitle={onFocusTitle}
             onBeforeCreate={(instance) => { editor = instance; }}
           />

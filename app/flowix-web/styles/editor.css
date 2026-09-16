@@ -69,6 +69,12 @@
   opacity: 0.72;
 }
 
+.memo-title-editor--document-selection:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
 .markdown-editor .ProseMirror:not(.agent-thread-card__composer-editor) {
   display: block;
   width: 100%;

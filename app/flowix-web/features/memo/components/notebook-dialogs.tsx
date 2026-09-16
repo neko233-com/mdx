@@ -12,8 +12,8 @@ import {
   getNotebookIconOption,
   NotebookIcon,
   NOTEBOOK_ICON_OPTIONS,
-  type Notebook,
-} from '@features/memo';
+} from '@features/memo/components/notebook-icon';
+import type { Notebook } from '@features/memo/store/memo-store';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import type { CloudNotebook } from '@platform/tauri/client';

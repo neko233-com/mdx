@@ -18,7 +18,7 @@ import { buildInitialInstanceRuntimeConfig } from '@features/agent/store/initial
 import { useWorkspaceRestoreStore } from '@features/workspace/store/workspace-restore-store';
 import { selectAndOpenAgentConversation } from '@features/workspace/use-cases/agent-conversation-navigation';
 import { openBrowserColumnAgentConversation } from '@features/workspace/use-cases/browser-column-navigation';
-import { useMemoStore } from '@features/memo';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import { agentClient } from '@features/agent/store/agent-client';
 import { isAgentConversationRunning } from '@features/agent/store/conversation-run-index';
 import { useAgentRuntimeStore } from '@features/agent/store/agent-runtime-store';

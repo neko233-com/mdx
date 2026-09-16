@@ -100,7 +100,9 @@ impl MemoFile {
         // 把生成的 key 就地注入到 frontmatter 块: 有 key 行就替换,
         // 没有就追加 (头部)。其它字段 (用户手写的 tags / description /
         // 注释 / 空行) 字节级保留。
-        let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();
+        let overrides: MergeOverrides = [(CANONICAL_FRONTMATTER_KEY.to_string(), id.clone())]
+            .into_iter()
+            .collect();
         let stamped = merge_frontmatter(&content, &overrides);
         atomic_write_bytes(abs_path, stamped.as_bytes()).map_err(|e| e.to_string())?;
 
@@ -157,7 +159,10 @@ impl MemoFile {
         let content = fs::read_to_string(abs_path).map_err(|e| e.to_string())?;
         let id = self.generate_global_memo_id();
         let now = chrono::Utc::now().timestamp_millis();
-        let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();
+        // Copy/import explicitly assigns a fresh canonical identity.
+        let overrides: MergeOverrides = [(CANONICAL_FRONTMATTER_KEY.to_string(), id.clone())]
+            .into_iter()
+            .collect();
         let stamped = merge_frontmatter(&content, &overrides);
         atomic_write_bytes(abs_path, stamped.as_bytes()).map_err(|e| e.to_string())?;
 
@@ -236,7 +241,10 @@ impl MemoFile {
         let content = fs::read_to_string(abs_path).map_err(|e| e.to_string())?;
         let id = self.generate_global_memo_id();
         let now = chrono::Utc::now().timestamp_millis();
-        let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();
+        // Copy/import explicitly assigns a fresh canonical identity.
+        let overrides: MergeOverrides = [(CANONICAL_FRONTMATTER_KEY.to_string(), id.clone())]
+            .into_iter()
+            .collect();
         let stamped = merge_frontmatter(&content, &overrides);
         atomic_write_bytes(abs_path, stamped.as_bytes()).map_err(|e| e.to_string())?;
 
@@ -339,7 +347,9 @@ impl MemoFile {
 
         let id = self.generate_global_memo_id();
         let now = chrono::Utc::now().timestamp_millis();
-        let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();
+        let overrides: MergeOverrides = [(CANONICAL_FRONTMATTER_KEY.to_string(), id.clone())]
+            .into_iter()
+            .collect();
         let content_for_index = merge_frontmatter(&content, &overrides);
         atomic_write_bytes(abs_path, content_for_index.as_bytes()).map_err(|e| e.to_string())?;
 
@@ -438,7 +448,9 @@ impl MemoFile {
         let id = self.generate_global_memo_id();
         let now = chrono::Utc::now().timestamp_millis();
 
-        let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();
+        let overrides: MergeOverrides = [(CANONICAL_FRONTMATTER_KEY.to_string(), id.clone())]
+            .into_iter()
+            .collect();
         let stamped = merge_frontmatter(&content, &overrides);
         atomic_write_bytes(abs_path, stamped.as_bytes()).map_err(|e| e.to_string())?;
 
