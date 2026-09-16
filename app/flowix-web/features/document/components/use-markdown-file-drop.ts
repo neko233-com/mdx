@@ -56,7 +56,7 @@ function notebookResourcePaths(paths: readonly string[]): string[] {
 }
 
 interface UseMarkdownFileDropOptions {
-  onDropPaths: (paths: string[]) => void | Promise<void>;
+  onDropPaths: (paths: string[], destination?: 'main-third' | 'browser-column') => void | Promise<void>;
   onDropError?: (error: unknown) => void;
 }
 
@@ -177,8 +177,14 @@ export function useMarkdownFileDrop({
       draggedPathsRef.current = [];
       const markdownOnly = markdownPaths(paths);
       if (markdownOnly.length === 0) return;
+      const dropHost = elementFromExternalDropPosition(event.payload.position, dropScaleFactorRef.current)
+        ?.closest<HTMLElement>('[data-workspace-host]')
+        ?.dataset.workspaceHost;
+      const destination = dropHost === 'main-third' || dropHost === 'browser-column'
+        ? dropHost
+        : undefined;
       const requestId = ++dropRequestRef.current;
-      void Promise.resolve(onDropPathsRef.current(markdownOnly)).catch((error) => {
+      void Promise.resolve(onDropPathsRef.current(markdownOnly, destination)).catch((error) => {
         if (dropRequestRef.current !== requestId || disposed) return;
         onDropErrorRef.current?.(error);
       });

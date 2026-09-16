@@ -107,8 +107,6 @@ export function NoteNavigationPanel({
             activePluginId={activePluginId}
             onOpenPlugin={onOpenPlugin}
           />
-          {/* 待办与标签组之间的分割线 ── my-1 上下各 4px 留白; 下方 4px 与标签组容器 pt-1 (padding, 不与 margin 折叠) 叠加, 分隔线到标签标题实际间距 8px。 */}
-          <div className="my-1 border-t border-[var(--muted-foreground)]/30" />
           <TagTree
             selectedNotebook={selectedNotebook}
             onCountsChange={handleCountsChange}

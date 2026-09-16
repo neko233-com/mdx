@@ -850,9 +850,7 @@ pub fn run() {
 fn handle_second_instance(app: &tauri::AppHandle, args: Vec<String>) {
     // 二�?�?��: 区分 markdown 文件�?���?flowix:// 深链�?    // 两个通道�?��同时触发 (用户�?`xdg-open foo.md flowix://memo/abc123` �?��)�?
     let paths = commands::markdown_paths_from_args(args.clone());
-    for path in &paths {
-        emit_open_target_if_resolved(app, path);
-    }
+    emit_open_target_batch_if_needed(app, &paths);
 
     for arg in args {
         if !paths.contains(&arg) {
@@ -887,9 +885,7 @@ fn handle_cold_start_open_targets(app: &tauri::AppHandle) {
         if let Some(main_window) = app.get_webview_window("main") {
             main_window.hide().ok();
         }
-        for path in &paths {
-            emit_open_target_if_resolved(app, path);
-        }
+        emit_open_target_batch_if_needed(app, &paths);
     }
     for arg in args {
         if !paths.contains(&arg) {
@@ -898,9 +894,40 @@ fn handle_cold_start_open_targets(app: &tauri::AppHandle) {
     }
 }
 
+fn emit_open_target_batch_if_needed(app: &tauri::AppHandle, paths: &[String]) {
+    let mut external_paths = Vec::new();
+    let state = app.state::<AppState>();
+    let configs = crate::lock_utils::read_lock(&state.memo_file, "memo_file")
+        .read_notebook_configs().unwrap_or_default();
+    for path in paths {
+        if let Ok(target) = open_target::parse_open_target(path) {
+            let canonical = dunce::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
+            let inside_notebook = configs.iter().any(|config| {
+                let root = dunce::canonicalize(&config.path).unwrap_or_else(|_| PathBuf::from(&config.path));
+                canonical == root || canonical.starts_with(root.join(""))
+            });
+            if open_target::resolve_open_target(target, state.memo_file.as_ref()).is_err() && !inside_notebook {
+                state.document_access.grant("main", &canonical);
+                external_paths.push(path.clone());
+            } else {
+                emit_open_target_if_resolved(app, path);
+            }
+        }
+    }
+    if !external_paths.is_empty() {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.set_focus();
+            let _ = window.unminimize();
+        }
+        emit_external_markdown_open(app, external_paths);
+    }
+}
+
 fn emit_open_target_if_resolved(app: &tauri::AppHandle, raw: &str) {
     let state = app.state::<AppState>();
-    for path in commands::markdown_paths_from_args([raw.to_string()]) {
+    let markdown_paths = commands::markdown_paths_from_args([raw.to_string()]);
+    for path in &markdown_paths {
         if let Ok(path) = dunce::canonicalize(path) {
             state.document_access.grant("main", &path);
         }
@@ -912,8 +939,26 @@ fn emit_open_target_if_resolved(app: &tauri::AppHandle, raw: &str) {
                 let _ = window.unminimize();
             }
             dispatcher::emit_to(app, "flowix:open-target", resolved);
+        } else if let Some(path) = markdown_paths.first() {
+            // A Markdown file outside every registered notebook is still a
+            // valid Flowix open request. Let the UI ask which notebook should
+            // receive a copy instead of silently dropping the request.
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.unminimize();
+            }
+            emit_external_markdown_open(app, vec![path.clone()]);
         }
     }
+}
+
+fn emit_external_markdown_open(app: &tauri::AppHandle, paths: Vec<String>) {
+    dispatcher::emit_to(
+        app,
+        "flowix:external-markdown-open",
+        serde_json::json!({ "filePaths": paths }),
+    );
 }
 
 fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
@@ -939,16 +984,18 @@ fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
         }
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Opened { urls } => {
+            let mut markdown_paths = Vec::new();
             for url in urls {
                 if url.scheme() == "file" {
                     if let Ok(path) = url.to_file_path() {
                         let path = path.to_string_lossy().to_string();
                         if !commands::markdown_paths_from_args([path.clone()]).is_empty() {
-                            emit_open_target_if_resolved(app, &path);
+                            markdown_paths.push(path);
                         }
                     }
                 }
             }
+            emit_open_target_batch_if_needed(app, &markdown_paths);
         }
         tauri::RunEvent::ExitRequested { .. } => {
             stop_external_agent_children(app, "exit");

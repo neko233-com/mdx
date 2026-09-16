@@ -28,4 +28,12 @@ export interface ResolvedOpenTarget {
 
 /** Tauri event 名 — 跟后端 `handler.rs` 的 emit("flowix:open-target", ...) 同步 */
 export const FLOWIX_OPEN_TARGET_EVENT = 'flowix:open-target';
+
+export interface ExternalMarkdownOpenRequest {
+  filePaths: string[];
+  /** Surface that initiated a file drop; system-open requests omit it. */
+  destination?: 'main-third' | 'browser-column';
+}
+
+export const FLOWIX_EXTERNAL_MARKDOWN_OPEN_EVENT = 'flowix:external-markdown-open';
 import type { MemoItem } from '@/types/memo-item';

@@ -9,6 +9,7 @@ import { useShallow } from 'zustand/react/shallow';
 import {
   cloud,
   listenToCloudStateChanges,
+  memos,
   windows as tauriWindows,
   type CloudNotebook,
 } from '@platform/tauri/client';
@@ -28,7 +29,17 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { Kbd } from '@shared/ui/kbd';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@shared/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@shared/ui/select';
 import { LazyGlobalSearchCommand } from '@features/memo/components/lazy-global-search-command';
+import { subscribe } from '@platform/tauri/event-bus';
+import { externalDocuments } from '@platform/tauri/client';
+import { openNoteByTarget, resolveMemoById } from '@features/memo/use-cases/open-by-target';
+import { openBrowserColumnMemoById } from '@features/workspace/use-cases/browser-column-navigation';
+import { setCurrentWorkspaceNotebook } from '@features/memo/public/workspace-api';
+import {
+  FLOWIX_EXTERNAL_MARKDOWN_OPEN_EVENT,
+  type ExternalMarkdownOpenRequest,
+} from '@platform/open-target/types';
 
 const LazyNotebookDialogs = lazy(() =>
   import('@features/memo/components/notebook-dialogs').then((module) => ({
@@ -78,6 +89,116 @@ function BlockingOperationStatus({ text, stacked }: { text: string; stacked: boo
         <span>{text}</span>
       </div>
     </div>
+  );
+}
+
+function ExternalMarkdownOpenDialog() {
+  const { t } = useI18n();
+  const selectedNotebook = useMemoStore((state) => state.selectedNotebook);
+  const notebooks = useMemoStore((state) => state.notebooks);
+  const [request, setRequest] = useState<ExternalMarkdownOpenRequest | null>(null);
+  const [notebookId, setNotebookId] = useState('');
+  const [opening, setOpening] = useState(false);
+
+  useEffect(() => {
+    const onRequest = (next: ExternalMarkdownOpenRequest) => {
+      if (!next?.filePaths?.length) return;
+      setRequest(next);
+      setNotebookId((current) => current || selectedNotebook?.id || notebooks[0]?.id || '');
+    };
+    const unlisten = subscribe<ExternalMarkdownOpenRequest>(FLOWIX_EXTERNAL_MARKDOWN_OPEN_EVENT, onRequest);
+    const onWindowRequest = (event: Event) => {
+      onRequest((event as CustomEvent<ExternalMarkdownOpenRequest>).detail);
+    };
+    window.addEventListener(FLOWIX_EXTERNAL_MARKDOWN_OPEN_EVENT, onWindowRequest);
+    return () => {
+      unlisten();
+      window.removeEventListener(FLOWIX_EXTERNAL_MARKDOWN_OPEN_EVENT, onWindowRequest);
+    };
+  }, [notebooks, selectedNotebook?.id]);
+
+  useEffect(() => {
+    if (!request) return;
+    setNotebookId((current) => (
+      notebooks.some((notebook) => notebook.id === current)
+        ? current
+        : selectedNotebook?.id || notebooks[0]?.id || ''
+    ));
+  }, [notebooks, request, selectedNotebook?.id]);
+
+  const close = useCallback(() => {
+    if (!opening) setRequest(null);
+  }, [opening]);
+
+  const open = useCallback(async () => {
+    if (!request || !notebookId) return;
+    setOpening(true);
+    try {
+      const imported: Array<{ id: string; resolved: NonNullable<Awaited<ReturnType<typeof resolveMemoById>>> }> = [];
+      for (const filePath of request.filePaths) {
+        const content = await externalDocuments.read(filePath, null);
+        const memo = await memos.importExternalDocumentToMemo(filePath, content, notebookId);
+        if (!memo) throw new Error('Import returned no note');
+        const resolved = await resolveMemoById(memo.id);
+        if (!resolved) throw new Error('Imported note could not be opened');
+        imported.push({ id: memo.id, resolved });
+      }
+      setRequest(null);
+      if (request.destination === 'browser-column') {
+        await setCurrentWorkspaceNotebook(notebookId);
+        for (const memo of imported) await openBrowserColumnMemoById(memo.id);
+      } else {
+        await openNoteByTarget(imported[imported.length - 1].resolved);
+      }
+    } catch (error) {
+      toast.error(`${t('memo.externalOpen.failed')}: ${String(error)}`);
+    } finally {
+      setOpening(false);
+    }
+  }, [notebookId, request, t]);
+
+  const filenames = request?.filePaths.map((path) => path.split(/[\\/]/).pop() || path) ?? [];
+  return (
+    <Dialog open={!!request} onOpenChange={(openState) => !openState && close()}>
+      <DialogContent showCloseButton={!opening}>
+        <DialogHeader>
+          <DialogTitle>{t('memo.externalOpen.title')}</DialogTitle>
+          <DialogDescription>
+            {t('memo.externalOpen.description', { count: filenames.length } satisfies I18nParams)}
+          </DialogDescription>
+        </DialogHeader>
+        <label className="mt-4 block text-sm text-[var(--foreground)]">
+          {t('memo.externalOpen.notebook')}
+          <Select
+            value={notebookId}
+            onValueChange={setNotebookId}
+            disabled={opening}
+          >
+            <SelectTrigger className="mt-2 w-full">
+              <span className="min-w-0 flex-1 truncate text-left">
+                {notebooks.find((notebook) => notebook.id === notebookId)?.name ?? ''}
+              </span>
+            </SelectTrigger>
+            <SelectContent align="start" className="flowix-preferences-select-content w-72 max-w-[calc(100vw-2rem)]">
+              {notebooks.map((notebook) => (
+                <SelectItem key={notebook.id} value={notebook.id}>{notebook.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        <div className="mt-3 max-h-24 overflow-auto rounded-lg bg-[var(--muted)] px-3 py-2 text-xs text-[var(--muted-foreground)]">
+          {filenames.map((filename) => <div key={filename} className="truncate">{filename}</div>)}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={close} disabled={opening} className="h-8 rounded-lg px-3 text-sm hover:bg-[var(--muted)]">
+            {t('dialog.cancel')}
+          </button>
+          <button type="button" onClick={() => void open()} disabled={opening || !notebookId} className="h-8 rounded-lg bg-[var(--primary)] px-4 text-sm text-[var(--primary-foreground)] disabled:opacity-50">
+            {opening ? t('memo.externalOpen.opening') : t('dialog.open')}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -412,6 +533,8 @@ export function MemoListServicesHost({
 
   return (
     <>
+      <ExternalMarkdownOpenDialog />
+
       {(blockingLoadingText || cloudImporting) && (
         <BlockingOperationStatus
           text={cloudImporting ? t('notebook.cloudImport.syncing') : blockingLoadingText!}
