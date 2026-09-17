@@ -668,6 +668,9 @@ pub fn run() {
             commands::memo::reads::get_memos,
             commands::memo::reads::search_mention_notes,
             commands::memo::reads::list_agent_role_memos,
+            commands::media::get_media_resource,
+            commands::media::update_media_resource,
+            commands::media::delete_media_resource,
             commands::memo::reads::get_used_memo_tag_ids,
             commands::memo::reads::get_memo_todo_metadata,
             commands::memo::reads::get_memo_todo_count,
@@ -709,6 +712,7 @@ pub fn run() {
             commands::tag::get_tag_prefix_counts,
             // notebook
             commands::notebook::get_notebooks,
+            commands::notebook::get_default_notebook_path,
             commands::notebook::create_notebook,
             commands::notebook::create_notebook_from_cloud,
             commands::notebook::start_notebook_import,
@@ -898,15 +902,19 @@ fn emit_open_target_batch_if_needed(app: &tauri::AppHandle, paths: &[String]) {
     let mut external_paths = Vec::new();
     let state = app.state::<AppState>();
     let configs = crate::lock_utils::read_lock(&state.memo_file, "memo_file")
-        .read_notebook_configs().unwrap_or_default();
+        .read_notebook_configs()
+        .unwrap_or_default();
     for path in paths {
         if let Ok(target) = open_target::parse_open_target(path) {
             let canonical = dunce::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
             let inside_notebook = configs.iter().any(|config| {
-                let root = dunce::canonicalize(&config.path).unwrap_or_else(|_| PathBuf::from(&config.path));
+                let root = dunce::canonicalize(&config.path)
+                    .unwrap_or_else(|_| PathBuf::from(&config.path));
                 canonical == root || canonical.starts_with(root.join(""))
             });
-            if open_target::resolve_open_target(target, state.memo_file.as_ref()).is_err() && !inside_notebook {
+            if open_target::resolve_open_target(target, state.memo_file.as_ref()).is_err()
+                && !inside_notebook
+            {
                 state.document_access.grant("main", &canonical);
                 external_paths.push(path.clone());
             } else {

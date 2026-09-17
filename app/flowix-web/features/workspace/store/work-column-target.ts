@@ -25,6 +25,13 @@ export type WorkColumnTarget =
       scopePath: string | null;
       transitionId: number | null;
     }
+  | {
+      kind: 'media';
+      filePath: string;
+      notebookId: string | null;
+      notebookPath: string | null;
+      resourceKind: 'image' | 'video';
+    }
   /** A durable host-owned artifact referenced by a pointer memo. */
   | {
       kind: 'artifact';

@@ -166,6 +166,7 @@ export function BrowserColumnHeader({
   // work-column fullscreen never reaches this header.
   const fullscreenInfo = useFullscreenAgentThreadCardInfo('browser-column');
   const isAgentSurface = activeSurfaceChrome === 'agent' || Boolean(fullscreenInfo);
+  const isMediaSurface = activeSurfaceChrome === 'media';
 
   useEffect(() => {
     if (displayedActiveTabId) {
@@ -198,11 +199,12 @@ export function BrowserColumnHeader({
         'relative flex shrink-0 items-center pl-1 pr-2',
         isWindows ? 'h-9 min-h-9 pr-[126px]' : 'h-12 min-h-12',
         isAgentSurface && 'agent-surface-titlebar',
+        isMediaSurface && 'media-surface-titlebar',
       )}
       // Keep the tab strip visually continuous with the work-column titlebar.
       // The tabs themselves stay transparent so this fade remains visible
       // behind active and inactive tabs alike.
-      style={isAgentSurface ? undefined : { backgroundImage: WORK_COLUMN_TITLEBAR_GRADIENT }}
+      style={isAgentSurface || isMediaSurface ? undefined : { backgroundImage: WORK_COLUMN_TITLEBAR_GRADIENT }}
     >
       <div
         role="tablist"

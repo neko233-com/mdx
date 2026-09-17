@@ -432,6 +432,44 @@ export function moveVisibleFrontmatterProperty(
   return document.toString({ lineWidth: 0 }).trimEnd();
 }
 
+export function reorderVisibleFrontmatterProperty(
+  yamlContent: string,
+  propertyKey: string,
+  targetPropertyKey: string,
+  placement: 'before' | 'after',
+): string {
+  const document = parseDocument(yamlContent);
+  const map = document.contents as unknown as YAMLMap;
+  const visiblePairs = map.items.filter((pair) => {
+    const key = nodeKeyToString(pair.key);
+    return key && !SYSTEM_FRONTMATTER_KEYS.has(key);
+  });
+  const sourceIndex = visiblePairs.findIndex(
+    (pair) => nodeKeyToString(pair.key) === propertyKey,
+  );
+  const targetIndex = visiblePairs.findIndex(
+    (pair) => nodeKeyToString(pair.key) === targetPropertyKey,
+  );
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+    return document.toString({ lineWidth: 0 }).trimEnd();
+  }
+
+  const insertionIndex = placement === 'before' ? targetIndex : targetIndex + 1;
+  const [sourcePair] = visiblePairs.splice(sourceIndex, 1);
+  if (!sourcePair) return document.toString({ lineWidth: 0 }).trimEnd();
+  const adjustedIndex = sourceIndex < insertionIndex ? insertionIndex - 1 : insertionIndex;
+  visiblePairs.splice(adjustedIndex, 0, sourcePair);
+
+  const visibleMapIndexes = map.items
+    .map((pair, index) => visiblePairs.includes(pair) ? index : -1)
+    .filter((index) => index >= 0);
+  visibleMapIndexes.forEach((mapIndex, index) => {
+    map.items[mapIndex] = visiblePairs[index];
+  });
+
+  return document.toString({ lineWidth: 0 }).trimEnd();
+}
+
 export function deleteVisibleFrontmatterProperty(
   yamlContent: string,
   propertyKey: string,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
@@ -8,8 +8,10 @@ import type { PluginDescriptor } from '@platform/tauri/client';
 import type { Notebook } from '@features/memo/store/memo-store';
 import { NoteNavigationPanel } from '@features/memo/components/note-navigation-panel';
 
+export type NoteNavigationDrawerPhase = 'closed' | 'open' | 'closing';
+
 interface NoteNavigationDrawerProps {
-  open: boolean;
+  phase: NoteNavigationDrawerPhase;
   notebooks: Notebook[];
   selectedNotebook: Notebook | null;
   onSelectNotebook: (notebook: Notebook) => void;
@@ -19,16 +21,20 @@ interface NoteNavigationDrawerProps {
   onOpenPreferences: (tab?: string) => void;
   activePluginId: string | null;
   onOpenPlugin: (plugin: PluginDescriptor) => void | Promise<void>;
-  onClose: () => void;
+  onRequestClose: () => void;
+  onCloseComplete: () => void;
+  onCompanionSurfaceEnter?: () => void;
+  onCompanionSurfaceLeave?: () => void;
 }
 
 /**
  * The note navigation is intentionally an overlay now. Keeping the panel
  * itself intact means notebook/tag/file interactions stay in one place while
- * the drawer owns only presentation concerns: backdrop, focus, and motion.
+ * the drawer owns presentation concerns and reports transition completion;
+ * the parent owns the shared phase so sibling surfaces can move in sync.
  */
 export function NoteNavigationDrawer({
-  open,
+  phase,
   notebooks,
   selectedNotebook,
   onSelectNotebook,
@@ -38,42 +44,32 @@ export function NoteNavigationDrawer({
   onOpenPreferences,
   activePluginId,
   onOpenPlugin,
-  onClose,
+  onRequestClose,
+  onCloseComplete,
+  onCompanionSurfaceEnter,
+  onCompanionSurfaceLeave,
 }: NoteNavigationDrawerProps) {
   const { t } = useI18n();
   const drawerRef = useRef<HTMLElement>(null);
-  const closeTimerRef = useRef<number | null>(null);
-  const [isClosing, setIsClosing] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      setIsClosing(false);
+    if (phase === 'open') {
       drawerRef.current?.focus();
-    } else {
-      // The close callback changes `open` after the slide-out animation.
-      // Reset this flag as well, otherwise the closed drawer keeps its
-      // shadow forever and leaves a strip along the window's left edge.
-      setIsClosing(false);
     }
-    return () => {
-      if (closeTimerRef.current !== null) {
-        window.clearTimeout(closeTimerRef.current);
-        closeTimerRef.current = null;
-      }
-    };
-  }, [open]);
+  }, [phase]);
 
   const closeWithAnimation = useCallback(() => {
-    if (!open || isClosing) return;
-    setIsClosing(true);
-    closeTimerRef.current = window.setTimeout(() => {
-      closeTimerRef.current = null;
-      onClose();
-    }, 160);
-  }, [isClosing, onClose, open]);
+    if (phase !== 'open') return;
+    onRequestClose();
+  }, [onRequestClose, phase]);
+
+  const handleTransitionEnd = useCallback((event: React.TransitionEvent<HTMLElement>) => {
+    if (phase !== 'closing' || event.target !== event.currentTarget) return;
+    if (event.propertyName === 'transform') onCloseComplete();
+  }, [onCloseComplete, phase]);
 
   useEffect(() => {
-    if (!open) return;
+    if (phase !== 'open') return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -82,7 +78,7 @@ export function NoteNavigationDrawer({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [closeWithAnimation, open]);
+  }, [closeWithAnimation, phase]);
 
   const handleSelectNotebook = useCallback((notebook: Notebook) => {
     onSelectNotebook(notebook);
@@ -99,18 +95,18 @@ export function NoteNavigationDrawer({
         // Keep the drawer above the message interaction layer (z-index 70)
         // while leaving higher-level popovers/dialogs available above it.
         'absolute inset-0 z-[100] overflow-hidden',
-        open && !isClosing ? 'pointer-events-auto' : 'pointer-events-none',
+        phase === 'open' ? 'pointer-events-auto' : 'pointer-events-none',
       )}
-      aria-hidden={!open}
+      aria-hidden={phase === 'closed'}
     >
       <button
         type="button"
         aria-label={t('memo.navigation.closeDrawer')}
-        tabIndex={open ? 0 : -1}
+        tabIndex={phase === 'open' ? 0 : -1}
         onClick={closeWithAnimation}
         className={cn(
           'absolute inset-0 h-full w-full cursor-default bg-transparent transition-opacity duration-150',
-          open && !isClosing ? 'opacity-100' : 'opacity-0',
+          phase === 'open' ? 'opacity-100' : 'opacity-0',
         )}
       />
       <aside
@@ -120,13 +116,16 @@ export function NoteNavigationDrawer({
         aria-label={t('memo.navigation.notebookNavigation')}
         aria-modal="true"
         className={cn(
-          'relative m-1 h-[calc(100%-0.5rem)] w-[min(240px,calc(100vw-16px))] min-w-0 overflow-hidden rounded-xl',
-          'flowix-note-navigation-drawer-surface border border-[var(--border-popup)] text-[var(--agent-foreground)]',
-          'transition-transform duration-150 ease-out',
-          open && !isClosing ? 'translate-x-0' : '-translate-x-[calc(100%+0.5rem)]',
+          'relative m-1 h-[calc(100%-0.5rem)] w-[var(--flowix-note-navigation-drawer-width)] min-w-0 overflow-hidden rounded-xl',
+          'border border-[var(--border-popup)] bg-[var(--card)] text-[var(--agent-foreground)]',
+          'transition-transform flowix-note-navigation-motion',
+          phase === 'open' ? 'translate-x-0' : '-translate-x-[calc(100%+0.5rem)]',
           // Keep the navigation drawer shadow at a softened weight (24% -> 16%).
-          open && !isClosing && 'shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.16)]',
+          phase === 'open' && 'shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.16)]',
         )}
+        onTransitionEnd={handleTransitionEnd}
+        onMouseEnter={onCompanionSurfaceEnter}
+        onMouseLeave={onCompanionSurfaceLeave}
       >
         <NoteNavigationPanel
           notebooks={notebooks}

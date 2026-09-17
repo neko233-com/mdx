@@ -40,7 +40,6 @@ describe('user-settings-store · region loadInitial', () => {
           responseLength: 'standard',
           preferredLanguage: 'Simplified Chinese',
           selectedTags: [],
-          showConversationEntry: true,
         },
         format: {
           fontFamily: 'serif',
@@ -77,7 +76,6 @@ describe('user-settings-store · legacy quickPhrases migration', () => {
           responseLength: 'standard',
           preferredLanguage: 'Simplified Chinese',
           selectedTags: [],
-          showConversationEntry: true,
         },
         format: {
           fontFamily: 'serif',

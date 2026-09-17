@@ -155,6 +155,48 @@ describe('CodeEditor', () => {
       .toBe('Title');
   });
 
+  it('tracks focus in the source header on the editor wrapper', async () => {
+    await act(async () => root.render(
+      <CodeEditor
+        filePath="/project/note.md"
+        content={'---\nflowix_key: memo-1\n---\nBody'}
+        onChange={vi.fn()}
+        scrollHeader={(
+          <div className="source-memo-title-row">
+            <div contentEditable data-testid="source-title-editable" />
+          </div>
+        )}
+      />
+    ));
+
+    const editor = container.querySelector<HTMLElement>('.code-editor');
+    const title = container.querySelector<HTMLElement>('[data-testid="source-title-editable"]');
+    expect(editor?.hasAttribute('data-source-header-focused')).toBe(false);
+
+    act(() => title?.focus());
+    expect(editor?.getAttribute('data-source-header-focused')).toBe('');
+
+    act(() => title?.blur());
+    expect(editor?.hasAttribute('data-source-header-focused')).toBe(false);
+  });
+
+  it('adds a dedicated gutter layer for the source header surface', async () => {
+    await act(async () => root.render(
+      <CodeEditor
+        filePath="/project/note.md"
+        content={'---\nflowix_key: memo-1\n---\nBody'}
+        onChange={vi.fn()}
+        scrollHeader={<div data-testid="source-title">Title</div>}
+      />
+    ));
+
+    const gutterBackground = container.querySelector<HTMLElement>(
+      '.cm-gutters > .cm-source-header-gutter-background',
+    );
+    expect(gutterBackground).not.toBeNull();
+    expect(gutterBackground?.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('focuses the source body after frontmatter', async () => {
     const editorRef = createRef<CodeEditorHandle>();
     const content = '---\nflowix_key: memo-1\n---\nBody';
@@ -269,5 +311,55 @@ describe('CodeEditor', () => {
     expect(event.defaultPrevented).toBe(true);
     expect(view?.state.selection.main.from).toBe(0);
     expect(view?.state.selection.main.to).toBe(view?.state.doc.length);
+  });
+
+  it('exposes non-empty selections without changing CodeMirror selection state', async () => {
+    await act(async () => root.render(
+      <CodeEditor
+        filePath="/project/example.md"
+        content={'First\nSecond'}
+        onChange={vi.fn()}
+        scrollHeader={<div data-testid="source-title">Title</div>}
+      />
+    ));
+
+    const content = container.querySelector<HTMLElement>('.cm-content');
+    const editor = container.querySelector<HTMLElement>('.cm-editor');
+    const view = EditorView.findFromDOM(content!);
+    expect(editor?.hasAttribute('data-has-range-selection')).toBe(false);
+
+    act(() => {
+      view?.dispatch({ selection: { anchor: 0, head: 5 } });
+    });
+
+    expect(view?.state.selection.main.from).toBe(0);
+    expect(view?.state.selection.main.to).toBe(5);
+    expect(editor?.getAttribute('data-has-range-selection')).toBe('');
+
+    act(() => {
+      view?.dispatch({ selection: { anchor: 5, head: 5 } });
+    });
+
+    expect(editor?.hasAttribute('data-has-range-selection')).toBe(false);
+  });
+
+  it('keeps the range marker scoped to source memo editors', async () => {
+    await act(async () => root.render(
+      <CodeEditor
+        filePath="/project/example.ts"
+        content={'const value = 1;'}
+        onChange={vi.fn()}
+      />
+    ));
+
+    const content = container.querySelector<HTMLElement>('.cm-content');
+    const editor = container.querySelector<HTMLElement>('.cm-editor');
+    const view = EditorView.findFromDOM(content!);
+
+    act(() => {
+      view?.dispatch({ selection: { anchor: 0, head: 5 } });
+    });
+
+    expect(editor?.hasAttribute('data-has-range-selection')).toBe(false);
   });
 });

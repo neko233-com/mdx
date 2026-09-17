@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronsUpDown, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronsUpDown, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@shared/ui/popover';
 import { notebooks as notebooksClient } from '@platform/tauri/client';
 import { NotebookIcon } from '@features/memo/components/notebook-icon';
@@ -365,28 +365,28 @@ export function NotebookSelectorPopup({
         sideOffset={sideOffset}
         onExitComplete={handleExitComplete}
         className={cn(
-          'flowix-notebook-selector-popup ml-1.5 flex h-auto max-h-[calc(100vh-8px)] w-[300px] flex-col overflow-hidden rounded-lg border-[var(--border-popup)] bg-[var(--popover)] p-1.5 shadow-lg',
+          'flowix-notebook-selector-popup ml-1.5 flex h-auto max-h-[480px] w-[390px] flex-col overflow-hidden rounded-xl border-[var(--border-popup)] bg-[var(--popover)] pb-2 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]',
           side === 'bottom' && 'flowix-notebook-selector-popup--bottom',
         )}
       >
-        <div className="shrink-0 px-2.5 py-1.5 text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+        <div className="shrink-0 px-1.5 py-2 text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
           {t('status.notebookList')}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto px-1.5">
           {notebooks.length === 0 && (
             <div className="px-3 py-8 text-center text-xs text-[var(--muted-foreground)]">
               {t('status.noNotebooks')}
             </div>
           )}
-          <div className="space-y-0.5">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(108px,1fr))] gap-2.5">
             {previewNotebookIds.map((notebookId) => {
                 if (notebookId === draggingId) {
                   return (
                     <div
                       key={`placeholder-${notebookId}`}
                       aria-hidden="true"
-                      className="flowix-notebook-drop-placeholder h-10 rounded-md border border-dashed border-[color-mix(in_oklch,var(--primary)_62%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_5%,transparent)]"
+                      className="flowix-notebook-drop-placeholder min-h-[124px] rounded-lg border-2 border-dashed border-[color-mix(in_oklch,var(--primary)_62%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_5%,transparent)]"
                     />
                   );
                 }
@@ -409,10 +409,10 @@ export function NotebookSelectorPopup({
                     onPointerDown={(event) => handleCardPointerDown(notebook, event)}
                     onKeyDown={(event) => handleCardKeyDown(notebook, event)}
                     className={cn(
-                      'group relative flex h-10 w-full cursor-default select-none items-center gap-2 rounded-md px-2.5 text-left transition-colors',
+                      'group relative flex min-h-[124px] cursor-default select-none flex-col items-start gap-2 rounded-lg border px-3 py-3 text-left transition-[border-color,background-color,box-shadow]',
                       isActive
-                        ? 'bg-[color-mix(in_oklch,var(--primary)_10%,transparent)] text-[var(--foreground)]'
-                        : 'text-[var(--foreground)] hover:bg-[var(--muted)]',
+                        ? 'border-[var(--primary)]/50 bg-[color-mix(in_oklch,var(--primary)_10%,transparent)]'
+                        : 'border-[var(--border)] hover:border-[var(--primary)]/50 hover:bg-[var(--muted)]/60',
                       isMissing && 'opacity-70',
                     )}
                     style={{
@@ -426,21 +426,49 @@ export function NotebookSelectorPopup({
                         : {}),
                     }}
                   >
-                    <NotebookIcon
-                      icon={notebook.icon}
-                      name={notebook.name}
-                      className={cn(
-                        'h-6 w-6 shrink-0 rounded-md text-[10px] font-semibold transition-[color,background-color,opacity,filter] duration-150',
-                        isActive
-                          ? 'bg-[color-mix(in_oklch,var(--primary)_14%,var(--muted))] !text-[var(--primary)] opacity-100'
-                          : 'bg-[var(--muted)] text-[var(--secondary-foreground)] opacity-75 saturate-75 group-hover:opacity-90 group-hover:saturate-90',
-                      )}
-                      imageClassName="h-[72%] w-[72%]"
-                    />
-                    <div className="min-w-0 flex-1">
+                    <div className="flex w-full items-center justify-between">
+                      <NotebookIcon
+                        icon={notebook.icon}
+                        name={notebook.name}
+                        className={cn(
+                          'h-8 w-8 shrink-0 rounded-md text-[11px] font-semibold transition-[color,background-color,opacity,filter] duration-150',
+                          isActive
+                            ? 'bg-[color-mix(in_oklch,var(--primary)_14%,var(--muted))] !text-[var(--primary)] opacity-100'
+                            : 'bg-[var(--muted)] text-[var(--secondary-foreground)] opacity-75 saturate-75 group-hover:opacity-90 group-hover:saturate-90',
+                        )}
+                        imageClassName="h-[72%] w-[72%]"
+                      />
+                      <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                        <button
+                          type="button"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            closeThen(() => onEdit(notebook));
+                          }}
+                          className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                          aria-label={t('status.editNotebook')}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            closeThen(() => onDelete(notebook));
+                          }}
+                          className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:text-[var(--destructive)]"
+                          aria-label={t('status.deleteNotebook')}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-auto w-full space-y-1">
                       <span
                         className={cn(
-                          'block w-full min-w-0 truncate text-left text-sm font-medium',
+                          'block min-h-5 w-full min-w-0 truncate text-left text-sm font-medium',
                           isMissing ? 'text-[var(--muted-foreground)]' : 'text-[var(--foreground)]',
                         )}
                         title={notebook.name}
@@ -448,7 +476,7 @@ export function NotebookSelectorPopup({
                         {notebook.name}
                         {isMissing && ` ${t('status.invalid')}`}
                       </span>
-                      <span className="flex items-center gap-0 text-left text-[11px] text-[var(--muted-foreground)]">
+                      <span className="flex items-center gap-0 text-left text-xs text-[var(--muted-foreground)]">
                         {cloudSyncedNotebookIds?.has(notebook.id) && (
                           <span className="flex h-4 w-3 shrink-0 items-center justify-center" aria-hidden="true">
                             <span
@@ -465,45 +493,17 @@ export function NotebookSelectorPopup({
                         {t('status.notebookMemoCount', { count: notebook.memoCount ?? 0 })}
                       </span>
                     </div>
-                    {isActive && <Check className="h-4 w-4 shrink-0 text-[var(--primary)]" aria-hidden="true" />}
-                    <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                      <button
-                        type="button"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          closeThen(() => onEdit(notebook));
-                        }}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                        aria-label={t('status.editNotebook')}
-                      >
-                        <Pencil className="h-3 w-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          closeThen(() => onDelete(notebook));
-                        }}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:text-[var(--destructive)]"
-                        aria-label={t('status.deleteNotebook')}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
                   </div>
                 );
             })}
             <button
               type="button"
               onClick={() => closeThen(onCreateNotebook)}
-              className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-sm text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+              className="group relative flex min-h-[124px] items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-transparent text-[var(--muted-foreground)] transition-colors hover:border-[var(--primary)]/50 hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
               aria-label={t('status.newNotebook')}
               title={t('status.newNotebook')}
             >
-              <Plus className="h-4 w-4" />
-              <span>{t('status.newNotebook')}</span>
+              <Plus className="h-7 w-7" />
             </button>
           </div>
         </div>
@@ -522,7 +522,7 @@ export function NotebookSelectorPopup({
             <NotebookIcon
               icon={sourceNotebook.icon}
               name={sourceNotebook.name}
-              className="h-7 w-7 shrink-0 rounded-md bg-[color-mix(in_oklch,var(--primary)_14%,var(--muted))] text-[11px] font-semibold !text-[var(--primary)]"
+              className="h-8 w-8 shrink-0 rounded-md bg-[color-mix(in_oklch,var(--primary)_14%,var(--muted))] text-[11px] font-semibold !text-[var(--primary)]"
             />
             <div className="mt-auto w-full space-y-1">
               <span className="block truncate text-sm font-medium text-[var(--foreground)]">

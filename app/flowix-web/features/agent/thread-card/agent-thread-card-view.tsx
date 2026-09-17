@@ -57,7 +57,6 @@ import {
 import { createAgentThreadCardDom } from "@features/agent/thread-card/view/agent-thread-card-dom-factory";
 import { AgentThreadCardChromeController } from "@features/agent/thread-card/chrome";
 import { ExternalAgentSettingsController } from "@features/agent/thread-card/settings/external-agent-settings-controller";
-import { CodexSettingsDialogController } from "@features/agent/thread-card/settings/codex-settings-dialog";
 import { NotebookAgentSettingsDialogController } from "@features/agent/thread-card/settings/notebook-agent-settings-dialog";
 import { AgentRolePickerController } from "@features/agent/thread-card/role/agent-role-picker-controller";
 import { FullscreenLayoutController } from "@features/agent/thread-card/fullscreen/fullscreen-layout-controller";
@@ -190,7 +189,6 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
   private externalSettingsLoadedTypeKey: AgentTypeKey | null = null;
   private agentRolePicker: AgentRolePickerController;
   private composerAddMenu: ComposerAddMenuController;
-  private codexSettingsDialog = new CodexSettingsDialogController();
   private notebookAgentSettingsDialog = new NotebookAgentSettingsDialogController();
   private isCreating = false;
   private isDestroyed = false;
@@ -467,13 +465,8 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
       images: this.composerImages,
       t: (key) => this.t(key),
       isDestroyed: () => this.isDestroyed,
-      getAgentType: () => this.typeKey,
-      openCodexSettings: () => {
-        const notebookPath = this.cwd ?? useMemoStore.getState().selectedNotebook?.path;
-        if (notebookPath) this.codexSettingsDialog.open(notebookPath);
-      },
       openNotebookAgentSettings: () => {
-        const notebookPath = this.cwd ?? useMemoStore.getState().selectedNotebook?.path;
+        const notebookPath = this.notebookPath;
         if (notebookPath) this.notebookAgentSettingsDialog.open(notebookPath);
       },
     });
@@ -726,6 +719,25 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
    */
   private get cwd(): string | null {
     return getAgentConversationRuntimeCwd(this.instance) ?? null;
+  }
+
+  /** Project AI settings always operate on the registered notebook root. */
+  private get notebookPath(): string | null {
+    const instance = this.instance;
+    const runtimeConfig = instance?.runtimeConfig;
+    const snapshot = runtimeConfig?.workspaceSnapshot;
+    const snapshotNotebookPath = snapshot?.notebookPath?.trim();
+    if (snapshotNotebookPath) return snapshotNotebookPath;
+
+    const notebookId = runtimeConfig?.notebookId
+      ?? snapshot?.notebookId
+      ?? instance?.source.notebookId
+      ?? null;
+    const memoState = useMemoStore.getState();
+    const notebook = (notebookId
+      ? memoState.notebooks.find((item) => item.id === notebookId)
+      : null) ?? memoState.selectedNotebook;
+    return notebook?.path?.trim() || null;
   }
 
   private scopePathForLocalFile(filePath: string): string | null {
@@ -1933,7 +1945,6 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     this.externalAgentSettings.dispose();
     this.agentRolePicker.dispose();
     this.composerAddMenu.dispose();
-    this.codexSettingsDialog.close();
     this.notebookAgentSettingsDialog.close();
     this.fullscreenLayout.dispose();
     this.composerImages.dispose();

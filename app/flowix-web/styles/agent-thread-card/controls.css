@@ -352,6 +352,29 @@
   );
 }
 
+/* Media resources share the same surface background as conversations, while
+ * keeping their own semantic chrome type. */
+.media-surface-titlebar {
+  background-color: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
+  background-image: none;
+}
+
+/* WebView native video controls are painted inside the replaced element and
+ * may ignore the element's border-radius at the corners. Clip the complete
+ * rendered layer so the controls' gray overlay follows the same radius,
+ * without introducing a sizing wrapper that could crop the video. */
+.media-resource-video {
+  clip-path: inset(0 round 0.5rem);
+}
+
+/* The native WebKit controls panel is darker than the media surface by
+ * default. Keep the native controls, but make their gray mask lighter and
+ * semi-transparent so the video remains visible underneath. */
+.media-resource-video::-webkit-media-controls-panel {
+  background-color: rgb(96 96 96 / 50%);
+  background-image: none;
+}
+
 /* Keep the relocated control's shape identical to the Thread Card's former
  * fullscreen button: transparent, borderless, and 28px square. Its error
  * color makes the exit action easier to spot in the titlebar. */

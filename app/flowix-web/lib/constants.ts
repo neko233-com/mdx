@@ -53,8 +53,6 @@ export interface PersonalizeConfig {
   responseLength: string;
   preferredLanguage: string;
   selectedTags: string[];
-  /** Whether the conversations entry is shown in the main navigation sidebar. */
-  showConversationEntry: boolean;
 }
 
 export interface FormatConfig {
@@ -226,13 +224,12 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     responseLength: 'standard',
     preferredLanguage: 'Simplified Chinese',
     selectedTags: [],
-    showConversationEntry: true,
   },
   format: {
     fontFamily: FONT_FAMILY_OPTIONS[0].value,
     fontId: FONT_FAMILY_OPTIONS[0].id,
     fontSize: 15,
-    lineHeight: 1.6,
+    lineHeight: 1.8,
     documentWidth: DOCUMENT_WIDTH_DEFAULT,
   },
   // 默认值收敛到 lib/theme/DEFAULT_THEME_ID — 改默认值改一处即可。

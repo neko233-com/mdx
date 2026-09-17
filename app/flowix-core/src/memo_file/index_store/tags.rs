@@ -13,7 +13,7 @@ impl MemoFile {
         notebook_id: Option<&str>,
     ) -> std::io::Result<Vec<String>> {
         let notebook_id = self.notebook_id_for_index(notebook_id);
-        let conn = self.open_memo_index_db()?;
+        let conn = self.open_memo_index_db_for_notebook_id(&notebook_id)?;
         let mut stmt = conn
             .prepare(
                 "SELECT path
@@ -41,7 +41,7 @@ impl MemoFile {
                 format!("notebook not found: {notebook_id}"),
             ));
         }
-        let mut conn = self.open_memo_index_db()?;
+        let mut conn = self.open_memo_index_db_for_notebook_id(notebook_id)?;
         let now = chrono::Utc::now().timestamp_millis();
         let exists = conn
             .query_row(
@@ -90,7 +90,7 @@ impl MemoFile {
     ) -> std::io::Result<TagUsageSummary> {
         let notebook_id = self.notebook_id_for_index(notebook_id);
         let _ = self.read_index_for_notebook_id(Some(&notebook_id));
-        let conn = self.open_memo_index_db()?;
+        let conn = self.open_memo_index_db_for_notebook_id(&notebook_id)?;
         let total_count = conn
             .query_row(
                 "SELECT COUNT(*) FROM memos WHERE notebook_id = ?1",
@@ -181,8 +181,8 @@ impl MemoFile {
     ) -> std::io::Result<std::collections::HashMap<String, usize>> {
         use std::collections::{HashMap, HashSet};
 
-        let conn = self.open_memo_index_db()?;
         let notebook_id = self.notebook_id_for_index(notebook_id);
+        let conn = self.open_memo_index_db_for_notebook_id(&notebook_id)?;
 
         let mut stmt = conn
             .prepare(

@@ -12,6 +12,7 @@ import {
   isFrontmatterPropertyFlowSequence,
   moveVisibleFrontmatterProperty,
   parseVisibleFrontmatter,
+  reorderVisibleFrontmatterProperty,
   suggestFrontmatterRepair,
   toFrontmatterPropertyInput,
   updateVisibleFrontmatterProperty,
@@ -20,7 +21,17 @@ import {
   PROPERTY_ICON_OPTIONS,
   getPropertyIconOption,
 } from '@features/document/properties/property-icons';
-import { resolvePreset, type PropertyKind } from '@features/document/properties/presets';
+import {
+  PROPERTY_KINDS,
+  resolvePreset,
+  type PropertyKind,
+} from '@features/document/properties/presets';
+import {
+  FIXED_PROPERTY_KINDS,
+  PROPERTY_DATE_RE,
+  resolvePropertyType,
+  type PropertyDisplayKind,
+} from '@features/document/properties/property-type';
 import { DateValueInput } from '@features/document/components/note-properties/date-value-input';
 import { getCurrentAppLanguage, subscribeAppLanguage } from '@features/preferences/public/runtime-api';
 import { canonicalizePropertyKey } from '@features/document/properties/property-key';
@@ -37,47 +48,21 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
   return element;
 }
 
-type PropertyDisplayKind =
-  | 'text'
-  | 'number'
-  | 'date'
-  | 'url'
-  | 'boolean'
-  | 'array'
-  | 'list'
-  | 'icon';
-
-const PROPERTY_URL_RE = /^https?:\/\/\S+$/i;
-const PROPERTY_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PROPERTY_EDIT_POPOVER_WIDTH = 320;
-const PROPERTY_EDIT_KINDS = [
-  'Text',
-  'Number',
-  'MultiSelect',
-  'Date',
-  'Select',
-  'List',
-] as const satisfies readonly PropertyKind[];
+const PROPERTY_EDIT_KINDS = PROPERTY_KINDS;
 
-type PropertyEditKind = typeof PROPERTY_EDIT_KINDS[number] | 'Icon';
+type PropertyEditKind = PropertyKind;
 
 const PROPERTY_EDIT_KIND_LABEL_KEYS = {
   Text: 'document.properties.type.text',
   Number: 'document.properties.type.number',
+  Date: 'document.properties.type.date',
+  URL: 'document.properties.type.url',
+  Icon: 'document.properties.category.icon',
+  Select: 'document.properties.type.select',
   MultiSelect: 'document.properties.category.tags',
   List: 'document.properties.type.list',
-  Date: 'document.properties.type.date',
-  Select: 'document.properties.type.select',
-  Icon: 'document.properties.category.icon',
 } as const;
-
-const FIXED_PROPERTY_EDIT_KINDS: Partial<Record<string, PropertyEditKind>> = {
-  name: 'Text',
-  description: 'Text',
-  tags: 'MultiSelect',
-  flowix_colors: 'MultiSelect',
-  flowix_icon: 'Icon',
-};
 
 const COMMON_PROPERTY_KEYS = [
   { key: 'name', labelKey: 'document.properties.commonKey.name' },
@@ -108,27 +93,12 @@ const FLOWIX_COLOR_LABEL_KEYS: Record<MemoColor, I18nKey> = {
   gray: 'document.color.gray',
 };
 
-function isMultiSelectProperty(key: string, isFlowSequence = false): boolean {
-  const canonicalKey = canonicalizePropertyKey(key);
-  return canonicalKey === 'tags'
-    || canonicalKey === 'flowix_colors'
-    || isFlowSequence
-    || resolvePreset(canonicalKey)?.kind === 'MultiSelect';
-}
-
 function getPropertyDisplayKind(
   key: string,
   value: unknown,
   isFlowSequence = false,
 ): PropertyDisplayKind {
-  if (typeof value === 'boolean') return 'boolean';
-  if (Array.isArray(value)) return isMultiSelectProperty(key, isFlowSequence) ? 'array' : 'list';
-  const canonicalKey = canonicalizePropertyKey(key);
-  if (canonicalKey === 'icon' || canonicalKey === 'flowix_icon') return 'icon';
-  if (typeof value === 'number') return 'number';
-  if (typeof value === 'string' && PROPERTY_DATE_RE.test(value)) return 'date';
-  if (typeof value === 'string' && PROPERTY_URL_RE.test(value)) return 'url';
-  return 'text';
+  return resolvePropertyType(key, value, isFlowSequence).displayKind;
 }
 
 function getPropertyEditKind(
@@ -136,23 +106,7 @@ function getPropertyEditKind(
   value: unknown,
   isFlowSequence = false,
 ): PropertyEditKind {
-  const fixedKind = FIXED_PROPERTY_EDIT_KINDS[canonicalizePropertyKey(key)];
-  if (fixedKind) return fixedKind;
-  if (isMultiSelectProperty(key, isFlowSequence)) return 'MultiSelect';
-  if (
-    value === null
-    || value === undefined
-    || (typeof value === 'string' && !value.trim())
-  ) {
-    return 'Text';
-  }
-  if (typeof value === 'boolean') return 'Select';
-  if (Array.isArray(value)) return 'List';
-  if (typeof value === 'number') return 'Number';
-  if (typeof value === 'string' && PROPERTY_DATE_RE.test(value)) return 'Date';
-
-  const presetKind = resolvePreset(canonicalizePropertyKey(key))?.kind;
-  return presetKind === 'MultiSelect' ? 'MultiSelect' : 'Text';
+  return resolvePropertyType(key, value, isFlowSequence).kind;
 }
 
 function createPropertySvgIcon(
@@ -268,6 +222,22 @@ interface ActivePropertyEdit {
   control: PropertyEditControl;
 }
 
+type PropertyPointerDrag = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  list: HTMLElement;
+  sourceRow: HTMLElement;
+  sourceIcon: HTMLElement;
+  sourcePropertyKey: string;
+  sourceNextSibling: ChildNode | null;
+  sourceDetached: boolean;
+  active: boolean;
+  targetRow: HTMLElement | null;
+  placement: 'before' | 'after' | null;
+  placeholder: HTMLElement | null;
+};
+
 export class FrontmatterPropertyNodeView implements NodeView {
   readonly dom: HTMLElement;
   private node: ProseMirrorNode;
@@ -276,6 +246,10 @@ export class FrontmatterPropertyNodeView implements NodeView {
   private activePropertyEdit: ActivePropertyEdit | null = null;
   private activePropertyMenu: HTMLElement | null = null;
   private activePropertyMenuAnchor: HTMLElement | null = null;
+  private suppressNextPropertyIconClick = false;
+  private suppressPropertyIconClickTimer: number | null = null;
+  private propertyDragPreview: HTMLElement | null = null;
+  private propertyPointerDrag: PropertyPointerDrag | null = null;
   private readonly unsubscribeSettings: () => void;
   private readonly handleDocumentPointerDown = (event: Event) => {
     const target = event.target;
@@ -296,6 +270,10 @@ export class FrontmatterPropertyNodeView implements NodeView {
       this.savePropertyEdit();
     }
   };
+  private readonly handleDocumentSelectStart = (event: Event) => {
+    if (!this.propertyPointerDrag?.active) return;
+    event.preventDefault();
+  };
 
   constructor(
     node: ProseMirrorNode,
@@ -312,6 +290,27 @@ export class FrontmatterPropertyNodeView implements NodeView {
       'pointerdown',
       this.handleDocumentPointerDown,
       true,
+    );
+    this.dom.ownerDocument.addEventListener(
+      'selectstart',
+      this.handleDocumentSelectStart,
+      true,
+    );
+    this.dom.ownerDocument.defaultView?.addEventListener(
+      'pointermove',
+      this.handlePropertyPointerMove,
+    );
+    this.dom.ownerDocument.defaultView?.addEventListener(
+      'pointerup',
+      this.handlePropertyPointerUp,
+    );
+    this.dom.ownerDocument.defaultView?.addEventListener(
+      'pointercancel',
+      this.handlePropertyPointerCancel,
+    );
+    this.dom.ownerDocument.defaultView?.addEventListener(
+      'blur',
+      this.handlePropertyWindowBlur,
     );
     this.render();
   }
@@ -353,6 +352,36 @@ export class FrontmatterPropertyNodeView implements NodeView {
     this.activePropertyMenuAnchor = null;
   }
 
+  private armPropertyIconClickSuppression() {
+    this.suppressNextPropertyIconClick = true;
+    const ownerWindow = this.dom.ownerDocument.defaultView;
+    if (this.suppressPropertyIconClickTimer !== null) {
+      ownerWindow?.clearTimeout(this.suppressPropertyIconClickTimer);
+    }
+    this.suppressPropertyIconClickTimer = ownerWindow?.setTimeout(() => {
+      this.suppressNextPropertyIconClick = false;
+      this.suppressPropertyIconClickTimer = null;
+    }, 0) ?? null;
+  }
+
+  private consumeSuppressedPropertyIconClick() {
+    if (!this.suppressNextPropertyIconClick) return false;
+    this.suppressNextPropertyIconClick = false;
+    const ownerWindow = this.dom.ownerDocument.defaultView;
+    if (this.suppressPropertyIconClickTimer !== null) {
+      ownerWindow?.clearTimeout(this.suppressPropertyIconClickTimer);
+      this.suppressPropertyIconClickTimer = null;
+    }
+    return true;
+  }
+
+  private setPropertyDragSelectionLock(locked: boolean) {
+    const documentElement = this.dom.ownerDocument.documentElement;
+    documentElement.classList.toggle('frontmatter-property--dragging', locked);
+    if (!locked) return;
+    this.dom.ownerDocument.defaultView?.getSelection()?.removeAllRanges();
+  }
+
   private updatePropertyStructure(
     propertyKey: string,
     action: 'up' | 'down' | 'delete',
@@ -379,6 +408,410 @@ export class FrontmatterPropertyNodeView implements NodeView {
     }
   }
 
+  private updatePropertyKey(
+    property: { key: string; value: unknown },
+    nextKey: string,
+  ) {
+    try {
+      const nextYamlContent = updateVisibleFrontmatterProperty(
+        String(this.node.attrs.yamlContent ?? ''),
+        property.key,
+        nextKey,
+        getPropertyEditValue(property.value),
+      );
+      const pos = this.getPos();
+      if (typeof pos !== 'number') return;
+      this.closePropertyMenu();
+      this.validationError = null;
+      this.view.dispatch(
+        this.view.state.tr.setNodeMarkup(pos, undefined, {
+          ...this.node.attrs,
+          yamlContent: nextYamlContent,
+        }),
+      );
+    } catch (error) {
+      this.closePropertyMenu();
+      this.validationError = this.errorMessage(error);
+      this.render();
+    }
+  }
+
+  private createPropertyDragPreview(row: HTMLElement, clientX: number, clientY: number) {
+    if (this.propertyDragPreview) return;
+    const preview = createElement('div', 'frontmatter-property__drag-preview');
+    const sourceIcon = row.querySelector<HTMLElement>('.frontmatter-property__type-icon');
+    const icon = sourceIcon?.cloneNode(true) as HTMLElement | null;
+    const key = createElement(
+      'span',
+      'frontmatter-property__drag-preview-key',
+      row.querySelector('.frontmatter-property__key')?.textContent ?? row.dataset.propertyKey ?? '',
+    );
+    const value = createElement(
+      'span',
+      'frontmatter-property__drag-preview-value',
+      row.querySelector('.frontmatter-property__display-value')?.textContent ?? '',
+    );
+    if (icon) {
+      icon.removeAttribute('aria-expanded');
+      icon.removeAttribute('aria-haspopup');
+      icon.removeAttribute('aria-grabbed');
+      icon.removeAttribute('tabindex');
+      preview.append(icon);
+    }
+    preview.append(key, value);
+    preview.style.left = '0';
+    preview.style.top = '0';
+    preview.style.transform = `translate3d(${clientX + 12}px, ${clientY + 12}px, 0)`;
+    this.dom.ownerDocument.body.append(preview);
+    this.propertyDragPreview = preview;
+  }
+
+  private updatePropertyDragPreview(clientX: number, clientY: number) {
+    if (!this.propertyDragPreview) return;
+    this.propertyDragPreview.style.transform = `translate3d(${clientX + 12}px, ${clientY + 12}px, 0)`;
+  }
+
+  private createPropertyPlaceholder(sourceRow: HTMLElement) {
+    const placeholder = sourceRow.cloneNode(true) as HTMLElement;
+    placeholder.classList.remove('frontmatter-property__display--dragging');
+    placeholder.classList.add('frontmatter-property__display--drag-placeholder');
+    placeholder.setAttribute('aria-hidden', 'true');
+    placeholder.removeAttribute('tabindex');
+    placeholder.querySelectorAll<HTMLElement>('[tabindex]').forEach((element) => {
+      element.removeAttribute('tabindex');
+    });
+    placeholder.querySelectorAll<HTMLElement>('[aria-expanded], [aria-haspopup], [aria-grabbed]')
+      .forEach((element) => {
+        element.removeAttribute('aria-expanded');
+        element.removeAttribute('aria-haspopup');
+        element.removeAttribute('aria-grabbed');
+      });
+    return placeholder;
+  }
+
+  private animatePropertyRows(
+    list: HTMLElement,
+    mutate: () => void,
+  ) {
+    const rows = [...list.querySelectorAll<HTMLElement>(
+      '.frontmatter-property__display:not(.frontmatter-property__display--drag-placeholder)',
+    )];
+    const firstTops = new Map(rows.map((row) => [row, row.getBoundingClientRect().top]));
+
+    // If a previous transition is still running, measure its current visual
+    // position, then use that position as the next FLIP starting point.
+    rows.forEach((row) => {
+      row.style.transition = 'none';
+      row.style.transform = 'none';
+    });
+    mutate();
+
+    rows.forEach((row) => {
+      const firstTop = firstTops.get(row);
+      if (firstTop === undefined || !row.isConnected) return;
+      const deltaY = firstTop - row.getBoundingClientRect().top;
+      if (Math.abs(deltaY) < 0.5) {
+        row.style.transition = '';
+        row.style.transform = '';
+        return;
+      }
+
+      row.style.transform = `translate3d(0, ${deltaY}px, 0)`;
+      void row.offsetHeight;
+      row.style.transition = 'transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1)';
+      row.style.transform = 'translate3d(0, 0, 0)';
+
+      const clearAnimation = () => {
+        row.style.transition = '';
+        row.style.transform = '';
+      };
+      row.addEventListener('transitionend', clearAnimation, { once: true });
+      this.dom.ownerDocument.defaultView?.setTimeout(clearAnimation, 220);
+    });
+  }
+
+  private updatePropertyDropTarget(
+    drag: PropertyPointerDrag,
+    targetRow: HTMLElement | null,
+    placement: 'before' | 'after' | null,
+  ) {
+    if (drag.targetRow === targetRow && drag.placement === placement) return;
+
+    const list = drag.list;
+
+    drag.targetRow = targetRow;
+    drag.placement = placement;
+    this.animatePropertyRows(list, () => {
+      drag.placeholder?.remove();
+      if (!targetRow || !placement || !drag.placeholder) {
+        if (drag.sourceDetached) {
+          const sourceAnchor = drag.sourceNextSibling?.parentNode === list
+            ? drag.sourceNextSibling
+            : null;
+          list.insertBefore(drag.sourceRow, sourceAnchor);
+          drag.sourceDetached = false;
+        }
+        return;
+      }
+
+      const insertionPoint = placement === 'before' ? targetRow : targetRow.nextSibling;
+      list.insertBefore(drag.placeholder, insertionPoint);
+      // Keep the original slot occupied until the new placeholder is already
+      // in the list. This makes the list height stable during the swap.
+      if (!drag.sourceDetached) {
+        drag.sourceRow.remove();
+        drag.sourceDetached = true;
+      }
+    });
+  }
+
+  private getPropertyLayoutBounds(row: HTMLElement) {
+    const visualBounds = row.getBoundingClientRect();
+    const offsetParent = row.offsetParent;
+    const offsetParentBounds = offsetParent?.getBoundingClientRect();
+    const top = offsetParentBounds
+      ? offsetParentBounds.top + row.offsetTop
+      : visualBounds.top;
+    const height = row.offsetHeight || visualBounds.height;
+    return { top, bottom: top + height, height };
+  }
+
+  private resolvePropertyDropTarget(
+    drag: PropertyPointerDrag,
+    clientY: number,
+  ) {
+    const list = drag.list;
+    const placeholder = drag.placeholder;
+    if (placeholder?.parentElement === list) {
+      const bounds = this.getPropertyLayoutBounds(placeholder);
+      const tolerance = Math.min(8, Math.max(4, bounds.height * 0.2));
+      if (clientY >= bounds.top - tolerance && clientY <= bounds.bottom + tolerance) {
+        return { targetRow: drag.targetRow, placement: drag.placement };
+      }
+    }
+
+    if (!drag.sourceDetached) {
+      const sourceBounds = this.getPropertyLayoutBounds(drag.sourceRow);
+      if (clientY >= sourceBounds.top && clientY <= sourceBounds.bottom) {
+        return { targetRow: null, placement: null };
+      }
+    }
+
+    const rows = [...list.querySelectorAll<HTMLElement>(
+      '.frontmatter-property__display:not(.frontmatter-property__display--drag-placeholder)',
+    )].filter((row) => row !== drag.sourceRow);
+    let lastRow: HTMLElement | null = null;
+    let lastPlacement: 'before' | 'after' | null = null;
+    for (const row of rows) {
+      const bounds = this.getPropertyLayoutBounds(row);
+      const midpoint = bounds.top + bounds.height / 2;
+      if (clientY < midpoint) {
+        const placement: 'before' | 'after' = drag.targetRow === row && drag.placement === 'after'
+          && clientY >= midpoint - Math.min(8, Math.max(4, bounds.height * 0.12))
+          ? 'after'
+          : 'before';
+        return { targetRow: row, placement };
+      }
+      lastRow = row;
+      lastPlacement = drag.targetRow === row && drag.placement === 'before'
+        && clientY <= midpoint + Math.min(8, Math.max(4, bounds.height * 0.12))
+        ? 'before'
+        : 'after';
+    }
+
+    return { targetRow: lastRow, placement: lastPlacement };
+  }
+
+  private finishPropertyDrag(animate = false, restoreSource = true) {
+    const drag = this.propertyPointerDrag;
+    if (drag) {
+      const restoreSourcePlaceholder = () => {
+        drag.placeholder?.remove();
+        if (!drag.sourceDetached) return;
+        const sourceAnchor = drag.sourceNextSibling?.parentNode === drag.list
+          ? drag.sourceNextSibling
+          : null;
+        drag.list.insertBefore(drag.sourceRow, sourceAnchor);
+        drag.sourceDetached = false;
+      };
+      if (restoreSource) {
+        if (animate && drag.placeholder?.parentElement === drag.list) {
+          this.animatePropertyRows(drag.list, restoreSourcePlaceholder);
+        } else if (drag.sourceDetached) {
+          restoreSourcePlaceholder();
+        } else {
+          drag.placeholder?.remove();
+        }
+      } else {
+        drag.placeholder?.remove();
+      }
+    }
+    drag?.sourceRow.classList.remove('frontmatter-property__display--dragging');
+    drag?.sourceIcon.setAttribute('aria-grabbed', 'false');
+    this.setPropertyDragSelectionLock(false);
+    this.propertyDragPreview?.remove();
+    this.propertyDragPreview = null;
+    this.propertyPointerDrag = null;
+  }
+
+  private reorderProperty(
+    propertyKey: string,
+    targetPropertyKey: string,
+    placement: 'before' | 'after',
+  ) {
+    const yamlContent = String(this.node.attrs.yamlContent ?? '');
+    const nextYamlContent = reorderVisibleFrontmatterProperty(
+      yamlContent,
+      propertyKey,
+      targetPropertyKey,
+      placement,
+    );
+    if (nextYamlContent === yamlContent) {
+      this.finishPropertyDrag(true, true);
+      return;
+    }
+
+    const pos = this.getPos();
+    if (typeof pos !== 'number') {
+      this.finishPropertyDrag(true, true);
+      return;
+    }
+    this.finishPropertyDrag(false, false);
+    this.validationError = null;
+    this.view.dispatch(
+      this.view.state.tr.setNodeMarkup(pos, undefined, {
+        ...this.node.attrs,
+        yamlContent: nextYamlContent,
+      }),
+    );
+  }
+
+  private beginPropertyPointerDrag(
+    row: HTMLElement,
+    dragSource: HTMLElement,
+    propertyKey: string,
+    event: PointerEvent,
+  ) {
+    if (event.button !== 0) return;
+    if (this.propertyPointerDrag) this.finishPropertyDrag();
+    const list = row.parentElement;
+    if (!list) return;
+    this.propertyPointerDrag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      list,
+      sourceRow: row,
+      sourceIcon: dragSource,
+      sourcePropertyKey: propertyKey,
+      sourceNextSibling: row.nextSibling,
+      sourceDetached: false,
+      active: false,
+      targetRow: null,
+      placement: null,
+      placeholder: null,
+    };
+  }
+
+  private readonly handlePropertyPointerMove = (event: PointerEvent) => {
+    const drag = this.propertyPointerDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+
+    if (!drag.active) {
+      const distance = Math.hypot(
+        event.clientX - drag.startX,
+        event.clientY - drag.startY,
+      );
+      if (distance < 5) return;
+      drag.active = true;
+      this.closePropertyMenu();
+      this.closePropertyEditor();
+      this.setPropertyDragSelectionLock(true);
+      this.createPropertyDragPreview(drag.sourceRow, event.clientX, event.clientY);
+      drag.placeholder = this.createPropertyPlaceholder(drag.sourceRow);
+      drag.sourceRow.classList.add('frontmatter-property__display--dragging');
+      drag.sourceIcon.setAttribute('aria-grabbed', 'true');
+    }
+
+    event.preventDefault();
+    this.updatePropertyDragPreview(event.clientX, event.clientY);
+
+    const { targetRow, placement } = this.resolvePropertyDropTarget(drag, event.clientY);
+    this.updatePropertyDropTarget(drag, targetRow, placement);
+  };
+
+  private readonly handlePropertyPointerUp = (event: PointerEvent) => {
+    const drag = this.propertyPointerDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    if (!drag.active) {
+      this.propertyPointerDrag = null;
+      return;
+    }
+
+    event.preventDefault();
+    this.armPropertyIconClickSuppression();
+    const targetPropertyKey = drag.targetRow?.dataset.propertyKey;
+    const placement = drag.placement;
+    const sourcePropertyKey = drag.sourcePropertyKey;
+    if (targetPropertyKey && placement) {
+      this.reorderProperty(sourcePropertyKey, targetPropertyKey, placement);
+    } else {
+      this.finishPropertyDrag(true, true);
+    }
+  };
+
+  private readonly handlePropertyPointerCancel = (event: PointerEvent) => {
+    const drag = this.propertyPointerDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    this.finishPropertyDrag(true);
+  };
+
+  private readonly handlePropertyWindowBlur = () => {
+    if (this.propertyPointerDrag) this.finishPropertyDrag(true);
+  };
+
+  private bindPropertyDrag(
+    row: HTMLElement,
+    dragSource: HTMLElement,
+    propertyKey: string,
+  ) {
+    if (!this.view.editable) return;
+
+    // Sorting is intentionally pointer-driven. Keeping the icon non-draggable
+    // avoids the browser's native drag image and its competing drag lifecycle.
+    dragSource.draggable = false;
+    dragSource.setAttribute('aria-grabbed', 'false');
+    dragSource.addEventListener('pointerdown', (event) => {
+      this.beginPropertyPointerDrag(row, dragSource, propertyKey, event);
+    });
+  }
+
+  private appendCommonPropertyOptions(
+    menu: HTMLElement,
+    occupiedKeys: ReadonlySet<string>,
+    onSelect: (key: string) => void,
+  ) {
+    COMMON_PROPERTY_KEYS.forEach(({ key, labelKey }) => {
+      const option = createElement(
+        'button',
+        'frontmatter-property__edit-key-option',
+        this.t(labelKey),
+      );
+      const alreadyExists = occupiedKeys.has(canonicalizePropertyKey(key));
+      option.type = 'button';
+      option.dataset.value = key;
+      option.setAttribute('role', 'option');
+      option.disabled = alreadyExists;
+      if (alreadyExists) option.title = this.t('document.properties.commonKey.alreadyExists');
+      option.addEventListener('click', (event) => {
+        event.preventDefault();
+        if (option.disabled) return;
+        onSelect(key);
+      });
+      menu.append(option);
+    });
+  }
+
   private openPropertyMenu(
     property: { key: string; value: unknown },
     anchor: HTMLElement,
@@ -394,6 +827,57 @@ export class FrontmatterPropertyNodeView implements NodeView {
     const menu = createElement('div', 'frontmatter-property__item-menu');
     menu.setAttribute('role', 'menu');
     menu.setAttribute('aria-label', property.key);
+
+    const occupiedKeys = new Set(
+      parsed.properties
+        .filter(({ key }) => key !== property.key)
+        .map(({ key }) => canonicalizePropertyKey(key)),
+    );
+    const presetItem = createElement('div', 'frontmatter-property__preset-item');
+    const presetButton = createElement(
+      'button',
+      'frontmatter-property__item-menu-button frontmatter-property__preset-button',
+      this.t('document.properties.preset'),
+    );
+    const presetMenu = createElement('div', 'frontmatter-property__preset-menu');
+    presetButton.type = 'button';
+    presetButton.setAttribute('role', 'menuitem');
+    presetButton.setAttribute('aria-haspopup', 'listbox');
+    presetButton.setAttribute('aria-expanded', 'false');
+    presetMenu.setAttribute('role', 'listbox');
+    presetMenu.setAttribute('aria-label', this.t('document.properties.preset'));
+    this.appendCommonPropertyOptions(
+      presetMenu,
+      occupiedKeys,
+      (nextKey) => this.updatePropertyKey(property, nextKey),
+    );
+    const setPresetMenuOpen = (open: boolean) => {
+      presetItem.dataset.open = String(open);
+      presetButton.setAttribute('aria-expanded', String(open));
+    };
+    presetItem.addEventListener('mouseenter', () => {
+      const itemRect = presetItem.getBoundingClientRect();
+      const presetMenuRect = presetMenu.getBoundingClientRect();
+      const opensLeft = itemRect.right + presetMenuRect.width > ownerWindow.innerWidth - 8;
+      presetMenu.dataset.placement = opensLeft
+        ? 'left'
+        : 'right';
+      setPresetMenuOpen(true);
+    });
+    presetItem.addEventListener('mouseleave', () => setPresetMenuOpen(false));
+    presetItem.addEventListener('focusin', () => setPresetMenuOpen(true));
+    presetItem.addEventListener('focusout', (event) => {
+      const nextTarget = event.relatedTarget;
+      if (!(nextTarget instanceof globalThis.Node) || !presetItem.contains(nextTarget)) {
+        setPresetMenuOpen(false);
+      }
+    });
+    presetButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      setPresetMenuOpen(presetItem.dataset.open !== 'true');
+    });
+    presetItem.append(presetButton, presetMenu);
+    menu.append(presetItem);
 
     const addAction = (
       action: 'up' | 'down' | 'delete',
@@ -588,6 +1072,53 @@ export class FrontmatterPropertyNodeView implements NodeView {
           control.focusTarget.value.length,
         );
       }
+    };
+
+    const createPlainTextControl = (
+      value: string,
+      storageKind: PropertyKind = 'Text',
+    ): PropertyEditControl => {
+      const textarea = createElement('textarea', 'frontmatter-property__edit-input');
+      textarea.value = value;
+      textarea.rows = 1;
+      textarea.spellcheck = false;
+      textarea.wrap = 'soft';
+      textarea.setAttribute('aria-label', property.key);
+      textarea.setAttribute('data-property-key', property.key);
+      textarea.addEventListener('input', () => resizePropertyEditInput(textarea));
+      textarea.addEventListener('keydown', handleKeyDown);
+      return {
+        dom: textarea,
+        focusTarget: textarea,
+        getValue: () => textarea.value,
+        storageKind,
+      };
+    };
+
+    const createSelectControl = (value: string): PropertyEditControl => {
+      const configuredOptions = resolvePreset(property.key)?.options ?? [];
+      const options = [...new Set([
+        ...configuredOptions,
+        ...(value && !configuredOptions.includes(value) ? [value] : []),
+      ])];
+      if (options.length === 0) return createPlainTextControl(value);
+
+      const select = createElement('select', 'frontmatter-property__edit-input frontmatter-property__edit-select');
+      select.setAttribute('aria-label', property.key);
+      select.setAttribute('data-property-key', property.key);
+      options.forEach((optionValue) => {
+        const option = createElement('option', '', optionValue);
+        option.value = optionValue;
+        select.append(option);
+      });
+      select.value = value;
+      select.addEventListener('keydown', handleKeyDown);
+      return {
+        dom: select,
+        focusTarget: select,
+        getValue: () => select.value,
+        storageKind: 'Select',
+      };
     };
 
     const createControl = (kind: PropertyEditKind, value: string): PropertyEditControl => {
@@ -831,6 +1362,10 @@ export class FrontmatterPropertyNodeView implements NodeView {
       }
 
       if (kind === 'Select') {
+        const hasConfiguredOptions = (resolvePreset(property.key)?.options?.length ?? 0) > 0;
+        if (typeof property.value !== 'boolean' && hasConfiguredOptions) {
+          return createSelectControl(value);
+        }
         const label = createElement('label', 'frontmatter-property__edit-checkbox-label');
         const checkbox = createElement('input', 'frontmatter-property__edit-checkbox');
         checkbox.type = 'checkbox';
@@ -927,29 +1462,12 @@ export class FrontmatterPropertyNodeView implements NodeView {
         };
       }
 
-      const textarea = createElement('textarea', 'frontmatter-property__edit-input');
-      textarea.value = value;
-      textarea.rows = 1;
-      textarea.spellcheck = false;
-      textarea.wrap = 'soft';
-      textarea.setAttribute('aria-label', property.key);
-      textarea.setAttribute('data-property-key', property.key);
-      textarea.addEventListener('input', () => resizePropertyEditInput(textarea));
-      textarea.addEventListener('keydown', handleKeyDown);
-      return {
-        dom: textarea,
-        focusTarget: textarea,
-        getValue: () => textarea.value,
-        storageKind: 'Text',
-      };
+      return createPlainTextControl(value, kind === 'URL' ? 'URL' : 'Text');
     };
 
     let control: PropertyEditControl;
     if (target === 'key') {
       const input = createElement('input', 'frontmatter-property__edit-input');
-      const keyControl = createElement('div', 'frontmatter-property__edit-key-control');
-      const keyTrigger = createElement('button', 'frontmatter-property__edit-key-trigger');
-      const keyMenu = createElement('div', 'frontmatter-property__edit-key-menu');
 
       input.value = initialValue;
       input.spellcheck = false;
@@ -961,78 +1479,9 @@ export class FrontmatterPropertyNodeView implements NodeView {
       input.addEventListener('compositionend', () => {
         locallyComposing = false;
       });
-      keyTrigger.type = 'button';
-      keyTrigger.setAttribute('aria-haspopup', 'listbox');
-      keyTrigger.setAttribute('aria-expanded', 'false');
-      keyTrigger.setAttribute(
-        'aria-label',
-        this.t('document.properties.commonKey.triggerLabel'),
-      );
-      keyTrigger.append(createPropertyTypeChevron());
-
-      keyMenu.hidden = true;
-      keyMenu.setAttribute('role', 'listbox');
-      const parsedFrontmatter = parseVisibleFrontmatter(
-        String(this.node.attrs.yamlContent ?? ''),
-      );
-      const occupiedKeys = new Set(
-        parsedFrontmatter.properties
-          .filter(({ key }) => key !== property.key)
-          .map(({ key }) => canonicalizePropertyKey(key)),
-      );
-      const closeKeyMenu = () => {
-        keyMenu.hidden = true;
-        keyTrigger.setAttribute('aria-expanded', 'false');
-      };
-      const openKeyMenu = () => {
-        keyMenu.hidden = false;
-        keyTrigger.setAttribute('aria-expanded', 'true');
-      };
-
-      COMMON_PROPERTY_KEYS.forEach(({ key, labelKey }) => {
-        const option = createElement('button', 'frontmatter-property__edit-key-option', this.t(labelKey));
-        const alreadyExists = occupiedKeys.has(canonicalizePropertyKey(key));
-        option.type = 'button';
-        option.dataset.value = key;
-        option.setAttribute('role', 'option');
-        option.disabled = alreadyExists;
-        if (alreadyExists) option.title = this.t('document.properties.commonKey.alreadyExists');
-        option.addEventListener('click', (event) => {
-          event.preventDefault();
-          if (option.disabled) return;
-          input.value = key;
-          closeKeyMenu();
-          input.focus();
-          input.setSelectionRange(input.value.length, input.value.length);
-        });
-        keyMenu.append(option);
-      });
-
-      input.addEventListener('focus', closeKeyMenu);
-      input.addEventListener('keydown', (event) => {
-        if (event.key === 'ArrowDown') {
-          event.preventDefault();
-          openKeyMenu();
-          return;
-        }
-        handleKeyDown(event);
-      });
-      keyTrigger.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (keyMenu.hidden) openKeyMenu();
-        else closeKeyMenu();
-      });
-      keyMenu.addEventListener('keydown', (event) => {
-        if (event.key !== 'Escape') return;
-        event.preventDefault();
-        closeKeyMenu();
-        keyTrigger.focus();
-      });
-
-      keyControl.append(keyTrigger, input, keyMenu);
+      input.addEventListener('keydown', handleKeyDown);
       control = {
-        dom: keyControl,
+        dom: input,
         focusTarget: input,
         getValue: () => input.value,
         storageKind: 'Text',
@@ -1062,7 +1511,7 @@ export class FrontmatterPropertyNodeView implements NodeView {
       const typeRow = createElement('div', 'frontmatter-property__edit-type-row');
       const typeTrigger = createElement('button', 'frontmatter-property__edit-type-trigger');
       const isFixedPropertyKind = target === 'value'
-        && FIXED_PROPERTY_EDIT_KINDS[canonicalizePropertyKey(property.key)] !== undefined;
+        && FIXED_PROPERTY_KINDS[canonicalizePropertyKey(property.key)] !== undefined;
       typeTrigger.type = 'button';
       typeTrigger.disabled = isFixedPropertyKind;
       typeTrigger.setAttribute('aria-haspopup', 'listbox');
@@ -1074,6 +1523,13 @@ export class FrontmatterPropertyNodeView implements NodeView {
         'frontmatter-property__edit-type-label',
         this.t(PROPERTY_EDIT_KIND_LABEL_KEYS[initialKind]),
       );
+      if (isFixedPropertyKind) {
+        typeLabel.append(createElement(
+          'span',
+          'frontmatter-property__edit-type-locked',
+          `（${this.t('document.properties.presetPropertyLocked')}）`,
+        ));
+      }
       const typeChevron = createElement('span', 'frontmatter-property__edit-type-chevron');
       typeChevron.append(createPropertyTypeChevron());
       typeTrigger.append(typeLabel, typeChevron);
@@ -1189,6 +1645,10 @@ export class FrontmatterPropertyNodeView implements NodeView {
     }
 
     if (kind === 'array') {
+      if (!Array.isArray(property.value)) {
+        valueContainer.append(createTextValue(property.value));
+        return valueContainer;
+      }
       const values = Array.isArray(property.value) ? property.value : [];
       if (values.length === 0) {
         valueContainer.append(createTextValue('[]'));
@@ -1217,9 +1677,10 @@ export class FrontmatterPropertyNodeView implements NodeView {
       const isNoteTags = canonicalizePropertyKey(property.key) === 'tags';
       values.forEach((item) => {
         const displayValue = formatFrontmatterPropertyValue(item, 32);
+        const itemDisplayKind = resolvePropertyType('', item).displayKind;
         const chip = createElement(
           'span',
-          `${isNoteTags ? 'tag-node ' : ''}frontmatter-property__value-chip${getPropertyDisplayKind(property.key, item) === 'text' ? '' : ' frontmatter-property__value-chip--typed'}`,
+          `${isNoteTags ? 'tag-node ' : ''}frontmatter-property__value-chip${itemDisplayKind === 'text' ? '' : ' frontmatter-property__value-chip--typed'}`,
           isNoteTags ? `#${displayValue}` : displayValue,
         );
         chip.title = formatFrontmatterPropertyValue(item, Number.POSITIVE_INFINITY);
@@ -1317,7 +1778,10 @@ export class FrontmatterPropertyNodeView implements NodeView {
       icon.setAttribute('aria-haspopup', 'menu');
       icon.setAttribute('aria-expanded', 'false');
       icon.setAttribute('aria-label', property.key);
-      icon.addEventListener('click', () => this.openPropertyMenu(property, icon));
+      icon.addEventListener('click', () => {
+        if (this.consumeSuppressedPropertyIconClick()) return;
+        this.openPropertyMenu(property, icon);
+      });
       icon.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
@@ -1338,6 +1802,7 @@ export class FrontmatterPropertyNodeView implements NodeView {
 
     this.bindPropertyEdit(key, property, 'key');
     this.bindPropertyEdit(value, property, 'value');
+    this.bindPropertyDrag(row, icon, property.key);
 
     row.append(icon, key, value);
     return row;
@@ -1496,12 +1961,38 @@ export class FrontmatterPropertyNodeView implements NodeView {
   }
 
   destroy() {
+    this.finishPropertyDrag();
+    if (this.suppressPropertyIconClickTimer !== null) {
+      this.dom.ownerDocument.defaultView?.clearTimeout(this.suppressPropertyIconClickTimer);
+      this.suppressPropertyIconClickTimer = null;
+    }
     this.closePropertyMenu();
     this.closePropertyEditor();
     this.dom.ownerDocument.removeEventListener(
       'pointerdown',
       this.handleDocumentPointerDown,
       true,
+    );
+    this.dom.ownerDocument.removeEventListener(
+      'selectstart',
+      this.handleDocumentSelectStart,
+      true,
+    );
+    this.dom.ownerDocument.defaultView?.removeEventListener(
+      'pointermove',
+      this.handlePropertyPointerMove,
+    );
+    this.dom.ownerDocument.defaultView?.removeEventListener(
+      'pointerup',
+      this.handlePropertyPointerUp,
+    );
+    this.dom.ownerDocument.defaultView?.removeEventListener(
+      'pointercancel',
+      this.handlePropertyPointerCancel,
+    );
+    this.dom.ownerDocument.defaultView?.removeEventListener(
+      'blur',
+      this.handlePropertyWindowBlur,
     );
     this.unsubscribeSettings();
   }

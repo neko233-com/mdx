@@ -25,7 +25,8 @@ export type WorkColumnSurfaceCapability =
   | 'run-agent'
   | 'stream-conversation';
 
-export type WorkColumnSurfaceChrome = 'document' | 'agent';
+/** Visual chrome owned by the currently mounted surface. */
+export type WorkColumnSurfaceChrome = 'document' | 'agent' | 'media';
 
 export type WorkColumnEmptyReason =
   | 'no-target'
@@ -42,6 +43,14 @@ interface SurfaceBase {
 export interface MarkdownSurface extends SurfaceBase {
   kind: 'markdown';
   props: ComponentProps<typeof DocumentContainer>;
+}
+
+export interface MediaResourceSurface extends SurfaceBase {
+  kind: 'media';
+  filePath: string;
+  notebookId: string | null;
+  notebookPath: string | null;
+  resourceKind: 'image' | 'video';
 }
 
 export interface PluginArtifactSurfaceBase extends SurfaceBase {
@@ -90,6 +99,7 @@ export interface WebSurface extends SurfaceBase {
 
 export type WorkColumnSurface =
   | MarkdownSurface
+  | MediaResourceSurface
   | MindmapSurface
   | HtmlSurface
   | JsonSurface

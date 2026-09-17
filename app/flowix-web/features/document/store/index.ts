@@ -7,6 +7,7 @@ export {
   type ArtifactHistoryEntry,
   type AgentConversationHistoryEntry,
   type DocumentHistoryEntry,
+  type MediaHistoryEntry,
   type MemoHistoryEntry,
 } from '@features/document/store/document-history-store';
 export {

@@ -32,7 +32,6 @@ import { useMemoDocumentChangeWatch } from '@features/document/components/sessio
 import { LazyDocumentEditor } from '@features/document/components/lazy-document-editor';
 import { LazyCodeEditor } from '@features/document/components/lazy-code-editor';
 import { SourceMemoEditor } from '@features/document/components/source-memo-editor';
-import { NotePropertiesDialog } from '@features/document/components/note-properties-dialog';
 import { MemoDocumentHeader } from '@features/document/components/memo-document-header';
 import type {
   MemoTitleBodyNavigation,
@@ -151,7 +150,6 @@ export function DocumentContainer({
     flushDocument,
     discardDocument,
     handleChange,
-    saveDoc,
   } = useDocumentAutosave({
     filePath,
     identity: documentIdentity,
@@ -207,9 +205,6 @@ export function DocumentContainer({
     onFlushReady?.(flushDocument, discardDocument);
     return () => onFlushReady?.(null, null);
   }, [discardDocument, flushDocument, onFlushReady]);
-  const [propertiesOpen, setPropertiesOpen] = useState(false);
-  const [propertiesContentSnapshot, setPropertiesContentSnapshot] = useState<string | null>(null);
-
   useEffect(() => {
     if (!filePath) {
       useDocumentMetricsStore.getState().clear(documentInstanceKey);
@@ -241,21 +236,6 @@ export function DocumentContainer({
       document.removeEventListener('navigate-to-memo', handleNavigateToMemo);
     };
   }, []);
-
-  useEffect(() => {
-    if (!memoId) return;
-
-    const handleOpenProperties = (event: Event) => {
-      const detail = (event as CustomEvent<{ memoId: string }>).detail;
-      if (detail?.memoId !== memoId) return;
-      setPropertiesOpen(true);
-    };
-
-    window.addEventListener('flowix:open-note-properties', handleOpenProperties);
-    return () => {
-      window.removeEventListener('flowix:open-note-properties', handleOpenProperties);
-    };
-  }, [memoId]);
 
   useEffect(() => {
     if (!memoId) return;
@@ -526,37 +506,6 @@ export function DocumentContainer({
           />
         )}
       </div>
-      {!readOnly && !isExternalDocument && memoId && (
-        <NotePropertiesDialog
-          open={propertiesOpen}
-          content={propertiesContentSnapshot ?? state.fullContent}
-          onOpenChange={(open) => {
-            if (open) {
-              // 打开属性面板前清掉 autosave debounce timer, 避免:
-              // 1. 用户敲了字后立刻打开面板 → 1s 后 timer 触发, 用
-              //    propertiesContentSnapshot (尚未含属性改动) 覆盖磁盘;
-              // 2. 用户在面板里改完属性, saveDoc(force) 已落盘, 但 timer
-              //    随后再用旧 snapshot 走 CAS-fail 之外的路径把磁盘回滚。
-              clearSaveTimer();
-              const latestContent = flushPendingEditorChanges();
-              if (latestContent !== null) {
-                setPropertiesContentSnapshot(latestContent);
-              }
-            } else {
-              setPropertiesContentSnapshot(null);
-            }
-            setPropertiesOpen(open);
-          }}
-          onSave={async (nextContent) => {
-            flushPendingEditorChanges();
-            setPropertiesContentSnapshot(null);
-            setState((prev) => ({ ...prev, fullContent: nextContent }));
-            handleChange(nextContent);
-            clearSaveTimer();
-            await saveDoc(nextContent, filePath, { force: true });
-          }}
-        />
-      )}
     </div>
   );
 }

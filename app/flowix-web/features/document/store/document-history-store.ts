@@ -34,11 +34,21 @@ export type ArtifactHistoryEntry = {
   openedAt: number;
 };
 
+export type MediaHistoryEntry = {
+  kind: 'media';
+  filePath: string;
+  notebookId: string | null;
+  notebookPath: string | null;
+  resourceKind: 'image' | 'video';
+  openedAt: number;
+};
+
 export type DocumentHistoryEntry =
   | MemoHistoryEntry
   | ExternalHistoryEntry
   | AgentConversationHistoryEntry
-  | ArtifactHistoryEntry;
+  | ArtifactHistoryEntry
+  | MediaHistoryEntry;
 
 interface DocumentHistoryStore {
   backStack: DocumentHistoryEntry[];
@@ -59,6 +69,7 @@ function entryKey(entry: DocumentHistoryEntry): string {
   if (entry.kind === 'memo') return `memo:${entry.memoId}:${entry.path}`;
   if (entry.kind === 'agent-conversation') return `agent-conversation:${entry.instanceId}`;
   if (entry.kind === 'artifact') return `artifact:${entry.pointerMemoId}`;
+  if (entry.kind === 'media') return `media:${entry.filePath}`;
   return `external:${entry.path}`;
 }
 

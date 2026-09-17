@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   AlertCircle,
@@ -10,8 +10,10 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Puzzle,
   Save,
   Server,
+  Settings2,
   Sparkles,
   Terminal,
   Trash2,
@@ -20,12 +22,18 @@ import {
 import { agent, type NotebookAgentFile, type NotebookAgentWorkspace, type NotebookMcpDefinition } from "@platform/tauri/client/agent";
 import { Button } from "@shared/ui/button";
 import { cn } from "@/lib/utils";
+import { displayNameForComposerSkill } from "@features/agent/thread-card/composer/composer-skill-token";
+import { parseCodexSkillCatalog, type CodexSkillCatalogItem } from "@features/agent/services/codex-slash-command-service";
 
-type Tab = "mcp" | "skills" | "agents" | "memory";
+type Tab = "mcp" | "skills" | "agents" | "plugins" | "other" | "memory";
 type FileKind = "skill" | "agent";
+type AgentResourceKey = "codex" | "deepseek-harness" | "general";
 type EditorState =
   | { kind: "mcp"; id: string | null }
   | { kind: "file"; fileKind: FileKind; id: string | null };
+
+const AGENT_RESOURCE_KEYS: readonly AgentResourceKey[] = ["codex", "deepseek-harness", "general"];
+const CODEX_RESOURCE_KEYS: readonly AgentResourceKey[] = ["codex"];
 
 const EMPTY_WORKSPACE: NotebookAgentWorkspace = {
   version: 1,
@@ -120,7 +128,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (val
 
 function EmptyState({ icon: Icon, title, description, action }: { icon: typeof Server; title: string; description: string; action: React.ReactNode }) {
   return (
-    <div className="flex min-h-64 flex-col items-center justify-center px-6 py-10 text-center">
+    <div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-10 text-center">
       <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[color-mix(in_oklch,var(--primary)_10%,var(--card))] text-[var(--primary)]">
         <Icon className="h-5 w-5" strokeWidth={1.7} />
       </span>
@@ -131,7 +139,7 @@ function EmptyState({ icon: Icon, title, description, action }: { icon: typeof S
   );
 }
 
-function SectionHeader({ title, description, action }: { title: string; description: string; action: React.ReactNode }) {
+function SectionHeader({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
   return (
     <div className="mb-3 flex items-start justify-between gap-4">
       <div>
@@ -143,7 +151,7 @@ function SectionHeader({ title, description, action }: { title: string; descript
   );
 }
 
-function TabButton({ active, icon: Icon, label, count, onClick }: { active: boolean; icon: typeof Server; label: string; count?: number; onClick: () => void }) {
+function TabButton({ active, icon: Icon, label, onClick }: { active: boolean; icon: typeof Server; label: string; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -151,13 +159,12 @@ function TabButton({ active, icon: Icon, label, count, onClick }: { active: bool
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "group flex h-7 min-h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--primary)]",
+        "group flex h-7 min-h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--primary)]",
         active ? "bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm" : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]",
       )}
     >
       <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {count !== undefined && <span className={cn("min-w-5 rounded-full px-1.5 text-center text-xs tabular-nums", active ? "bg-white/15 text-current" : "bg-[var(--muted)] text-[var(--muted-foreground)]")}>{count}</span>}
     </button>
   );
 }
@@ -318,7 +325,7 @@ function McpList({
 }) {
   const entries = Object.entries(workspace.mcpServers);
   if (!entries.length) {
-    return <EmptyState icon={Server} title="还没有 MCP 服务" description="添加一个外部工具或数据源，让笔记本里的 Agent 可以按需使用。" action={<Button onClick={onAdd}><Plus />添加 MCP 服务</Button>} />;
+    return <EmptyState icon={Server} title="还没有 MCP 服务" description="添加一个外部工具或数据源，让笔记本里的 Agent 可以按需使用。" action={<Button variant="default" className="gap-[3px] rounded-lg px-3" onClick={onAdd}><Plus />添加 MCP 服务</Button>} />;
   }
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_82%,var(--background))]">
@@ -355,7 +362,7 @@ function FileList({
 }) {
   const isSkill = kind === "skill";
   if (!items.length) {
-    return <EmptyState icon={isSkill ? Sparkles : Bot} title={isSkill ? "还没有 Skills" : "还没有子 Agent"} description={isSkill ? "把重复的工作步骤保存下来，之后可以被不同 Agent 复用。" : "创建一个专门角色，让主 Agent 可以把任务交给它处理。"} action={<Button onClick={onAdd}><Plus />{isSkill ? "创建 Skill" : "创建子 Agent"}</Button>} />;
+    return <EmptyState icon={isSkill ? Sparkles : Bot} title={isSkill ? "还没有 Skills" : "还没有子 Agent"} description={isSkill ? "把重复的工作步骤保存下来，之后可以被不同 Agent 复用。" : "创建一个专门角色，让主 Agent 可以把任务交给它处理。"} action={<Button variant="default" className="gap-[3px] rounded-lg px-3" onClick={onAdd}><Plus />{isSkill ? "创建 Skill" : "创建子 Agent"}</Button>} />;
   }
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_82%,var(--background))]">
@@ -377,8 +384,522 @@ function FileList({
   );
 }
 
+function AgentTabs({ active, onChange, ariaLabel, keys = AGENT_RESOURCE_KEYS }: { active: AgentResourceKey; onChange: (agentKey: AgentResourceKey) => void; ariaLabel: string; keys?: readonly AgentResourceKey[] }) {
+  return (
+    <div className="mb-4 flex items-center gap-1" role="tablist" aria-label={ariaLabel}>
+      {keys.map((agentKey) => {
+        const selected = active === agentKey;
+        return (
+          <button
+            key={agentKey}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onChange(agentKey)}
+            className={cn(
+              "flex h-7 items-center rounded-lg px-2.5 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--primary)]",
+              selected
+                ? "bg-[var(--muted)] font-medium text-[var(--foreground)]"
+                : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]",
+            )}
+          >
+            <span className="whitespace-nowrap">{agentKey === "codex" ? "Codex" : agentKey === "deepseek-harness" ? "DeepSeek Harness" : "通用"}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+type CodexMcpCatalogItem = { name: string; description: string; meta: string };
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringValue(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function parseCodexMcpCatalog(capabilities: Awaited<ReturnType<typeof agent.getCodexProjectCapabilities>>): CodexMcpCatalogItem[] {
+  const configEnvelope = objectValue(capabilities.config.value);
+  const config = objectValue(configEnvelope.config);
+  const configured = objectValue(config.mcpServers ?? config.mcp_servers);
+  const runtimeData = objectValue(capabilities.mcp.value).data;
+  const runtimeItems: unknown[] = Array.isArray(runtimeData) ? runtimeData : [];
+  const items = new Map<string, CodexMcpCatalogItem>();
+
+  Object.entries(configured).forEach(([name, definition]) => {
+    const item = objectValue(definition);
+    items.set(name, {
+      name,
+      description: stringValue(item.description, "项目 MCP Server"),
+      meta: stringValue(item.transport, item.url ? "远程服务" : item.command ? "本地命令" : "已配置"),
+    });
+  });
+  runtimeItems.forEach((value) => {
+    const runtime = objectValue(value);
+    const name = stringValue(runtime.name);
+    if (!name) return;
+    const serverInfo = objectValue(runtime.serverInfo);
+    const configuredItem = objectValue(configured[name]);
+    items.set(name, {
+      name,
+      description: stringValue(serverInfo.description, stringValue(configuredItem.description, "项目 MCP Server")),
+      meta: stringValue(runtime.runtimeStatus, stringValue(runtime.authStatus, stringValue(configuredItem.transport, "已配置"))),
+    });
+  });
+  return [...items.values()];
+}
+
+function CodexMcpRow({ item }: { item: CodexMcpCatalogItem }) {
+  return (
+    <div className="flex min-w-0 items-start gap-3 rounded-lg border border-[var(--divider)] px-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-[var(--foreground)]" title={item.name}>{item.name}</div>
+        <div className="mt-0.5 line-clamp-2 text-xs text-[var(--muted-foreground)]">{item.description}</div>
+        <div className="mt-1 truncate font-mono text-[10px] text-[var(--muted-foreground)]">{item.meta}</div>
+      </div>
+    </div>
+  );
+}
+
+function CodexMcpList({ notebookPath }: { notebookPath: string }) {
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [items, setItems] = useState<CodexMcpCatalogItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setStatus("loading");
+    setItems([]);
+    setError(null);
+
+    void (async () => {
+      try {
+        const capabilities = await agent.getCodexProjectCapabilities(notebookPath);
+        if (!capabilities.mcp.ok) {
+          throw new Error(capabilities.mcp.error ?? "Codex MCP 加载失败");
+        }
+        if (!active) return;
+        setItems(parseCodexMcpCatalog(capabilities));
+        setStatus("ready");
+      } catch (cause) {
+        if (!active) return;
+        setError(cause instanceof Error ? cause.message : String(cause));
+        setStatus("error");
+      }
+    })();
+
+    return () => { active = false; };
+  }, [notebookPath]);
+
+  if (status === "loading") {
+    return <div className="flex min-h-[280px] items-center justify-center text-sm text-[var(--muted-foreground)]" aria-live="polite">加载中…</div>;
+  }
+  if (status === "error") {
+    return <div className="space-y-3"><InlineError message={error ?? "Codex MCP 加载失败"} /><div className="py-5 text-center text-sm text-[var(--muted-foreground)]">暂时无法读取 Codex MCP 列表</div></div>;
+  }
+  return items.length ? <div className="space-y-3">{items.map((item) => <CodexMcpRow key={item.name} item={item} />)}</div> : <div className="flex min-h-[280px] items-center justify-center text-center text-sm text-[var(--muted-foreground)]">未发现 Codex MCP Server</div>;
+}
+
+function DeepSeekHarnessMcpList() {
+  return <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_82%,var(--background))] px-6 py-10 text-center text-sm leading-6 text-[var(--muted-foreground)]">DeepSeek Harness 的 MCP 列表由会话运行时提供，请在对应会话中查看。</div>;
+}
+
+type CodexSkillGroupKey = "project" | "user" | "other";
+
+function normalizeSkillPath(value: string): string {
+  return value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+function codexSkillGroup(skill: CodexSkillCatalogItem, notebookPath: string): CodexSkillGroupKey {
+  const scope = skill.scope?.trim().toLowerCase();
+  const root = normalizeSkillPath(notebookPath);
+  const path = skill.path ? normalizeSkillPath(skill.path) : "";
+
+  if (scope === "project" || scope === "workspace" || scope === "repository" || scope === "repo" || scope === "local") {
+    return "project";
+  }
+  if (scope === "user" || scope === "personal") {
+    return "user";
+  }
+  if (root && path && (path === root || path.startsWith(`${root}/`))) {
+    return "project";
+  }
+  if (path.includes("/.codex/skills/") || path.includes("/.agents/skills/")) {
+    return "user";
+  }
+  return "other";
+}
+
+function CodexSkillRow({ skill }: { skill: CodexSkillCatalogItem }) {
+  const title = displayNameForComposerSkill(skill.name, skill.displayName);
+  const description = skill.shortDescription || skill.description || skill.whenToUse || "未提供描述";
+  return (
+    <div className="flex min-w-0 items-start gap-3 rounded-lg border border-[var(--divider)] px-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-[var(--foreground)]" title={title}>{title}</div>
+        <div className="mt-0.5 line-clamp-2 text-xs text-[var(--muted-foreground)]">{description}</div>
+        {(skill.path || skill.scope) && <div className="mt-1 truncate font-mono text-[10px] text-[var(--muted-foreground)]" title={skill.path ?? skill.scope}>{skill.path ?? skill.scope}</div>}
+      </div>
+    </div>
+  );
+}
+
+function CodexSkillGroup({ title, items }: { title: string; items: readonly CodexSkillCatalogItem[] }) {
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-[var(--foreground)]">{title}</h3>
+        <span className="text-xs tabular-nums text-[var(--muted-foreground)]">{items.length}</span>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {items.length ? items.map((skill) => <CodexSkillRow key={`${skill.name}:${skill.path ?? ""}`} skill={skill} />) : <div className="py-5 text-center text-sm text-[var(--muted-foreground)] sm:col-span-2">暂无技能</div>}
+      </div>
+    </section>
+  );
+}
+
+function CodexSkillsList({ notebookPath }: { notebookPath: string }) {
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [skills, setSkills] = useState<readonly CodexSkillCatalogItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setStatus("loading");
+    setSkills([]);
+    setError(null);
+
+    void (async () => {
+      try {
+        const capabilities = await agent.getCodexProjectCapabilities(notebookPath);
+        if (!capabilities.skills.ok) {
+          throw new Error(capabilities.skills.error ?? "Codex Skill 加载失败");
+        }
+        if (!active) return;
+        setSkills(parseCodexSkillCatalog(capabilities.skills.value));
+        setStatus("ready");
+      } catch (cause) {
+        if (!active) return;
+        setError(cause instanceof Error ? cause.message : String(cause));
+        setStatus("error");
+      }
+    })();
+
+    return () => { active = false; };
+  }, [notebookPath]);
+
+  if (status === "loading") {
+    return <div className="flex min-h-[280px] items-center justify-center text-sm text-[var(--muted-foreground)]" aria-live="polite">加载中…</div>;
+  }
+  if (status === "error") {
+    return <div className="space-y-3"><InlineError message={error ?? "Codex Skill 加载失败"} /><div className="py-5 text-center text-sm text-[var(--muted-foreground)]">暂时无法读取 Codex Skill 列表</div></div>;
+  }
+  if (!skills.length) {
+    return <div className="flex min-h-[280px] items-center justify-center text-center text-sm text-[var(--muted-foreground)]">未发现 Codex Skill</div>;
+  }
+
+  const grouped: Record<CodexSkillGroupKey, CodexSkillCatalogItem[]> = { project: [], user: [], other: [] };
+  skills.forEach((skill) => grouped[codexSkillGroup(skill, notebookPath)].push(skill));
+  return (
+    <div className="space-y-5">
+      <CodexSkillGroup title="项目级技能" items={grouped.project} />
+      <CodexSkillGroup title="用户级技能" items={grouped.user} />
+      {grouped.other.length > 0 && <CodexSkillGroup title="其他技能" items={grouped.other} />}
+    </div>
+  );
+}
+
+function DeepSeekHarnessSkillsList() {
+  return <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_82%,var(--background))] px-6 py-10 text-center text-sm leading-6 text-[var(--muted-foreground)]">DeepSeek Harness 的 Skill 列表由会话运行时提供，请在对应会话中查看。</div>;
+}
+
+type CodexAgentCatalogItem = { name: string; description: string; meta: string };
+
+function parseCodexAgentCatalog(capabilities: Awaited<ReturnType<typeof agent.getCodexProjectCapabilities>>): CodexAgentCatalogItem[] {
+  const configEnvelope = objectValue(capabilities.config.value);
+  const config = objectValue(configEnvelope.config);
+  const configured = objectValue(config.agents);
+  const items = new Map<string, CodexAgentCatalogItem>();
+
+  Object.entries(configured).forEach(([name, definition]) => {
+    const item = objectValue(definition);
+    items.set(name, {
+      name,
+      description: stringValue(item.description, stringValue(item.preview, "Codex 子 Agent")),
+      meta: stringValue(item.model, "当前项目"),
+    });
+  });
+
+  const runtimeData = objectValue(capabilities.agents.value).data;
+  const runtimeItems: unknown[] = Array.isArray(runtimeData) ? runtimeData : [];
+  runtimeItems.forEach((value) => {
+    const runtime = objectValue(value);
+    const name = stringValue(runtime.name, stringValue(runtime.id, stringValue(runtime.threadId)));
+    if (!name) return;
+    items.set(name, {
+      name,
+      description: stringValue(runtime.description, stringValue(runtime.preview, "Codex 子 Agent")),
+      meta: stringValue(runtime.model, stringValue(runtime.status, "运行时已发现")),
+    });
+  });
+  return [...items.values()];
+}
+
+function CodexAgentRow({ item }: { item: CodexAgentCatalogItem }) {
+  return (
+    <div className="flex min-w-0 items-start gap-3 rounded-lg border border-[var(--divider)] px-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-[var(--foreground)]" title={item.name}>{item.name}</div>
+        <div className="mt-0.5 line-clamp-2 text-xs text-[var(--muted-foreground)]">{item.description}</div>
+        <div className="mt-1 truncate font-mono text-[10px] text-[var(--muted-foreground)]">{item.meta}</div>
+      </div>
+    </div>
+  );
+}
+
+function CodexAgentsList({ notebookPath }: { notebookPath: string }) {
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [items, setItems] = useState<CodexAgentCatalogItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setStatus("loading");
+    setItems([]);
+    setError(null);
+
+    void (async () => {
+      try {
+        const capabilities = await agent.getCodexProjectCapabilities(notebookPath);
+        if (!capabilities.agents.ok) {
+          throw new Error(capabilities.agents.error ?? "Codex 子 Agent 加载失败");
+        }
+        if (!active) return;
+        setItems(parseCodexAgentCatalog(capabilities));
+        setStatus("ready");
+      } catch (cause) {
+        if (!active) return;
+        setError(cause instanceof Error ? cause.message : String(cause));
+        setStatus("error");
+      }
+    })();
+
+    return () => { active = false; };
+  }, [notebookPath]);
+
+  if (status === "loading") {
+    return <div className="flex min-h-[280px] items-center justify-center text-sm text-[var(--muted-foreground)]" aria-live="polite">加载中…</div>;
+  }
+  if (status === "error") {
+    return <div className="space-y-3"><InlineError message={error ?? "Codex 子 Agent 加载失败"} /><div className="py-5 text-center text-sm text-[var(--muted-foreground)]">暂时无法读取 Codex 子 Agent 列表</div></div>;
+  }
+  return items.length ? <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{items.map((item) => <CodexAgentRow key={item.name} item={item} />)}</div> : <div className="flex min-h-[280px] items-center justify-center text-center text-sm text-[var(--muted-foreground)]">未发现 Codex 子 Agent</div>;
+}
+
+function DeepSeekHarnessAgentsList() {
+  return <div className="flex min-h-[280px] items-center justify-center rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_82%,var(--background))] px-6 py-10 text-center text-sm leading-6 text-[var(--muted-foreground)]">DeepSeek Harness 的子 Agent 列表由会话运行时提供，请在对应会话中查看。</div>;
+}
+
+type CodexPluginCatalogItem = { id: string; title: string; description: string; marketplace: string; installed: boolean };
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function booleanValue(value: unknown): boolean {
+  return typeof value === "boolean" ? value : false;
+}
+
+function flattenCodexPlugins(value: unknown): Record<string, unknown>[] {
+  return arrayValue(objectValue(value).marketplaces).flatMap((marketplace) => {
+    const source = objectValue(marketplace);
+    const marketplaceName = stringValue(source.name);
+    return arrayValue(source.plugins).map((plugin) => ({ ...objectValue(plugin), marketplace: marketplaceName }));
+  });
+}
+
+function parseCodexPluginCatalog(capabilities: Awaited<ReturnType<typeof agent.getCodexProjectCapabilities>>): CodexPluginCatalogItem[] {
+  const installed = flattenCodexPlugins(capabilities.plugins.value);
+  const available = flattenCodexPlugins(capabilities.pluginCatalog.value);
+  const installedIds = new Set(installed.flatMap((plugin) => [stringValue(plugin.id), stringValue(plugin.name)].filter(Boolean)));
+  const items = new Map<string, CodexPluginCatalogItem>();
+
+  [...installed, ...available].forEach((plugin) => {
+    const id = stringValue(plugin.id, stringValue(plugin.name));
+    if (!id) return;
+    const interfaceInfo = objectValue(plugin.interface);
+    const installedNow = booleanValue(plugin.installed) || installedIds.has(id) || installedIds.has(stringValue(plugin.name));
+    items.set(id, {
+      id,
+      title: stringValue(interfaceInfo.displayName, stringValue(plugin.name, id)),
+      description: stringValue(plugin.description, stringValue(interfaceInfo.shortDescription)),
+      marketplace: stringValue(plugin.marketplace, "Codex"),
+      installed: installedNow,
+    });
+  });
+  return [...items.values()];
+}
+
+function CodexPluginCard({ item }: { item: CodexPluginCatalogItem }) {
+  return (
+    <div className="flex min-w-0 flex-col rounded-lg border border-[var(--divider)] px-3 py-2.5">
+      <div className="truncate text-sm font-medium text-[var(--foreground)]" title={item.title}>{item.title}</div>
+      {item.description && <div className="mt-0.5 line-clamp-2 text-xs text-[var(--muted-foreground)]">{item.description}</div>}
+      <div className="mt-auto flex min-w-0 items-center justify-between gap-2 pt-3">
+        <div className="min-w-0 truncate font-mono text-[10px] text-[var(--muted-foreground)]" title={item.marketplace}>{item.marketplace}</div>
+        <span className={cn("shrink-0 text-xs", item.installed ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]")}>{item.installed ? "已安装" : "未安装"}</span>
+      </div>
+    </div>
+  );
+}
+
+function CodexPluginsList({ notebookPath }: { notebookPath: string }) {
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [items, setItems] = useState<CodexPluginCatalogItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setStatus("loading");
+    setItems([]);
+    setError(null);
+
+    void (async () => {
+      try {
+        const capabilities = await agent.getCodexProjectCapabilities(notebookPath);
+        if (!capabilities.plugins.ok && !capabilities.pluginCatalog.ok) {
+          throw new Error(capabilities.pluginCatalog.error ?? capabilities.plugins.error ?? "Codex 插件加载失败");
+        }
+        if (!active) return;
+        setItems(parseCodexPluginCatalog(capabilities));
+        setStatus("ready");
+      } catch (cause) {
+        if (!active) return;
+        setError(cause instanceof Error ? cause.message : String(cause));
+        setStatus("error");
+      }
+    })();
+
+    return () => { active = false; };
+  }, [notebookPath]);
+
+  if (status === "loading") {
+    return <div className="flex min-h-[280px] items-center justify-center text-sm text-[var(--muted-foreground)]" aria-live="polite">加载中…</div>;
+  }
+  if (status === "error") {
+    return <div className="space-y-3"><InlineError message={error ?? "Codex 插件加载失败"} /><div className="py-5 text-center text-sm text-[var(--muted-foreground)]">暂时无法读取 Codex 插件列表</div></div>;
+  }
+  return items.length ? <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">{items.map((item) => <CodexPluginCard key={item.id} item={item} />)}</div> : <div className="flex min-h-[280px] items-center justify-center text-center text-sm text-[var(--muted-foreground)]">未发现 Codex 插件</div>;
+}
+
+const CODEX_VALUE_LABELS: Record<string, string> = {
+  low: "低",
+  medium: "中",
+  high: "高",
+  xhigh: "极高",
+  auto: "自动",
+  default: "默认",
+  flex: "灵活",
+  priority: "优先",
+  disabled: "禁用",
+  cached: "缓存结果",
+  indexed: "索引搜索",
+  live: "实时搜索",
+  untrusted: "不受信任时询问",
+  "on-failure": "失败时询问",
+  "on-request": "按需询问",
+  never: "从不询问",
+  user: "用户确认",
+  auto_review: "自动审核",
+  "read-only": "只读",
+  "workspace-write": "工作区读写",
+  "danger-full-access": "完全访问",
+};
+
+function codexValueLabel(value: string, fallback = "未设置"): string {
+  return value ? CODEX_VALUE_LABELS[value] ?? value : fallback;
+}
+
+function CodexSettingGroup({ title, items }: { title: string; items: Array<[string, string]> }) {
+  return (
+    <section>
+      <h3 className="mb-2 text-sm font-semibold text-[var(--foreground)]">{title}</h3>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {items.map(([label, value]) => <div key={label} className="min-w-0 rounded-lg border border-[var(--divider)] px-3 py-2.5"><div className="text-xs text-[var(--muted-foreground)]">{label}</div><div className="mt-1 truncate text-sm font-medium text-[var(--foreground)]" title={value}>{value}</div></div>)}
+      </div>
+    </section>
+  );
+}
+
+function CodexOtherSettings({ notebookPath }: { notebookPath: string }) {
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [groups, setGroups] = useState<{ model: Array<[string, string]>; permissions: Array<[string, string]> }>({ model: [], permissions: [] });
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setStatus("loading");
+    setGroups({ model: [], permissions: [] });
+    setError(null);
+
+    void (async () => {
+      try {
+        const capabilities = await agent.getCodexProjectCapabilities(notebookPath);
+        if (!capabilities.config.ok) {
+          throw new Error(capabilities.config.error ?? "Codex 模型与权限加载失败");
+        }
+        if (!active) return;
+        const configEnvelope = objectValue(capabilities.config.value);
+        const config = objectValue(configEnvelope.config);
+        const models = arrayValue(objectValue(capabilities.models.value).data).map(objectValue);
+        const configuredModel = stringValue(config.model);
+        const defaultModel = models.find((model) => booleanValue(model.isDefault));
+        const modelId = configuredModel || stringValue(defaultModel?.model, stringValue(defaultModel?.id));
+        const modelInfo = models.find((model) => stringValue(model.model, stringValue(model.id)) === modelId);
+        setGroups({
+          model: [
+            ["默认模型", stringValue(modelInfo?.displayName, modelId || "未设置")],
+            ["推理强度", codexValueLabel(stringValue(config.model_reasoning_effort, stringValue(defaultModel?.defaultReasoningEffort, "medium")))],
+            ["输出详细度", codexValueLabel(stringValue(config.model_verbosity, "medium"))],
+            ["Review 模型", stringValue(config.review_model) || "跟随默认模型"],
+            ["服务级别", codexValueLabel(stringValue(config.service_tier, "auto"))],
+            ["联网搜索", codexValueLabel(stringValue(config.web_search, "disabled"))],
+          ],
+          permissions: [
+            ["审批策略", codexValueLabel(stringValue(config.approval_policy, "on-request"))],
+            ["审批处理者", codexValueLabel(stringValue(config.approvals_reviewer, "user"))],
+            ["Sandbox 模式", codexValueLabel(stringValue(config.sandbox_mode, "workspace-write"))],
+            ["Sandbox 网络访问", booleanValue(objectValue(config.sandbox_workspace_write).network_access) ? "允许" : "不允许"],
+          ],
+        });
+        setStatus("ready");
+      } catch (cause) {
+        if (!active) return;
+        setError(cause instanceof Error ? cause.message : String(cause));
+        setStatus("error");
+      }
+    })();
+
+    return () => { active = false; };
+  }, [notebookPath]);
+
+  if (status === "loading") {
+    return <div className="flex min-h-[280px] items-center justify-center text-sm text-[var(--muted-foreground)]" aria-live="polite">加载中…</div>;
+  }
+  if (status === "error") {
+    return <div className="space-y-3"><InlineError message={error ?? "Codex 模型与权限加载失败"} /><div className="py-5 text-center text-sm text-[var(--muted-foreground)]">暂时无法读取 Codex 模型与权限</div></div>;
+  }
+  return <div className="space-y-5"><CodexSettingGroup title="模型" items={groups.model} /><CodexSettingGroup title="权限" items={groups.permissions} /></div>;
+}
+
 function NotebookAgentSettingsDialog({ notebookPath, onClose }: { notebookPath: string; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>("mcp");
+  const [mcpAgent, setMcpAgent] = useState<AgentResourceKey>("general");
+  const [skillAgent, setSkillAgent] = useState<AgentResourceKey>("general");
+  const [childAgent, setChildAgent] = useState<AgentResourceKey>("general");
   const [workspace, setWorkspace] = useState<NotebookAgentWorkspace | null>(null);
   const [original, setOriginal] = useState<NotebookAgentWorkspace | null>(null);
   const [loading, setLoading] = useState(true);
@@ -558,52 +1079,71 @@ function NotebookAgentSettingsDialog({ notebookPath, onClose }: { notebookPath: 
     setWorkspace(kind === "skill" ? { ...workspace, skills: next } : { ...workspace, agents: next });
   };
 
-  const counts = useMemo(() => workspace ? [Object.keys(workspace.mcpServers).length, workspace.skills.length, workspace.agents.length] : [0, 0, 0], [workspace]);
-
   if (loading) {
-    return <div className="fixed inset-0 z-[135] flex items-center justify-center bg-black/50 p-3"><div role="dialog" aria-modal="true" aria-label="项目 AI 设置" className="notebook-agent-settings-dialog flex h-[min(760px,calc(100vh-24px))] w-full max-w-[980px] items-center justify-center rounded-2xl bg-[var(--background)] shadow-2xl"><Loader2 className="h-6 w-6 animate-spin text-[var(--primary)]" /></div></div>;
+    return <div className="fixed inset-0 z-[135] flex items-center justify-center bg-black/50 p-3"><div role="dialog" aria-modal="true" aria-label="项目 AI 设置" className="notebook-agent-settings-dialog flex h-[min(760px,calc(100vh-80px))] w-full max-w-[980px] items-center justify-center rounded-2xl bg-[var(--background)] text-sm text-[var(--muted-foreground)] shadow-2xl">加载中…</div></div>;
   }
 
   return (
     <div className="fixed inset-0 z-[135] flex items-center justify-center bg-black/50 p-3" onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose(); }}>
-      <div role="dialog" aria-modal="true" aria-label="项目 AI 设置" className="notebook-agent-settings-dialog relative flex h-[min(820px,calc(100vh-24px))] w-full max-w-[980px] flex-col overflow-hidden rounded-2xl bg-[var(--background)] shadow-2xl">
-        <header className="flex shrink-0 items-center gap-4 border-b border-[var(--divider)] px-5 py-3 sm:px-6">
+      <div role="dialog" aria-modal="true" aria-label="项目 AI 设置" className="notebook-agent-settings-dialog relative flex h-[min(820px,calc(100vh-80px))] w-full max-w-[980px] flex-col overflow-hidden rounded-2xl bg-[var(--background)] shadow-2xl">
+        <header className="flex shrink-0 items-center gap-4 border-b border-[var(--divider)] pl-4 pr-4 py-1.5">
           <h1 className="min-w-0 flex-1 truncate whitespace-nowrap text-base font-semibold tracking-[-0.02em] text-[var(--foreground)]">项目 AI 设置</h1>
-          <div className="hidden items-center gap-1.5 text-[11px] text-[var(--muted-foreground)] sm:flex"><span>{counts[0]} MCP</span><span>·</span><span>{counts[1]} Skills</span><span>·</span><span>{counts[2]} Agents</span></div>
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="关闭" onClick={requestClose}><X /></Button>
+          <button type="button" aria-label="关闭" className="ml-auto flex h-8 w-8 shrink-0 translate-x-1 items-center justify-center rounded-lg text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)]" onClick={requestClose}>
+            <X className="h-4 w-4" strokeWidth={1.8} />
+          </button>
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           <nav className="flex shrink-0 border-b border-[var(--divider)] bg-[color-mix(in_oklch,var(--card)_45%,transparent)] p-2 md:w-48 md:flex-col md:border-b-0 md:border-r md:p-3" aria-label="项目 AI 设置导航">
             <div className="flex gap-1 md:flex-col md:gap-0 md:space-y-1" role="tablist">
-              <TabButton active={tab === "mcp"} icon={Server} label="MCP 服务" count={counts[0]} onClick={() => { setTab("mcp"); closeEditor(); }} />
-              <TabButton active={tab === "skills"} icon={Sparkles} label="Skills" count={counts[1]} onClick={() => { setTab("skills"); closeEditor(); }} />
-              <TabButton active={tab === "agents"} icon={Bot} label="子 Agent" count={counts[2]} onClick={() => { setTab("agents"); closeEditor(); }} />
-              <TabButton active={tab === "memory"} icon={Brain} label="记忆管理" onClick={() => { setTab("memory"); closeEditor(); }} />
+              <TabButton active={tab === "mcp"} icon={Server} label="MCP" onClick={() => { setTab("mcp"); closeEditor(); }} />
+              <TabButton active={tab === "skills"} icon={Sparkles} label="技能" onClick={() => { setTab("skills"); closeEditor(); }} />
+              <TabButton active={tab === "agents"} icon={Bot} label="智能体" onClick={() => { setTab("agents"); closeEditor(); }} />
+              <TabButton active={tab === "plugins"} icon={Puzzle} label="插件" onClick={() => { setTab("plugins"); closeEditor(); }} />
+              <TabButton active={tab === "other"} icon={Settings2} label="其他" onClick={() => { setTab("other"); closeEditor(); }} />
+              <TabButton active={tab === "memory"} icon={Brain} label="记忆" onClick={() => { setTab("memory"); closeEditor(); }} />
             </div>
-            <div className="mt-auto hidden rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_88%,var(--background))] px-3 py-2.5 shadow-sm md:flex md:items-center md:gap-2.5">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[color-mix(in_oklch,var(--primary)_10%,var(--card))] text-[var(--primary)]"><FileCode2 className="h-3.5 w-3.5" strokeWidth={1.8} /></span>
+            <div className="mt-auto hidden rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 md:flex md:items-center md:gap-2.5">
               <p className="min-w-0 whitespace-normal break-words text-xs font-medium leading-5 text-[var(--foreground)]">配置内容对当前笔记本生效</p>
             </div>
           </nav>
 
           <main className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
-            <div className="mx-auto max-w-[720px] px-5 py-6 sm:px-8">
+            <div className="px-5 py-6">
               {error && <InlineError message={error} />}
               {tab === "mcp" && <>
-                <SectionHeader title="MCP 服务" description="为这个笔记本里的 Agent 添加可调用的外部工具与数据源。" action={<Button size="sm" onClick={() => openMcp(null)} disabled={!!editor}><Plus />添加</Button>} />
-                {editor?.kind === "mcp" && mcpForm && <McpEditor form={mcpForm} onChange={(patch) => setMcpForm((current) => current ? { ...current, ...patch } : current)} onCancel={closeEditor} onSave={saveMcpDraft} error={formError} saving={false} />}
-                <McpList workspace={workspace ?? EMPTY_WORKSPACE} onAdd={() => openMcp(null)} onEdit={openMcp} onDelete={deleteMcp} onToggle={toggleMcp} />
+                <SectionHeader title="MCP 服务" description="为这个笔记本里的 Agent 添加可调用的外部工具与数据源。" action={mcpAgent === "general" ? <Button variant="default" className="gap-[3px] px-3" onClick={() => openMcp(null)} disabled={!!editor}><Plus />添加</Button> : null} />
+                <AgentTabs active={mcpAgent} ariaLabel="MCP Agent" onChange={(agentKey) => { setMcpAgent(agentKey); closeEditor(); }} />
+                {mcpAgent === "codex" ? <CodexMcpList notebookPath={notebookPath} /> : mcpAgent === "deepseek-harness" ? <DeepSeekHarnessMcpList /> : <>
+                  {editor?.kind === "mcp" && mcpForm && <McpEditor form={mcpForm} onChange={(patch) => setMcpForm((current) => current ? { ...current, ...patch } : current)} onCancel={closeEditor} onSave={saveMcpDraft} error={formError} saving={false} />}
+                  <McpList workspace={workspace ?? EMPTY_WORKSPACE} onAdd={() => openMcp(null)} onEdit={openMcp} onDelete={deleteMcp} onToggle={toggleMcp} />
+                </>}
               </>}
               {tab === "skills" && <>
-                <SectionHeader title="Skills" description="把可复用的工作流程保存为 Markdown Skill，之后可被不同 Agent 使用。" action={<Button size="sm" onClick={() => openFile("skill", null)} disabled={!!editor}><Plus />创建</Button>} />
-                {editor?.kind === "file" && editor.fileKind === "skill" && fileForm && <FileEditor kind="skill" form={fileForm} onChange={(patch) => setFileForm((current) => current ? { ...current, ...patch } : current)} onCancel={closeEditor} onSave={saveFileDraft} error={formError} />}
-                <FileList kind="skill" items={(workspace ?? EMPTY_WORKSPACE).skills} onAdd={() => openFile("skill", null)} onEdit={(id) => openFile("skill", id)} onDelete={(id) => deleteFile("skill", id)} onToggle={(id, enabled) => toggleFile("skill", id, enabled)} />
+                <SectionHeader title="Skills" description="把可复用的工作流程保存为 Markdown Skill，之后可被不同 Agent 使用。" action={skillAgent === "general" ? <Button variant="default" className="gap-[3px] px-3" onClick={() => openFile("skill", null)} disabled={!!editor}><Plus />创建</Button> : null} />
+                <AgentTabs active={skillAgent} ariaLabel="Skill Agent" onChange={(agentKey) => { setSkillAgent(agentKey); closeEditor(); }} />
+                {skillAgent === "codex" ? <CodexSkillsList notebookPath={notebookPath} /> : skillAgent === "deepseek-harness" ? <DeepSeekHarnessSkillsList /> : <div className="space-y-3">
+                  {editor?.kind === "file" && editor.fileKind === "skill" && fileForm && <FileEditor kind="skill" form={fileForm} onChange={(patch) => setFileForm((current) => current ? { ...current, ...patch } : current)} onCancel={closeEditor} onSave={saveFileDraft} error={formError} />}
+                  <FileList kind="skill" items={(workspace ?? EMPTY_WORKSPACE).skills} onAdd={() => openFile("skill", null)} onEdit={(id) => openFile("skill", id)} onDelete={(id) => deleteFile("skill", id)} onToggle={(id, enabled) => toggleFile("skill", id, enabled)} />
+                </div>}
               </>}
               {tab === "agents" && <>
-                <SectionHeader title="子 Agent" description="创建专门角色，让主 Agent 可以把任务交给更合适的处理者。" action={<Button size="sm" onClick={() => openFile("agent", null)} disabled={!!editor}><Plus />创建</Button>} />
-                {editor?.kind === "file" && editor.fileKind === "agent" && fileForm && <FileEditor kind="agent" form={fileForm} onChange={(patch) => setFileForm((current) => current ? { ...current, ...patch } : current)} onCancel={closeEditor} onSave={saveFileDraft} error={formError} />}
-                <FileList kind="agent" items={(workspace ?? EMPTY_WORKSPACE).agents} onAdd={() => openFile("agent", null)} onEdit={(id) => openFile("agent", id)} onDelete={(id) => deleteFile("agent", id)} onToggle={(id, enabled) => toggleFile("agent", id, enabled)} />
+                <SectionHeader title="子 Agent" description="创建专门角色，让主 Agent 可以把任务交给更合适的处理者。" action={childAgent === "general" ? <Button variant="default" className="gap-[3px] px-3" onClick={() => openFile("agent", null)} disabled={!!editor}><Plus />创建</Button> : null} />
+                <AgentTabs active={childAgent} ariaLabel="子 Agent" onChange={(agentKey) => { setChildAgent(agentKey); closeEditor(); }} />
+                {childAgent === "codex" ? <CodexAgentsList notebookPath={notebookPath} /> : childAgent === "deepseek-harness" ? <DeepSeekHarnessAgentsList /> : <div className="space-y-3">
+                  {editor?.kind === "file" && editor.fileKind === "agent" && fileForm && <FileEditor kind="agent" form={fileForm} onChange={(patch) => setFileForm((current) => current ? { ...current, ...patch } : current)} onCancel={closeEditor} onSave={saveFileDraft} error={formError} />}
+                  <FileList kind="agent" items={(workspace ?? EMPTY_WORKSPACE).agents} onAdd={() => openFile("agent", null)} onEdit={(id) => openFile("agent", id)} onDelete={(id) => deleteFile("agent", id)} onToggle={(id, enabled) => toggleFile("agent", id, enabled)} />
+                </div>}
+              </>}
+              {tab === "plugins" && <>
+                <SectionHeader title="插件" description="查看当前笔记本项目可用的 Codex 插件。" />
+                <AgentTabs active="codex" keys={CODEX_RESOURCE_KEYS} ariaLabel="插件 Agent" onChange={() => undefined} />
+                <CodexPluginsList notebookPath={notebookPath} />
+              </>}
+              {tab === "other" && <>
+                <SectionHeader title="其他" description="查看 Codex 当前项目的模型与权限配置。" />
+                <AgentTabs active="codex" keys={CODEX_RESOURCE_KEYS} ariaLabel="其他 Agent" onChange={() => undefined} />
+                <CodexOtherSettings notebookPath={notebookPath} />
               </>}
               {tab === "memory" && <div className="flex min-h-full flex-col items-center justify-center py-16 text-center">
                 <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[color-mix(in_oklch,var(--muted)_72%,var(--background))] text-[var(--muted-foreground)]"><Brain className="h-5 w-5" strokeWidth={1.7} /></span>
@@ -615,8 +1155,8 @@ function NotebookAgentSettingsDialog({ notebookPath, onClose }: { notebookPath: 
         </div>
 
         <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-[var(--divider)] bg-[color-mix(in_oklch,var(--background)_92%,var(--card))] px-5 py-3 sm:px-6">
-          <div className="min-w-0 text-xs text-[var(--muted-foreground)]">{dirty ? <span className="text-[var(--primary)]">有未保存更改</span> : <span className="inline-flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-[var(--primary)]" />已与磁盘同步</span>}</div>
-          <div className="flex items-center gap-2"><Button type="button" variant="ghost" onClick={requestClose}>取消</Button><Button type="button" disabled={!dirty || saving} onClick={() => void saveWorkspace()}>{saving ? <Loader2 className="animate-spin" /> : <Save />}保存更改</Button></div>
+          <div className="min-w-0 text-xs text-[var(--muted-foreground)]">{dirty ? <span className="text-[var(--primary)]">有未保存更改</span> : <span className="inline-flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-[var(--primary)]" /></span>}</div>
+          <div className="flex items-center gap-2"><Button type="button" variant="ghost" onClick={requestClose}>取消</Button><Button type="button" disabled={!dirty || saving} onClick={() => void saveWorkspace()}>{saving ? <Loader2 className="animate-spin" /> : null}保存</Button></div>
         </footer>
       </div>
     </div>

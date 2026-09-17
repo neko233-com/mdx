@@ -3,6 +3,8 @@ import { resolveBrowserColumnLayout } from '@features/shell/hooks/browser-column
 import { useMacosTrackpadSwipe, type MacosTrackpadSwipeDirection } from '@features/shell/hooks/use-macos-trackpad-swipe';
 import { useResizablePanels } from '@features/shell/hooks/use-resizable-panels';
 
+export type NoteNavigationDrawerPhase = 'closed' | 'open' | 'closing';
+
 type PanelVisibilityState = {
   memoListVisible: boolean;
   noteNavigationVisible: boolean;
@@ -45,6 +47,19 @@ export function useMainPanelController({
   setNoteNavigationVisible,
 }: MainPanelControllerOptions) {
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const [noteNavigationPhase, setNoteNavigationPhase] = useState<NoteNavigationDrawerPhase>(
+    () => noteNavigationVisible ? 'open' : 'closed',
+  );
+
+  // The persisted boolean is the semantic setting. The phase is transient
+  // layout state used to synchronize the drawer with the list preview.
+  useEffect(() => {
+    if (noteNavigationVisible && noteNavigationPhase === 'closed') {
+      setNoteNavigationPhase('open');
+    } else if (!noteNavigationVisible && noteNavigationPhase === 'open') {
+      setNoteNavigationPhase('closed');
+    }
+  }, [noteNavigationPhase, noteNavigationVisible]);
 
   useEffect(() => {
     const handleResize = () => setViewportWidth(window.innerWidth);
@@ -108,17 +123,31 @@ export function useMainPanelController({
     isSwipeArea: isPanelSwipeArea,
   });
 
+  const openNoteNavigation = useCallback(() => {
+    setNoteNavigationPhase('open');
+    setNoteNavigationVisible(true);
+  }, [setNoteNavigationVisible]);
+  const closeNoteNavigation = useCallback(() => {
+    if (!noteNavigationVisible || noteNavigationPhase === 'closing') return;
+    // Start the drawer and list transitions in the same render.
+    setNoteNavigationPhase('closing');
+    setNoteNavigationVisible(false);
+  }, [noteNavigationPhase, noteNavigationVisible, setNoteNavigationVisible]);
+  const completeNoteNavigationClose = useCallback(() => {
+    setNoteNavigationPhase('closed');
+  }, []);
   const handleToggleNoteNavigation = useCallback(() => {
-    setNoteNavigationVisible(!noteNavigationVisible);
-  }, [noteNavigationVisible, setNoteNavigationVisible]);
+    if (noteNavigationVisible) closeNoteNavigation();
+    else openNoteNavigation();
+  }, [closeNoteNavigation, noteNavigationVisible, openNoteNavigation]);
   const collapseMemoList = useCallback(() => {
     setMemoListVisible(false);
   }, [setMemoListVisible]);
   const handleToggleMemoList = useCallback(() => {
     const nextVisible = !memoListVisible;
     setMemoListVisible(nextVisible);
-    if (!nextVisible && noteNavigationVisible) setNoteNavigationVisible(false);
-  }, [memoListVisible, noteNavigationVisible, setMemoListVisible, setNoteNavigationVisible]);
+    if (!nextVisible && noteNavigationVisible) closeNoteNavigation();
+  }, [closeNoteNavigation, memoListVisible, noteNavigationVisible, setMemoListVisible]);
 
   return {
     browserColumnLayout,
@@ -128,9 +157,12 @@ export function useMainPanelController({
     handleListDividerMouseDown,
     handleToggleMemoList,
     handleToggleNoteNavigation,
+    closeNoteNavigation,
+    completeNoteNavigationClose,
     isDraggingListDivider,
     isMemoListHidden,
     memoColWidth,
     memoListWidth,
+    noteNavigationPhase,
   };
 }

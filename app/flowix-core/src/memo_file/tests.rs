@@ -521,7 +521,7 @@ fn register_existing_file_for_other_notebook_does_not_switch_current_notebook() 
     assert_eq!(current_memos.len(), 1);
     assert_eq!(current_memos[0].id, current_memo.id);
 
-    let conn = rusqlite::Connection::open(mf.get_index_db_path()).unwrap();
+    let conn = rusqlite::Connection::open(mf.notebook_index_db_path("nb_other").unwrap()).unwrap();
     let notebook_id: String = conn
         .query_row(
             "SELECT notebook_id FROM memos WHERE id = ?1",

@@ -253,10 +253,14 @@ function DropdownMenuContent({
 
 	if (!open) return null;
 	if (typeof document === "undefined") return null;
+	const belongsToListColumnPreview = Boolean(
+		triggerRef.current?.closest("[data-memo-list-hover-preview]")
+	);
 
 	return createPortal(
 		<div
 			ref={contentRef}
+			data-flowix-list-column-overlay={belongsToListColumnPreview ? "" : undefined}
 			onMouseEnter={onMouseEnter}
 			onMouseLeave={onMouseLeave}
 			className={cn(

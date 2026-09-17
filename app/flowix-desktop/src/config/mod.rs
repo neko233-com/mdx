@@ -29,7 +29,7 @@ pub mod user;
 // Re-export the public surface at the `config::` namespace so callers can
 // write `crate::config::UserConfigStore` without dropping into `user`.
 pub use access::{AgentAccessConfig, AgentAccessEntry, AgentAccessKind, AgentAccessStore};
-pub use path_scope::path_is_inside;
+pub use path_scope::{path_is_inside, path_is_inside_reserved_directory};
 #[cfg(target_os = "macos")]
 pub use security_bookmark::pick_directory_with_bookmark;
 pub use security_bookmark::SecurityBookmarkStore;

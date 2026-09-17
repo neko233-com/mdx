@@ -3,6 +3,7 @@
 import { Check } from 'lucide-react';
 import {
   CopyIcon,
+  FolderOpenIcon,
   LinkSimpleIcon,
   PushPin,
   SquareSplitHorizontalIcon,
@@ -12,7 +13,7 @@ import {
 import { useContext } from 'react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
-import { memos as memosClient } from '@platform/tauri/client';
+import { memos as memosClient, product } from '@platform/tauri/client';
 import { useI18n, translate, type AppLanguage, type I18nKey } from '@/lib/i18n';
 import {
   ContextMenuContext,
@@ -26,7 +27,6 @@ import {
   useMemoStore,
 } from '@features/memo/store/memo-store';
 import type { MemoItem, MemoColor } from '@/types/memo-item';
-import { openMemoSession } from '@features/memo/use-cases/open-memo-session';
 import { resolveMemoSessionPath } from '@features/memo/use-cases/open-memo-session';
 
 // Minimal contract every shadcn-style item primitive in this app satisfies:
@@ -43,6 +43,8 @@ export interface MenuItemComponent {
 
 interface MemoCardActionsProps {
   memo: MemoItem;
+  /** Use the tree item's authoritative path when this menu is rendered there. */
+  filePath?: string;
   onFavoriteToggle: (memo: MemoItem) => void;
   onDelete: (memo: MemoItem) => void;
   onColorsChange?: (memo: MemoItem, colors: MemoColor[]) => void;
@@ -196,6 +198,7 @@ function MemoCardColorRow({ colors, onChange }: MemoCardColorRowProps) {
 
 export function MemoCardActions({
   memo,
+  filePath,
   onFavoriteToggle,
   onDelete,
   onColorsChange,
@@ -237,18 +240,23 @@ export function MemoCardActions({
     }
   };
 
-  // Properties are rendered by `DocumentContainer` for the currently-active
-  // memo, so open the session first (synchronously marked-selected, then the
-  // document settles in the background) before dispatching the open event.
-  const handleOpenProperties = () => {
-    const notebook = useMemoStore.getState().selectedNotebook;
-    void openMemoSession(memo, notebook).then(() => {
-      window.dispatchEvent(
-        new CustomEvent('flowix:open-note-properties', {
-          detail: { memoId: memo.id },
-        }),
-      );
+  const handleRevealInFileManager = () => {
+    const path = filePath ?? resolvePath();
+    if (!path) return;
+    void product.revealInFileManager(path).catch((error) => {
+      console.warn('[MemoCardActions] reveal in file manager failed', error);
+      toast.error(t('memo.fileTree.openFailed'));
     });
+  };
+
+  // Properties are owned by the application-level host. Requesting them must
+  // not navigate the work column or change the currently-open memo.
+  const handleOpenProperties = () => {
+    window.dispatchEvent(
+      new CustomEvent('flowix:open-note-properties', {
+        detail: { memoId: memo.id },
+      }),
+    );
   };
 
   return (
@@ -260,12 +268,6 @@ export function MemoCardActions({
           </Item>
         </>
       )}
-      <Item onClick={handleCopyLink} className={ITEM_BASE}>
-        <LinkSimpleIcon className="w-4 h-4 mr-2" /> {t('document.action.copyLink')}
-      </Item>
-      <Item onClick={handleCopyFullText} className={ITEM_BASE}>
-        <CopyIcon className="w-4 h-4 mr-2" /> {t('document.action.copyFullText')}
-      </Item>
       <Item onClick={() => onFavoriteToggle(memo)} className={ITEM_BASE}>
         {memo.favorited ? (
           <>
@@ -279,6 +281,15 @@ export function MemoCardActions({
       </Item>
       <Item onClick={handleOpenProperties} className={ITEM_BASE}>
         <StackSimpleIcon className="w-4 h-4 mr-2" /> {t('document.action.properties')}
+      </Item>
+      <Item onClick={handleCopyLink} className={ITEM_BASE}>
+        <LinkSimpleIcon className="w-4 h-4 mr-2" /> {t('document.action.copyLink')}
+      </Item>
+      <Item onClick={handleCopyFullText} className={ITEM_BASE}>
+        <CopyIcon className="w-4 h-4 mr-2" /> {t('document.action.copyFullText')}
+      </Item>
+      <Item onClick={handleRevealInFileManager} className={ITEM_BASE}>
+        <FolderOpenIcon className="w-4 h-4 mr-2" /> {t('memo.fileTree.reveal')}
       </Item>
       <div role="separator" aria-hidden="true" className={POPUP_DIVIDER_CLASS} />
       {onColorsChange && (

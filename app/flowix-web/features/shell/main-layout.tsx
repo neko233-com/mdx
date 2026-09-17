@@ -4,6 +4,7 @@ import { lazy, Suspense, useState, useEffect, useRef, useCallback } from 'react'
 import {
   DocumentTitlebarWin,
   DocumentTitlebarMac,
+  NotePropertiesHost,
   navigateDocumentHistory,
   useDocumentCommands,
   useShellDocumentHistory,
@@ -17,8 +18,6 @@ import {
 import {
   MemoList,
   MemoListServicesHost,
-  MemoListTitlebarMac,
-  MemoListTitlebarWin,
   NoteNavigationDrawer,
   useNotebookTodoCount,
   useShellMemoViewModel,
@@ -29,6 +28,7 @@ import { AgentConversationTitlebar } from '@features/agent/public/shell-api';
 import { useSettingsStore } from '@/lib/store/settings-store';
 import { useShallow } from 'zustand/react/shallow';
 import {
+  product,
   windows,
   type DshDownloadProgress,
 } from '@platform/tauri/client';
@@ -36,10 +36,11 @@ import { WindowsTitlebarControls } from '@shared/window-titlebar-controls';
 import { canonicalPath, getDocumentInstanceKey } from '@/lib/path';
 import { NotebookDeleteDialog } from '@features/shell/components/notebook-delete-dialog';
 import { MarkdownFileDropOverlay } from '@features/shell/components/drag-overlay/markdown-file-drop-overlay';
-import { useDeferredUnmount } from '@features/shell/hooks/use-deferred-unmount';
 import { useMainMiddleColumnController } from '@features/shell/hooks/use-main-middle-column-controller';
 import { useMainPanelController } from '@features/shell/hooks/use-main-panel-controller';
+import { ListColumn } from '@features/shell/components/list-column';
 import { useI18n } from '@/lib/i18n';
+import { toast } from '@/lib/toast';
 import type { DshRuntimeInstallerState } from '@features/preferences/public/system-api';
 import type { AppUpdaterState } from '@features/shell/hooks/use-app-updater';
 import {
@@ -80,6 +81,10 @@ function isDifferentHistoryTarget(
     return entry.kind !== 'artifact'
       || entry.pointerMemoId !== currentWorkColumnTarget.pointerMemoId;
   }
+  if (currentWorkColumnTarget.kind === 'media') {
+    return entry.kind !== 'media'
+      || canonicalPath(entry.filePath) !== canonicalPath(currentWorkColumnTarget.filePath);
+  }
   if (entry.kind === 'artifact') return true;
   if (currentWorkColumnTarget.kind === 'agent-conversation') {
     return entry.kind !== 'agent-conversation'
@@ -94,6 +99,7 @@ function isDifferentHistoryTarget(
       canonicalPath(entry.path) !== canonicalPath(activeMemoSession.path)
     );
   }
+  if (entry.kind !== 'external') return true;
   return currentDocumentSource !== 'external' || canonicalPath(entry.path) !== canonicalPath(currentDocumentPath ?? '');
 }
 
@@ -225,11 +231,11 @@ export function MainLayout({
   ));
   const [isSearchPanelOpen, setIsSearchPanelOpen] = useState(false);
   const workColumnTarget = navigationState.target;
+  const mediaTarget = workColumnTarget.kind === 'media' ? workColumnTarget : null;
   const activePlugin = workColumnTarget.kind === 'plugin-workbench'
     ? workColumnTarget.plugin
     : null;
   const currentDocumentContentRef = useRef('');
-  const memoListMounted = useDeferredUnmount(memoListVisible);
   const {
     browserColumnLayout,
     browserColumnLayoutKey,
@@ -238,10 +244,12 @@ export function MainLayout({
     handleListDividerMouseDown,
     handleToggleMemoList,
     handleToggleNoteNavigation,
+    closeNoteNavigation,
+    completeNoteNavigationClose,
     isDraggingListDivider,
     isMemoListHidden,
     memoColWidth,
-    memoListWidth,
+    noteNavigationPhase,
   } = useMainPanelController({
     browserColumnSplitRatio,
     documentPanelMinWidth: DOCUMENT_PANEL_MIN_WIDTH,
@@ -262,13 +270,14 @@ export function MainLayout({
     handleMemoListPreviewTriggerLeave,
     handleMemoListPreviewEnter,
     handleMemoListPreviewLeave,
+    handleMemoListPreviewCompanionEnter,
+    handleMemoListPreviewCompanionLeave,
     agentConversationListNode,
   } = useMainMiddleColumnController({
     isAgentConversationView,
     isMemoListHidden,
+    noteNavigationPhase,
   });
-  const documentTitlebarHeight = isWindowsPlatform() ? 36 : 48;
-
   const currentMemo = currentDocumentPath && currentDocumentSource === 'memo' && activeMemoSession
     ? memos.find((memo) => memo.id === activeMemoSession.memoId)
       ?? (selectedMemo?.id === activeMemoSession.memoId ? selectedMemo : null)
@@ -356,6 +365,48 @@ export function MainLayout({
     );
   }, [currentMemo]);
 
+  const handleCopyMediaLink = useCallback(async () => {
+    if (!mediaTarget) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(mediaTarget.filePath);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = mediaTarget.filePath;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      toast.success(t('document.command.copySuccess'));
+    } catch (error) {
+      console.warn('[MainLayout] Failed to copy media link:', error);
+      toast.error(t('document.command.copyFailed'));
+    }
+  }, [mediaTarget, t]);
+
+  const handleRevealMedia = useCallback(() => {
+    if (!mediaTarget) return;
+    void product.revealInFileManager(mediaTarget.filePath).catch((error) => {
+      console.warn('[MainLayout] Failed to reveal media in file manager:', error);
+      toast.error(t('memo.fileTree.openFailed'));
+    });
+  }, [mediaTarget, t]);
+
+  const handleRequestDeleteMedia = useCallback(() => {
+    if (!mediaTarget?.notebookPath) return;
+    window.dispatchEvent(new CustomEvent('flowix:request-delete-media', {
+      detail: {
+        filePath: mediaTarget.filePath,
+        notebookPath: mediaTarget.notebookPath,
+      },
+    }));
+  }, [mediaTarget]);
+
   const handleToggleEditorMode = useCallback(() => {
     if (!currentMemo || !activeMemoSession) return;
     const identity = { kind: 'memo' as const, id: activeMemoSession.memoId };
@@ -436,10 +487,15 @@ export function MainLayout({
   });
   const isAgentConversationDetail = workColumnPresentation.header.kind === 'agent';
   const workColumnLoadingTone = navigationState.phase === 'loading'
-    ? navigationState.pendingTarget?.kind === 'agent-conversation' ? 'agent' : 'document'
-    : workColumnPresentation.header.kind === 'agent' ? 'agent' : 'document';
+    ? navigationState.pendingTarget?.kind === 'agent-conversation'
+      ? 'agent'
+      : navigationState.pendingTarget?.kind === 'media'
+        ? 'media'
+        : 'document'
+    : workColumnPresentation.chrome;
   const documentTitlebarProps = {
     reserveWindowsControls: !browserColumnVisible,
+    surfaceChrome: workColumnPresentation.chrome === 'media' ? 'media' as const : 'document' as const,
     document: {
       // An artifact is allowed to sit above an existing editable session.
       // Do not expose that underlying memo's actions in the artifact chrome;
@@ -482,6 +538,11 @@ export function MainLayout({
       editorMode: mainEditorMode,
       onToggleEditorMode: handleToggleEditorMode,
     },
+    mediaActions: mediaTarget ? {
+      onCopyLink: handleCopyMediaLink,
+      onRevealInFileManager: handleRevealMedia,
+      onRequestDelete: handleRequestDeleteMedia,
+    } : undefined,
   };
 
   return (
@@ -497,7 +558,7 @@ export function MainLayout({
         <div className="flex flex-col flex-1 overflow-hidden">
           <div className="relative flex flex-1 h-full overflow-hidden">
           <NoteNavigationDrawer
-            open={noteNavigationVisible}
+            phase={noteNavigationPhase}
             notebooks={notebooks}
             selectedNotebook={selectedNotebook}
             onSelectNotebook={handleSelectNotebook}
@@ -507,116 +568,65 @@ export function MainLayout({
             onOpenPreferences={(tab) => void windows.openPreferences(tab)}
             activePluginId={activePluginId}
             onOpenPlugin={handleOpenPlugin}
-            onClose={() => setNoteNavigationVisible(false)}
+            onRequestClose={closeNoteNavigation}
+            onCloseComplete={completeNoteNavigationClose}
+            onCompanionSurfaceEnter={handleMemoListPreviewCompanionEnter}
+            onCompanionSurfaceLeave={handleMemoListPreviewCompanionLeave}
           />
-          {/* Memo list column */}
-          <div
-            data-memo-list-swipe-area
-            className={`flex flex-col ${
-              memoListPreviewVisible ? 'overflow-visible' : 'overflow-hidden'
-            } will-change-[width] ${
-              isDraggingListDivider ? 'transition-none' : 'transition-[width] duration-150 ease-out'
-            }`}
-            style={{ width: memoListWidth, flexShrink: 0 }}
-            aria-hidden={isMemoListHidden && !memoListPreviewVisible}
+          {/* List column: one mounted subtree shared by the docked sidebar and hover preview. */}
+          <ListColumn
+            hidden={isMemoListHidden}
+            previewVisible={memoListPreviewVisible}
+            previewPhase={memoListPreviewPhase === 'open' ? 'open' : 'closing'}
+            memoColWidth={memoColWidth}
+            isDraggingListDivider={isDraggingListDivider}
+            selectedNotebook={selectedNotebook}
+            noteNavigationPhase={noteNavigationPhase}
+            onCollapseMemoList={collapseMemoList}
+            onToggleNoteNavigation={handleToggleNoteNavigation}
+            onOpenPreferences={(tab) => void windows.openPreferences(tab)}
+            onPreviewEnter={handleMemoListPreviewEnter}
+            onPreviewLeave={handleMemoListPreviewLeave}
             onPointerDown={() => focusWorkspaceHost('main-third')}
           >
             <div
-              className={`flex h-full min-w-0 flex-col ${
-                memoListPreviewVisible
-                  ? 'overflow-visible'
-                  : 'overflow-hidden bg-[var(--card)] border-[var(--divider)] border-r'
+              className={`absolute inset-0 ${
+                showMemoListSurface
+                  ? 'visible'
+                  : 'invisible pointer-events-none'
               }`}
-              style={{ width: memoListPreviewVisible ? 0 : memoColWidth }}
+              aria-hidden={!showMemoListSurface}
             >
-              {memoListMounted && (
-                isWindowsPlatform() ? (
-                  <MemoListTitlebarWin
-                    noteNavigationVisible={noteNavigationVisible}
-                    selectedNotebook={selectedNotebook}
-                    onCollapseMemoList={collapseMemoList}
-                    onToggleNoteNavigation={handleToggleNoteNavigation}
-                    onOpenPreferences={(tab) => void windows.openPreferences(tab)}
-                  />
-                ) : (
-                  <MemoListTitlebarMac
-                    noteNavigationVisible={noteNavigationVisible}
-                    selectedNotebook={selectedNotebook}
-                    onCollapseMemoList={collapseMemoList}
-                    onToggleNoteNavigation={handleToggleNoteNavigation}
-                    onOpenPreferences={(tab) => void windows.openPreferences(tab)}
-                  />
-                )
-              )}
-              <div
-                data-memo-list-hover-preview={memoListPreviewVisible ? '' : undefined}
-                data-preview-state={
-                  memoListPreviewVisible ? memoListPreviewPhase : undefined
-                }
-                onMouseEnter={
-                  memoListPreviewVisible ? handleMemoListPreviewEnter : undefined
-                }
-                onMouseLeave={
-                  memoListPreviewVisible ? handleMemoListPreviewLeave : undefined
-                }
-                className={
-                  memoListPreviewVisible
-                      // Keep the hover preview below the click-opened note
-                      // navigation drawer (z-index 100).
-                      ? 'absolute z-[90] mb-1 flex w-[280px] flex-col overflow-hidden rounded-xl border border-[var(--border-popup)] bg-[var(--card)] pt-3 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)] ' +
-                      (memoListPreviewPhase === 'open'
-                        ? 'flowix-hover-preview-enter'
-                        : 'flowix-hover-preview-leave')
-                    : 'relative flex flex-1 flex-col min-h-0 min-w-0 w-full'
-                }
-                style={memoListPreviewVisible ? {
-                  left: 2,
-                  top: documentTitlebarHeight,
-                  bottom: 0,
-                } : undefined}
-              >
-                <div className="relative min-h-0 flex-1">
-                  <div
-                    className={`absolute inset-0 ${
-                      showMemoListSurface
-                        ? 'visible'
-                        : 'invisible pointer-events-none'
-                    }`}
-                    aria-hidden={!showMemoListSurface}
-                  >
-                    <MemoList
-                      navigationDrawerEnabled
-                      navigationDrawerOpen={noteNavigationVisible}
-                      onToggleNavigationDrawer={handleToggleNoteNavigation}
-                      isActive={!isAgentConversationView}
-                      dataLoadingEnabled={!isAgentConversationView}
-                    />
-                  </div>
-                  {shouldRenderAgentConversationList && (
-                    <div
-                      className={`absolute inset-0 ${
-                        showAgentConversationSurface
-                          ? 'visible z-10'
-                          : 'invisible pointer-events-none'
-                      }`}
-                      aria-hidden={!showAgentConversationSurface}
-                    >
-                      {agentConversationListNode}
-                    </div>
-                  )}
-                  {isAgentConversationView && !agentConversationListReady && (
-                    <div
-                      className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-[color-mix(in_oklch,var(--card)_78%,transparent)] text-sm text-[var(--muted-foreground)] backdrop-blur-[1px]"
-                      role="status"
-                      aria-live="polite"
-                    >
-                      {t('status.agent.loadingConversations')}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <MemoList
+                navigationDrawerEnabled
+                navigationDrawerOpen={noteNavigationPhase !== 'closed'}
+                onToggleNavigationDrawer={handleToggleNoteNavigation}
+                isActive={!isAgentConversationView}
+                dataLoadingEnabled={!isAgentConversationView}
+              />
             </div>
-          </div>
+            {shouldRenderAgentConversationList && (
+              <div
+                className={`absolute inset-0 ${
+                  showAgentConversationSurface
+                    ? 'visible z-10'
+                    : 'invisible pointer-events-none'
+                }`}
+                aria-hidden={!showAgentConversationSurface}
+              >
+                {agentConversationListNode}
+              </div>
+            )}
+            {isAgentConversationView && !agentConversationListReady && (
+              <div
+                className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-[color-mix(in_oklch,var(--card)_78%,transparent)] text-sm text-[var(--muted-foreground)] backdrop-blur-[1px]"
+                role="status"
+                aria-live="polite"
+              >
+                {t('status.agent.loadingConversations')}
+              </div>
+            )}
+          </ListColumn>
           {/* List <-> Memo detail divider */}
           {!isMemoListHidden && (
             <div className="relative w-[1px] h-full cursor-col-resize group z-10" onMouseDown={handleListDividerMouseDown}>
@@ -666,7 +676,7 @@ export function MainLayout({
                 instanceId={workColumnPresentation.header.instanceId}
                 reserveWindowsControls={!browserColumnVisible}
                 isMiddleColumnCollapsed={isMemoListHidden}
-                isSidebarVisible={noteNavigationVisible}
+                isSidebarVisible={noteNavigationPhase !== 'closed'}
                 onExpandSidebar={handleToggleMemoList}
                 onSidebarPreviewEnter={handleMemoListPreviewTriggerEnter}
                 onSidebarPreviewLeave={handleMemoListPreviewTriggerLeave}
@@ -686,7 +696,7 @@ export function MainLayout({
               <WorkColumnContentHost content={workColumnPresentation.content} />
               {(isDocumentTransitioning || navigationState.phase === 'loading') && (
                 <CenteredLoadingSpinner
-                  className={workColumnLoadingTone === 'agent'
+                  className={workColumnLoadingTone === 'agent' || workColumnLoadingTone === 'media'
                     ? 'absolute inset-0 z-40 bg-[var(--agent-surface-bg,var(--editor-block-bg,var(--document-bg)))]'
                     : 'absolute inset-0 z-40 bg-[color-mix(in_oklch,var(--card)_78%,transparent)] backdrop-blur-[1px]'}
                 />
@@ -732,6 +742,8 @@ export function MainLayout({
         notebookCreateRequest={notebookCreateRequest}
         onRefresh={triggerRefresh}
       />
+
+      <NotePropertiesHost />
 
       <MainPromptHost
         updater={updater}

@@ -8,69 +8,32 @@ import {
   SelectContent,
   SelectItem,
 } from '@shared/ui/select';
-import { Textarea } from '@shared/ui/textarea';
 import { Button } from '@shared/ui/button';
 import { UpdateProgress } from '@shared/ui/update-progress';
 import { Tooltip } from '@shared/ui/tooltip';
-import { useComposingValue } from '@shared/hooks/use-composing-value';
 import { product, type ProductInfo } from '@platform/tauri/client';
 import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
 import {
-  Field,
   FieldRow,
   SectionHeader,
-  FIELD_INPUT_CLASS,
   FIELD_TITLE_CLASS,
 } from '@features/preferences/sections/primitives';
-import { LANGUAGE_OPTIONS, useI18n, type AppLanguage, type Region } from '@/lib/i18n';
+import { LANGUAGE_OPTIONS, useI18n, type AppLanguage } from '@/lib/i18n';
 
 interface GeneralSectionProps {
-  settings: {
-    customInstruction: string;
-    selectedTags: string[];
-    responseLength: string;
-    preferredLanguage: string;
-    showConversationEntry: boolean;
-  };
   language: AppLanguage;
-  region: Region;
   updateSettings: (updates: {
-    personalize?: Partial<{
-      customInstruction: string;
-      selectedTags: string[];
-      responseLength: string;
-      preferredLanguage: string;
-      showConversationEntry: boolean;
-    }>;
     language?: AppLanguage;
     productUpdates?: Partial<{ lastCheckedAt: number }>;
   }) => Promise<void>;
 }
 
-export function GeneralSection({ settings, language, updateSettings }: GeneralSectionProps) {
+export function GeneralSection({ language, updateSettings }: GeneralSectionProps) {
   const { t } = useI18n();
-  const customInstruction = useComposingValue(
-    settings.customInstruction,
-    (next) => updateSettings({ personalize: { customInstruction: next } }),
-  );
   const [productInfo, setProductInfo] = useState<ProductInfo | null>(null);
   const updater = useAppUpdater();
   const currentLanguageLabel =
     LANGUAGE_OPTIONS.find((option) => option.value === language)?.label ?? language;
-  const responseLengthLabelByValue: Record<string, string> = {
-    concise: t('preferences.general.responseLength.concise'),
-    standard: t('preferences.general.responseLength.standard'),
-    detailed: t('preferences.general.responseLength.detailed'),
-  };
-  const preferredLanguageLabelByValue: Record<string, string> = {
-    'Simplified Chinese': t('language.zhCN'),
-    English: t('language.enUS'),
-  };
-  const currentResponseLengthLabel =
-    responseLengthLabelByValue[settings.responseLength] ?? settings.responseLength;
-  const currentPreferredLanguageLabel =
-    preferredLanguageLabelByValue[settings.preferredLanguage] ?? settings.preferredLanguage;
 
   useEffect(() => {
     product.getInfo()
@@ -122,7 +85,6 @@ export function GeneralSection({ settings, language, updateSettings }: GeneralSe
 
       <FieldRow
         title={t('preferences.general.language.title')}
-        description={t('preferences.general.language.description')}
       >
         <Select
           value={language}
@@ -137,82 +99,6 @@ export function GeneralSection({ settings, language, updateSettings }: GeneralSe
                 {option.label}
               </SelectItem>
             ))}
-          </SelectContent>
-        </Select>
-      </FieldRow>
-
-      <FieldRow title={t('preferences.general.showConversationEntry.title')}>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={settings.showConversationEntry}
-          aria-label={t('preferences.general.showConversationEntry.title')}
-          onClick={() => updateSettings({
-            personalize: { showConversationEntry: !settings.showConversationEntry },
-          })}
-          className={cn(
-            'relative h-6 w-11 shrink-0 rounded-full transition-colors',
-            settings.showConversationEntry ? 'bg-[var(--primary)]' : 'bg-[var(--muted)]',
-          )}
-        >
-          <span
-            className={cn(
-              'absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform',
-              settings.showConversationEntry ? 'translate-x-5' : 'translate-x-0',
-            )}
-          />
-        </button>
-      </FieldRow>
-
-      <SectionHeader title={t('preferences.general.personalization')} />
-
-      <Field
-        title={t('preferences.general.customInstructions.title')}
-        description={t('preferences.general.customInstructions.description')}
-      >
-        <Textarea
-          value={customInstruction.value}
-          onChange={customInstruction.onChange}
-          onCompositionStart={customInstruction.onCompositionStart}
-          onCompositionEnd={customInstruction.onCompositionEnd}
-          placeholder={t('preferences.general.customInstructions.placeholder')}
-          className={FIELD_INPUT_CLASS}
-        />
-      </Field>
-
-      <FieldRow
-        title={t('preferences.general.responseLength.title')}
-        description={t('preferences.general.responseLength.description')}
-      >
-        <Select
-          value={settings.responseLength}
-          onValueChange={(value) => updateSettings({ personalize: { responseLength: value } })}
-        >
-          <SelectTrigger className="w-32">
-            <span>{currentResponseLengthLabel}</span>
-          </SelectTrigger>
-          <SelectContent className="flowix-preferences-select-content">
-            <SelectItem value="concise">{t('preferences.general.responseLength.concise')}</SelectItem>
-            <SelectItem value="standard">{t('preferences.general.responseLength.standard')}</SelectItem>
-            <SelectItem value="detailed">{t('preferences.general.responseLength.detailed')}</SelectItem>
-          </SelectContent>
-        </Select>
-      </FieldRow>
-
-      <FieldRow
-        title={t('preferences.general.preferredLanguage.title')}
-        description={t('preferences.general.preferredLanguage.description')}
-      >
-        <Select
-          value={settings.preferredLanguage}
-          onValueChange={(value) => updateSettings({ personalize: { preferredLanguage: value } })}
-        >
-          <SelectTrigger className="w-40">
-            <span>{currentPreferredLanguageLabel}</span>
-          </SelectTrigger>
-          <SelectContent className="flowix-preferences-select-content">
-            <SelectItem value="Simplified Chinese">{t('language.zhCN')}</SelectItem>
-            <SelectItem value="English">{t('language.enUS')}</SelectItem>
           </SelectContent>
         </Select>
       </FieldRow>
@@ -234,7 +120,6 @@ export function GeneralSection({ settings, language, updateSettings }: GeneralSe
 
       <FieldRow
         title={t('preferences.general.productUpdates.title')}
-        description={t('preferences.general.productUpdates.description')}
       >
         <Button
           variant="outline"

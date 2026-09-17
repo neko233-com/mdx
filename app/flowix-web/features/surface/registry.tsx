@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react';
 import { DocumentContainer } from '@features/document/components/document-container';
+import { MediaResourceView } from './media-resource-view';
 import { LazyAgentConversationDetail } from '@features/agent/components/lazy-agent-conversation-detail';
 import {
   LazyPluginDocumentView,
@@ -16,6 +17,7 @@ import { WorkspaceEmptyState } from '@shared/ui/workspace-empty-state';
 import type {
   AgentConversationSurface,
   MarkdownSurface,
+  MediaResourceSurface,
   PluginArtifactSurfaceBase,
   PluginWorkbenchSurface,
   WorkColumnContentPresentation,
@@ -62,6 +64,14 @@ function MarkdownSurfaceView({ surface }: { surface: MarkdownSurface }) {
   return surface.props.isExternalDocument ? <WorkFileBrowserView props={surface.props} /> : <DocumentContainer {...surface.props} />;
 }
 
+function MediaResourceSurfaceView({ surface }: { surface: MediaResourceSurface }) {
+  return <MediaResourceView
+    filePath={surface.filePath}
+    notebookPath={surface.notebookPath}
+    resourceKind={surface.resourceKind}
+  />;
+}
+
 function PluginArtifactSurfaceView({ surface }: { surface: PluginArtifactSurfaceBase }) {
   return <LazyPluginDocumentView {...surface.props} />;
 }
@@ -97,6 +107,11 @@ export const workColumnSurfaceRegistry = Object.freeze({
       'version-history',
     ],
     component: MarkdownSurfaceView,
+  }),
+  media: defineSurface('media', {
+    chrome: 'media',
+    capabilities: ['properties', 'fullscreen'],
+    component: MediaResourceSurfaceView,
   }),
   mindmap: defineSurface('mindmap', {
     chrome: 'document',

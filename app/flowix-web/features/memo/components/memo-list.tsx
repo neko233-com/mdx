@@ -348,7 +348,7 @@ export function MemoList({
     filteredMemos.length > MEMO_VIRTUALIZATION_THRESHOLD;
   // ResizeObserver is required for dynamic rows. Older/non-browser test
   // environments gracefully keep the existing document-flow renderer.
-  const shouldVirtualizeMemos =
+  const canVirtualizeMemos =
     memoVirtualizationEnabled && typeof ResizeObserver !== 'undefined';
   const getMemoKey = useCallback((memo: MemoItem) => memo.id, []);
   const estimateMemoSize = useCallback(
@@ -359,18 +359,23 @@ export function MemoList({
     totalSize: virtualListTotalSize,
     virtualItems,
     getMeasureRef,
+    isVirtualizationReady,
     onScroll: handleVirtualListScroll,
   } = useDynamicVirtualList({
     items: renderedMemos,
     getKey: getMemoKey,
     estimateSize: estimateMemoSize,
     scrollerRef: listContainerRef,
-    enabled: shouldVirtualizeMemos,
-    resetKey: 'detailed',
+    enabled: canVirtualizeMemos,
+    resetKey: currentMemoListQueryKey,
     keepAliveKeys: [selectedMemo?.id, openDropdown].filter(
       (id): id is string => Boolean(id),
     ),
   });
+  // A width change invalidates the prefix offsets, not just the visible row.
+  // The hook temporarily renders the loaded prefix in normal flow until the
+  // new geometry has been measured and the scroll anchor restored.
+  const shouldVirtualizeMemos = canVirtualizeMemos && isVirtualizationReady;
 
   // ─── row ref 缓存 ──────────────────────────────────────────────
   // 同一 memo.id 跨 render 拿到**稳定**的 ref 回调, 避免 React 在重渲时

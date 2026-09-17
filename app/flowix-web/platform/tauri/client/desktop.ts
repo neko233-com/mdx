@@ -11,6 +11,24 @@ export interface DocTreeMemoMeta {
 
 export type DocTreeResourceKind = 'note' | 'image' | 'video' | 'other';
 
+export interface MediaResource {
+  id: string;
+  notebookId: string;
+  relativePath: string;
+  kind: 'image' | 'video';
+  sizeBytes: number;
+  modifiedMs: number;
+  fingerprint: string | null;
+  properties: Record<string, unknown>;
+  propertiesRevision: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MediaResourceResponse {
+  resource: MediaResource;
+}
+
 export interface DocTreeItem {
   id: string;
   fullPath: string;
@@ -59,6 +77,30 @@ export const files = {
     invoke<DocTreeItem | null>('create_folder', { spacePath, name, parentId }),
   createDocument: (spacePath: string, name: string, parentId?: string) =>
     invoke<DocTreeItem>('create_document', { spacePath, name, parentId }),
+};
+
+export const mediaResources = {
+  get: (filePath: string, notebookPath: string) => invoke<MediaResourceResponse>(
+    'get_media_resource',
+    { filePath, notebookPath },
+  ),
+  update: (
+    filePath: string,
+    notebookPath: string,
+    resourceId: string,
+    properties: Record<string, unknown>,
+    expectedPropertiesRevision?: number,
+  ) => invoke<MediaResourceResponse>('update_media_resource', {
+    filePath,
+    notebookPath,
+    resourceId,
+    properties,
+    expectedPropertiesRevision,
+  }),
+  delete: (filePath: string, notebookPath: string) => invoke<boolean>(
+    'delete_media_resource',
+    { filePath, notebookPath },
+  ),
 };
 
 // Dialogs

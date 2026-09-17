@@ -7,6 +7,7 @@ import {
   type DocumentTitlebarProps,
   type DocumentState,
   ExternalTitlebarBadge,
+  MediaActions,
   MemoActions,
   DOCUMENT_TITLEBAR_ICON_BUTTON_WIN,
   AgentThreadCardFullscreenExitButton,
@@ -23,6 +24,7 @@ const ICON_BTN = DOCUMENT_TITLEBAR_ICON_BUTTON_WIN;
 
 export function DocumentTitlebarWin({
   reserveWindowsControls = true,
+  surfaceChrome = 'document',
   document: { currentMemo, externalFilePath = null },
   sidebar: {
     hidden: isSidebarHidden,
@@ -55,9 +57,11 @@ export function DocumentTitlebarWin({
     editorMode,
     onToggleEditorMode,
   },
+  mediaActions,
 }: DocumentTitlebarProps) {
   const { t } = useI18n();
   const isAgentThreadCardFullscreen = useAgentThreadCardFullscreenActive();
+  const isMediaSurface = surfaceChrome === 'media';
   const documentState: DocumentState = currentMemo
     ? 'memo'
     : externalFilePath
@@ -68,8 +72,12 @@ export function DocumentTitlebarWin({
       <WorkColumnTitlebarShell
       isWindows
       reserveWindowsControls={reserveWindowsControls}
-      className={isAgentThreadCardFullscreen ? 'agent-surface-titlebar' : ''}
-      style={isAgentThreadCardFullscreen ? undefined : { backgroundImage: WORK_COLUMN_TITLEBAR_GRADIENT }}
+      className={isAgentThreadCardFullscreen
+        ? 'agent-surface-titlebar'
+        : isMediaSurface
+          ? 'media-surface-titlebar'
+          : ''}
+      style={isAgentThreadCardFullscreen || isMediaSurface ? undefined : { backgroundImage: WORK_COLUMN_TITLEBAR_GRADIENT }}
     >
       <div className="flex shrink-0 items-center gap-1">
         {isSidebarHidden && (
@@ -143,6 +151,14 @@ export function DocumentTitlebarWin({
             canExportContent={canExportContent}
             canSaveAsTemplate={canSaveAsTemplate}
             canViewVersionHistory={canViewVersionHistory}
+          />
+        )}
+        {isMediaSurface && mediaActions && (
+          <MediaActions
+            iconButtonClass={ICON_BTN}
+            onCopyLink={mediaActions.onCopyLink}
+            onRevealInFileManager={mediaActions.onRevealInFileManager}
+            onRequestDelete={mediaActions.onRequestDelete}
           />
         )}
       </div>

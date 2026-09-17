@@ -28,7 +28,6 @@ import {
 } from '@features/agent/thread-card/composer';
 import { AgentRolePickerController } from '@features/agent/thread-card/role/agent-role-picker-controller';
 import { ExternalAgentSettingsController } from '@features/agent/thread-card/settings/external-agent-settings-controller';
-import { CodexSettingsDialogController } from '@features/agent/thread-card/settings/codex-settings-dialog';
 import { NotebookAgentSettingsDialogController } from '@features/agent/thread-card/settings/notebook-agent-settings-dialog';
 import { AgentConversationSurfaceController } from '@features/agent/thread-card/surface/agent-conversation-surface-controller';
 import { createExternalAgentRuntimeHandle } from '@features/agent/services/external-agent-runtime-service';
@@ -161,7 +160,6 @@ export function AgentConversationDetail({
   const externalSettingsRef = useRef<ExternalAgentSettingsController | null>(null);
   const rolePickerRef = useRef<AgentRolePickerController | null>(null);
   const addMenuRef = useRef<ComposerAddMenuController | null>(null);
-  const codexSettingsDialogRef = useRef<CodexSettingsDialogController | null>(null);
   const notebookAgentSettingsDialogRef = useRef<NotebookAgentSettingsDialogController | null>(null);
   const surfaceRef = useRef<AgentConversationSurfaceController | null>(null);
   const draftRef = useRef<string | null>(null);
@@ -729,22 +727,19 @@ export function AgentConversationDetail({
       images: composerImagesController,
       t: (key) => tRef.current(key),
       isDestroyed: () => destroyedRef.current,
-      getAgentType: () => typeKeyRef.current,
-      openCodexSettings: () => {
-        const runtimeConfig = instanceRef.current?.runtimeConfig;
-        const notebookPath = runtimeConfig?.workspaceSnapshot?.cwd
-          ?? runtimeConfig?.cwd
-          ?? useMemoStore.getState().selectedNotebook?.path;
-        if (notebookPath) {
-          codexSettingsDialogRef.current ??= new CodexSettingsDialogController();
-          codexSettingsDialogRef.current.open(notebookPath);
-        }
-      },
       openNotebookAgentSettings: () => {
         const runtimeConfig = instanceRef.current?.runtimeConfig;
-        const notebookPath = runtimeConfig?.workspaceSnapshot?.cwd
-          ?? runtimeConfig?.cwd
-          ?? useMemoStore.getState().selectedNotebook?.path;
+        const snapshot = runtimeConfig?.workspaceSnapshot;
+        const notebookId = runtimeConfig?.notebookId
+          ?? snapshot?.notebookId
+          ?? instanceRef.current?.source.notebookId
+          ?? null;
+        const snapshotNotebookPath = snapshot?.notebookPath?.trim();
+        const notebookPath = snapshotNotebookPath
+          || (notebookId
+            ? useMemoStore.getState().notebooks.find((item) => item.id === notebookId)?.path
+            : undefined)
+          || useMemoStore.getState().selectedNotebook?.path;
         if (notebookPath) {
           notebookAgentSettingsDialogRef.current ??= new NotebookAgentSettingsDialogController();
           notebookAgentSettingsDialogRef.current.open(notebookPath);
@@ -786,8 +781,6 @@ export function AgentConversationDetail({
       rolePicker.dispose();
       addMenu.dispose();
       externalSettings.dispose();
-      codexSettingsDialogRef.current?.close();
-      codexSettingsDialogRef.current = null;
       notebookAgentSettingsDialogRef.current?.close();
       notebookAgentSettingsDialogRef.current = null;
       externalSettingsRef.current = null;

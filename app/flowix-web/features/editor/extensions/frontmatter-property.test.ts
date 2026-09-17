@@ -15,13 +15,51 @@ import {
   extractFrontmatter,
   formatFrontmatterPropertyValue,
   parseVisibleFrontmatter,
+  reorderVisibleFrontmatterProperty,
   replaceVisibleFrontmatterProperties,
   suggestFrontmatterRepair,
   updateVisibleFrontmatterProperty,
 } from '@features/document/properties/frontmatter-model';
 import { generatePropertyKey } from '@features/document/properties/property-key';
+import { resolvePropertyType } from '@features/document/properties/property-type';
 
 describe('frontmatter property helpers', () => {
+  it('resolves fixed, preset, and inferred property types from one source', () => {
+    expect(resolvePropertyType('name', ['Demo'])).toEqual({
+      kind: 'Text',
+      displayKind: 'text',
+    });
+    expect(resolvePropertyType('tags', 'alpha')).toEqual({
+      kind: 'MultiSelect',
+      displayKind: 'array',
+    });
+    expect(resolvePropertyType('status', 'todo')).toEqual({
+      kind: 'Select',
+      displayKind: 'text',
+    });
+    expect(resolvePropertyType('ref-url', 'https://example.com')).toEqual({
+      kind: 'URL',
+      displayKind: 'url',
+    });
+    expect(resolvePropertyType('languages', ['Rust'])).toEqual({
+      kind: 'List',
+      displayKind: 'list',
+    });
+    expect(resolvePropertyType('enabled', false)).toEqual({
+      kind: 'Select',
+      displayKind: 'boolean',
+    });
+  });
+
+  it('reorders visible properties while keeping the system key in place', () => {
+    const yaml = 'flowix_key: ra61em97\nfirst: one\nsecond: two\nthird: three';
+    const reordered = reorderVisibleFrontmatterProperty(yaml, 'first', 'third', 'after');
+    expect([...parseVisibleFrontmatter(reordered).properties].map(({ key }) => key))
+      .toEqual(['second', 'third', 'first']);
+    expect(reordered.indexOf('flowix_key: ra61em97'))
+      .toBeLessThan(reordered.indexOf('second: two'));
+  });
+
   it('consumes a legacy BOM displaced behind frontmatter', () => {
     const editor = new Editor({
       extensions: [StarterKit, Markdown, Frontmatter],
@@ -296,6 +334,10 @@ describe('frontmatter property helpers', () => {
     expect(host.querySelector('[data-property-key="name"]')).not.toBeNull();
     expect(host.querySelector('[data-property-key="description"]')).not.toBeNull();
     expect(host.querySelector('[data-property-key="flowix_favorited"]')).not.toBeNull();
+    expect(host.querySelector('[data-property-key="name"] .frontmatter-property__type-icon')
+      ?.classList.contains('frontmatter-property__type-icon--text')).toBe(true);
+    expect(host.querySelector('[data-property-key="tags"] .frontmatter-property__type-icon')
+      ?.classList.contains('frontmatter-property__type-icon--array')).toBe(true);
     expect(editor.getMarkdown()).toContain('flowix_colors: [blue]');
     expect(editor.getMarkdown()).toContain('tags: [work]');
     expect(editor.getMarkdown()).toContain('flowix_icon: smile');
@@ -318,7 +360,7 @@ describe('frontmatter property helpers', () => {
       const typeTrigger = popover?.querySelector<HTMLButtonElement>('.frontmatter-property__edit-type-trigger');
       expect(typeTrigger?.disabled).toBe(true);
       expect(typeTrigger?.querySelector('.frontmatter-property__edit-type-label')?.textContent)
-        .toBe(label);
+        .toBe(`${label}（预设属性不可修改）`);
       if (key === 'flowix_icon') {
         expect(popover?.querySelector('.frontmatter-property__edit-icon-chevron')).toBeNull();
         expect(popover?.querySelector('.frontmatter-property__edit-icon-box')).not.toBeNull();
@@ -331,6 +373,26 @@ describe('frontmatter property helpers', () => {
           .not.toBeNull();
       }
     });
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('keeps the name property text icon when its YAML value is a sequence', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nflowix_key: ra61em97\nname: [Demo]\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    const icon = host.querySelector('[data-property-key="name"] .frontmatter-property__type-icon');
+    expect(icon?.classList.contains('frontmatter-property__type-icon--text')).toBe(true);
+    expect(icon?.classList.contains('frontmatter-property__type-icon--array')).toBe(false);
 
     editor.destroy();
     host.remove();
@@ -575,15 +637,17 @@ describe('frontmatter property helpers', () => {
     expect(popover?.style.top).toBe('0px');
     expect(input?.value).toBe('Before');
     expect(typeTrigger?.querySelector('.frontmatter-property__edit-type-label')?.textContent)
-      .toBe('文本');
+      .toBe('文本（预设属性不可修改）');
     expect([...popover?.querySelectorAll<HTMLElement>(
       '.frontmatter-property__edit-type-option',
     ) ?? []].map((option) => option.textContent)).toEqual([
       '文本',
       '数字',
-      '标签',
       '日期',
+      '链接',
+      '图标',
       '单选',
+      '标签',
       '列表',
     ]);
     typeTrigger?.focus();
@@ -677,28 +741,8 @@ describe('frontmatter property helpers', () => {
     expect(input?.value).toBe('description');
     expect(popover?.querySelector('.frontmatter-property__edit-type-trigger')).toBeNull();
 
-    const keyTrigger = popover?.querySelector<HTMLButtonElement>(
-      '.frontmatter-property__edit-key-trigger',
-    );
-    const keyControl = popover?.querySelector('.frontmatter-property__edit-key-control');
-    expect(keyControl?.firstElementChild).toBe(keyTrigger);
-    expect(keyControl?.children[1]).toBe(input);
-    keyTrigger?.click();
-    const keyOptions = popover?.querySelectorAll<HTMLButtonElement>(
-      '.frontmatter-property__edit-key-option',
-    ) ?? [];
-    expect([...keyOptions].map((option) => option.textContent)).toEqual([
-      '名称',
-      '描述',
-      '标签',
-      '颜色',
-      '图标',
-    ]);
-    expect(keyOptions[0]?.dataset.value).toBe('name');
-    expect(keyOptions[3]?.dataset.value).toBe('flowix_colors');
-    expect(keyOptions[4]?.dataset.value).toBe('flowix_icon');
-    keyOptions[0]?.click();
-    expect(input?.value).toBe('name');
+    expect(popover?.querySelector('.frontmatter-property__edit-key-trigger')).toBeNull();
+    expect(popover?.querySelector('.frontmatter-property__edit-key-menu')).toBeNull();
 
     if (input) {
       input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
@@ -751,11 +795,18 @@ describe('frontmatter property helpers', () => {
     const menu = document.body.querySelector<HTMLElement>('.frontmatter-property__item-menu');
     expect(menu).not.toBeNull();
     expect([...menu?.querySelectorAll<HTMLButtonElement>('.frontmatter-property__item-menu-button') ?? []]
-      .map((button) => button.textContent)).toEqual(['上移', '下移', '删除属性']);
+      .map((button) => button.textContent)).toEqual(['预设', '上移', '下移', '删除属性']);
     expect(menu?.querySelector<HTMLButtonElement>('.frontmatter-property__item-menu-button')?.disabled)
-      .toBe(true);
+      .toBe(false);
 
-    menu?.querySelectorAll<HTMLButtonElement>('.frontmatter-property__item-menu-button')[1]?.click();
+    const presetButton = menu?.querySelector<HTMLButtonElement>('.frontmatter-property__preset-button');
+    presetButton?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    const presetMenu = menu?.querySelector<HTMLElement>('.frontmatter-property__preset-menu');
+    expect(presetMenu).not.toBeNull();
+    expect([...presetMenu?.querySelectorAll<HTMLButtonElement>('.frontmatter-property__edit-key-option') ?? []]
+      .map((option) => option.textContent)).toEqual(['名称', '描述', '标签', '颜色', '图标']);
+
+    menu?.querySelectorAll<HTMLButtonElement>('.frontmatter-property__item-menu-button')[2]?.click();
     expect([...host.querySelectorAll('.frontmatter-property__key')]
       .map((element) => element.textContent)).toEqual(['priority', 'status']);
     const movedMarkdown = editor.getMarkdown();
@@ -766,7 +817,7 @@ describe('frontmatter property helpers', () => {
       '[data-property-key="status"] .frontmatter-property__type-icon',
     )?.click();
     const movedMenu = document.body.querySelector<HTMLElement>('.frontmatter-property__item-menu');
-    expect(movedMenu?.querySelectorAll<HTMLButtonElement>('.frontmatter-property__item-menu-button')[1]?.disabled)
+    expect(movedMenu?.querySelectorAll<HTMLButtonElement>('.frontmatter-property__item-menu-button')[2]?.disabled)
       .toBe(true);
     movedMenu?.querySelector<HTMLButtonElement>('.frontmatter-property__item-menu-button:last-child')?.click();
 
@@ -775,6 +826,121 @@ describe('frontmatter property helpers', () => {
     expect(editor.getMarkdown()).toContain('priority: high');
     expect(editor.getMarkdown()).not.toContain('status: todo');
     expect(editor.getMarkdown()).toContain('Body');
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('applies a common preset from the property actions submenu', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nflowix_key: 8c7dxu0l\npriority: high\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    host.querySelector<HTMLElement>(
+      '[data-property-key="priority"] .frontmatter-property__type-icon',
+    )?.click();
+    const menu = document.body.querySelector<HTMLElement>('.frontmatter-property__item-menu');
+    const presetItem = menu?.querySelector<HTMLElement>('.frontmatter-property__preset-item');
+    presetItem?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    menu?.querySelector<HTMLButtonElement>(
+      '.frontmatter-property__preset-menu [data-value="name"]',
+    )?.click();
+
+    expect(host.querySelector('[data-property-key="name"]')).not.toBeNull();
+    expect(editor.getMarkdown()).toContain('name: high');
+    expect(editor.getMarkdown()).not.toContain('priority:');
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('does not opt into the browser native drag lifecycle', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nflowix_key: 8c7dxu0l\nstatus: todo\npriority: high\ncategory: work\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    const source = host.querySelector<HTMLElement>('[data-property-key="status"]');
+    const target = host.querySelector<HTMLElement>('[data-property-key="category"]');
+    expect(source?.draggable).toBe(false);
+    expect(source?.querySelector<HTMLElement>('.frontmatter-property__type-icon')?.draggable)
+      .toBe(false);
+    expect(target).not.toBeNull();
+
+    expect([...host.querySelectorAll('.frontmatter-property__key')]
+      .map((element) => element.textContent)).toEqual(['status', 'priority', 'category']);
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('reorders property rows from a pointer drag that starts on the type icon', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nflowix_key: 8c7dxu0l\nstatus: todo\npriority: high\ncategory: work\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    const source = host.querySelector<HTMLElement>('[data-property-key="status"]');
+    const sourceIcon = source?.querySelector<HTMLElement>('.frontmatter-property__type-icon');
+    const target = host.querySelector<HTMLElement>('[data-property-key="category"]');
+    expect(sourceIcon).not.toBeNull();
+    expect(target).not.toBeNull();
+
+    const dispatchPointerEvent = (targetElement: EventTarget, type: string, init: Record<string, number>) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.entries({ pointerId: 1, button: 0, clientX: 0, clientY: 0, ...init })
+        .forEach(([key, value]) => Object.defineProperty(event, key, { value }));
+      targetElement.dispatchEvent(event);
+    };
+
+    dispatchPointerEvent(sourceIcon as HTMLElement, 'pointerdown', { clientX: 0, clientY: 0 });
+    dispatchPointerEvent(window, 'pointermove', { clientX: 10, clientY: 10 });
+    expect(document.documentElement.classList.contains('frontmatter-property--dragging')).toBe(true);
+    const selectStart = new Event('selectstart', { bubbles: true, cancelable: true });
+    document.dispatchEvent(selectStart);
+    expect(selectStart.defaultPrevented).toBe(true);
+    expect(document.body.querySelector('.frontmatter-property__drag-preview')).not.toBeNull();
+    const placeholder = host.querySelector<HTMLElement>(
+      '.frontmatter-property__display--drag-placeholder',
+    );
+    expect(placeholder).not.toBeNull();
+    expect(placeholder?.getAttribute('aria-hidden')).toBe('true');
+    expect(placeholder?.previousElementSibling).toBe(target);
+    expect(source?.isConnected).toBe(false);
+    dispatchPointerEvent(window, 'pointermove', { clientX: 10, clientY: 10 });
+    expect(host.querySelector('.frontmatter-property__display--drag-placeholder')).toBe(placeholder);
+    dispatchPointerEvent(window, 'pointerup', { clientX: 10, clientY: 10 });
+    expect(host.querySelector('.frontmatter-property__display--drag-placeholder')).toBeNull();
+    expect(document.body.querySelector('.frontmatter-property__drag-preview')).toBeNull();
+    expect(document.documentElement.classList.contains('frontmatter-property--dragging')).toBe(false);
+
+    expect([...host.querySelectorAll('.frontmatter-property__key')]
+      .map((element) => element.textContent)).toEqual(['priority', 'category', 'status']);
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    host.querySelector<HTMLElement>(
+      '[data-property-key="status"] .frontmatter-property__type-icon',
+    )?.click();
+    expect(document.body.querySelector('.frontmatter-property__item-menu')).not.toBeNull();
 
     editor.destroy();
     host.remove();
@@ -987,7 +1153,7 @@ describe('frontmatter property helpers', () => {
     valueCell?.click();
     const popover = document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
     expect(popover?.querySelector('.frontmatter-property__edit-type-label')?.textContent)
-      .toBe('标签');
+      .toBe('标签（预设属性不可修改）');
     const input = popover?.querySelector<HTMLInputElement>('.frontmatter-property__edit-tags-input');
     expect(input).not.toBeNull();
     if (input) {

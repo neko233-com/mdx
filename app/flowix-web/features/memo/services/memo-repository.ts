@@ -35,6 +35,7 @@ export const memoRepository = {
 
 export const notebookRepository = {
   list: (): Promise<Notebook[]> => notebooks.getAll(),
+  getDefaultPath: (name: string) => notebooks.getDefaultPath(name),
   create: (name: string, path?: string, icon?: string | null) =>
     notebooks.create(name, path, icon),
   createFromCloud: (id: string, name: string, path: string, icon?: string | null) =>

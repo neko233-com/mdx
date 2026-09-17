@@ -16,6 +16,7 @@ import {
 import { ChevronLeft, ChevronRight, Globe, RotateCw, X } from 'lucide-react';
 import { LazyAgentConversationDetail } from '@features/agent/components/lazy-agent-conversation-detail';
 import { DocumentContainer } from '@features/document/components/document-container';
+import { MediaResourceView } from './media-resource-view';
 import { LazyPluginDocumentView } from '@features/plugin/public/surface-api';
 import { SurfaceSuspenseHost } from '@shared/ui/surface-suspense-host';
 import {
@@ -45,6 +46,14 @@ export interface BrowserDocumentSurface extends SurfaceBase {
   props: ComponentProps<typeof DocumentContainer>;
 }
 
+export interface BrowserMediaSurface extends SurfaceBase {
+  kind: 'media';
+  filePath: string;
+  notebookId: string;
+  notebookPath: string;
+  resourceKind: 'image' | 'video';
+}
+
 export interface BrowserFileBrowserSurface extends SurfaceBase, FileBrowserViewSurface {}
 
 export interface BrowserWebSurface extends SurfaceBase {
@@ -66,6 +75,7 @@ export interface BrowserAgentConversationSurface extends SurfaceBase {
 
 export type BrowserColumnSurface =
   | BrowserDocumentSurface
+  | BrowserMediaSurface
   | BrowserFileBrowserSurface
   | BrowserWebSurface
   | BrowserArtifactSurface
@@ -74,7 +84,7 @@ export type BrowserColumnSurface =
 export type BrowserColumnSurfaceKind = BrowserColumnSurface['kind'];
 
 /** Titlebar skin owned by the surface currently mounted in Browser Column. */
-export type BrowserColumnSurfaceChrome = 'document' | 'agent';
+export type BrowserColumnSurfaceChrome = 'document' | 'agent' | 'media';
 
 export interface BrowserColumnSurfaceDefinition {
   chrome: BrowserColumnSurfaceChrome;
@@ -323,6 +333,16 @@ function BrowserDocumentSurfaceView({ surface }: { surface: BrowserDocumentSurfa
   return <DocumentContainer {...surface.props} />;
 }
 
+function BrowserMediaSurfaceView({ surface }: { surface: BrowserMediaSurface }) {
+  return (
+    <MediaResourceView
+      filePath={surface.filePath}
+      notebookPath={surface.notebookPath}
+      resourceKind={surface.resourceKind}
+    />
+  );
+}
+
 function BrowserFileBrowserSurfaceView({ surface }: { surface: BrowserFileBrowserSurface }) {
   return <FileBrowserView surface={surface} />;
 }
@@ -363,6 +383,11 @@ export const browserColumnSurfaceRegistry = Object.freeze({
     chrome: 'document',
     capabilities: ['edit', 'search'],
     component: BrowserDocumentSurfaceView,
+  }),
+  media: defineSurface('media', {
+    chrome: 'media',
+    capabilities: ['fullscreen'],
+    component: BrowserMediaSurfaceView,
   }),
   'file-browser': defineSurface('file-browser', {
     chrome: 'document',
@@ -414,6 +439,15 @@ export function resolveBrowserColumnSurface(
           toolbarCollapsed,
           onToolbarCollapsedChange,
         },
+      };
+    case 'media':
+      return {
+        ...base,
+        kind: 'media',
+        filePath: tab.target.filePath,
+        notebookId: tab.target.notebookId,
+        notebookPath: tab.target.notebookPath,
+        resourceKind: tab.target.resourceKind,
       };
     case 'file-browser': {
       const target = tab.target;

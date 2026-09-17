@@ -29,6 +29,8 @@ import {
   Decoration,
   type DecorationSet,
   EditorView,
+  ViewPlugin,
+  type ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
 import {
@@ -127,6 +129,32 @@ function sourceHeaderDecoration(onMount: SourceHeaderMountHandler): DecorationSe
   ]);
 }
 
+/**
+ * Keep the active-line affordance separate from a real text selection. The
+ * built-in `highlightActiveLine` extension intentionally marks the line at
+ * every selection head, including non-empty ranges. That is useful for a
+ * generic code editor, but in the source memo it makes a selected range look
+ * like two simultaneous selection states. Expose the range state as a DOM
+ * attribute so the compiled CSS can suppress only the visual active-line
+ * layer without changing CodeMirror's selection or history state.
+ */
+const rangeSelectionState = ViewPlugin.fromClass(class {
+  constructor(view: EditorView) {
+    this.sync(view);
+  }
+
+  update(update: ViewUpdate) {
+    if (update.docChanged || update.selectionSet) this.sync(update.view);
+  }
+
+  sync(view: EditorView) {
+    view.dom.toggleAttribute(
+      'data-has-range-selection',
+      view.state.selection.ranges.some((range) => !range.empty),
+    );
+  }
+});
+
 const codeEditorTheme = EditorView.theme({
   '&': {
     height: '100%',
@@ -176,7 +204,7 @@ const codeEditorTheme = EditorView.theme({
     top: '-3px',
   },
   '.cm-activeLine, .cm-activeLineGutter': {
-    backgroundColor: 'color-mix(in oklch, var(--muted) 58%, transparent)',
+    backgroundColor: 'var(--code-editor-active-surface-bg, color-mix(in oklch, var(--muted) 58%, transparent))',
   },
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': {
     backgroundColor: 'color-mix(in oklch, var(--brand, var(--primary)) 26%, transparent)',
@@ -330,6 +358,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
         basicSetup,
         codeEditorTheme,
         sourceHeaderField,
+        ...(hasScrollHeader ? [rangeSelectionState] : []),
         ...(shikiLang
           ? [shikiHighlighting(shikiLang)]
           : [syntaxHighlighting(codeHighlighter)]),
@@ -413,13 +442,84 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
   useLayoutEffect(() => {
     const view = viewRef.current;
     const headerMount = scrollHeaderMount;
+    const editorMount = mountRef.current;
     if (!view || !headerMount || !hasScrollHeader) return;
 
+    const gutters = editorMount?.querySelector<HTMLElement>('.cm-gutters');
+    if (!gutters) return;
+    // The title is a block widget in `.cm-content`, while line numbers live
+    // in the sibling `.cm-gutters` branch. Keep the bridge as a real DOM
+    // layer in the gutter so it cannot be lost behind CodeMirror's gutter
+    // background or style-mod generated rules.
+    const gutterBackground = document.createElement('div');
+    gutterBackground.className = 'cm-source-header-gutter-background';
+    gutterBackground.setAttribute('aria-hidden', 'true');
+    gutters.appendChild(gutterBackground);
+
+    const syncHeaderHeight = () => {
+      const headerRect = headerMount.getBoundingClientRect();
+      const gutterRect = gutters.getBoundingClientRect();
+      const height = headerRect.height;
+      const top = headerRect.top - gutterRect.top;
+      if (height > 0 && Number.isFinite(top)) {
+        editorMount?.style.setProperty('--code-editor-source-header-top', `${top}px`);
+        editorMount?.style.setProperty('--code-editor-source-header-height', `${height}px`);
+      } else {
+        editorMount?.style.removeProperty('--code-editor-source-header-top');
+        editorMount?.style.removeProperty('--code-editor-source-header-height');
+      }
+    };
+
+    syncHeaderHeight();
     view.requestMeasure();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => view.requestMeasure());
+    if (typeof ResizeObserver === 'undefined') {
+      return () => {
+        gutterBackground.remove();
+        editorMount?.style.removeProperty('--code-editor-source-header-top');
+        editorMount?.style.removeProperty('--code-editor-source-header-height');
+      };
+    }
+    const observer = new ResizeObserver(() => {
+      syncHeaderHeight();
+      view.requestMeasure();
+    });
     observer.observe(headerMount);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      gutterBackground.remove();
+      editorMount?.style.removeProperty('--code-editor-source-header-top');
+      editorMount?.style.removeProperty('--code-editor-source-header-height');
+    };
+  }, [hasScrollHeader, scrollHeaderMount]);
+
+  // The title is a nested editing host inside a CodeMirror widget. Keep its
+  // focus state on the CodeMirror wrapper explicitly so title and gutter
+  // styling does not depend on a parent `:has()` selector matching through
+  // the widget boundary.
+  useLayoutEffect(() => {
+    const headerMount = scrollHeaderMount;
+    const editorMount = mountRef.current;
+    if (!headerMount || !editorMount || !hasScrollHeader) return;
+
+    const setHeaderFocused = (focused: boolean) => {
+      editorMount.toggleAttribute('data-source-header-focused', focused);
+    };
+    const handleFocusIn = () => setHeaderFocused(true);
+    const handleFocusOut = (event: FocusEvent) => {
+      const nextTarget = event.relatedTarget;
+      if (nextTarget instanceof Node && headerMount.contains(nextTarget)) return;
+      setHeaderFocused(false);
+    };
+
+    headerMount.addEventListener('focusin', handleFocusIn);
+    headerMount.addEventListener('focusout', handleFocusOut);
+    setHeaderFocused(headerMount.contains(document.activeElement));
+
+    return () => {
+      headerMount.removeEventListener('focusin', handleFocusIn);
+      headerMount.removeEventListener('focusout', handleFocusOut);
+      editorMount.removeAttribute('data-source-header-focused');
+    };
   }, [hasScrollHeader, scrollHeaderMount]);
 
   useEffect(() => {

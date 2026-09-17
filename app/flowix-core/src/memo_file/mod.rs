@@ -48,6 +48,7 @@ mod file_io;
 pub(crate) mod frontmatter;
 mod index_store;
 mod internal_migration;
+mod media_resource;
 mod migration;
 mod notebook;
 mod onboarding;
@@ -75,6 +76,7 @@ pub use frontmatter::{
 };
 pub use index_store::{MemoContentCommit, MemoContentRevision};
 pub use internal_migration::{NotebookInternalMigrationReport, NOTEBOOK_INTERNAL_MIGRATION_KEY};
+pub use media_resource::{media_kind_for_path, MediaResource, MediaResourceKind};
 pub use migration::{DataMigrationReport, NotebookMigrationReport, LATEST_DATA_MIGRATION_VERSION};
 pub use ops::{
     base_filename, filename_from_notebook_relative_path, is_ignored_notebook_relative_path,

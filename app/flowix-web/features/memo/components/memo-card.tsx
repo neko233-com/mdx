@@ -224,7 +224,7 @@ function MemoCardShell({
           className={cn(
             'group memo-card relative min-w-0 w-full cursor-pointer rounded-lg px-2 transition-all',
             'py-3',
-            isSelected && 'bg-[var(--accent)]',
+            isSelected && ['bg-[var(--accent)]', 'memo-card--selected'],
           )}
         >
           <div className="flex items-start gap-2">

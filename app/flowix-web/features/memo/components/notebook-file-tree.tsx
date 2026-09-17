@@ -54,6 +54,7 @@ const INDENT_PER_LEVEL = 20;
 const TREE_ROW_HEIGHT = 32;
 const TREE_ROW_GAP = 2;
 const TREE_ROW_SIZE = TREE_ROW_HEIGHT + TREE_ROW_GAP;
+const TREE_HEADER_HEIGHT = 24;
 const TREE_VIRTUAL_OVERSCAN = 10;
 const TREE_DRAG_SCROLL_EDGE = 40;
 const TREE_DRAG_SCROLL_MAX_STEP = 18;
@@ -129,6 +130,7 @@ interface NotebookFileTreeProps {
     targetDirectoryPath: string,
   ) => Promise<NotebookMoveResult>;
   onDeleteFolder?: (folderPath: string) => Promise<void>;
+  onDeleteResource?: (item: DocTreeItem) => Promise<void>;
 }
 
 interface PointerNoteDrag {
@@ -277,6 +279,7 @@ export function NotebookFileTree({
   onCreateNote,
   onMoveNote,
   onDeleteFolder,
+  onDeleteResource,
 }: NotebookFileTreeProps) {
   const { t } = useI18n();
   const [showScrollTopHint, setShowScrollTopHint] = useState(false);
@@ -369,7 +372,7 @@ export function NotebookFileTree({
     const index = renderRows.findIndex((row) => row.key === `draft:${draft.requestId}`);
     const scroller = treeScrollerRef.current;
     if (index < 0 || !scroller) return;
-    const rowTop = index * TREE_ROW_SIZE;
+    const rowTop = TREE_HEADER_HEIGHT + index * TREE_ROW_SIZE;
     const rowBottom = rowTop + TREE_ROW_HEIGHT;
     if (rowTop < scroller.scrollTop) scroller.scrollTop = rowTop;
     else if (rowBottom > scroller.scrollTop + scroller.clientHeight) {
@@ -381,7 +384,7 @@ export function NotebookFileTree({
     const index = renderRowIndexByPath.get(canonicalPath(activeFilePath));
     const scroller = treeScrollerRef.current;
     if (index === undefined || !scroller) return;
-    const rowTop = index * TREE_ROW_SIZE;
+    const rowTop = TREE_HEADER_HEIGHT + index * TREE_ROW_SIZE;
     const rowBottom = rowTop + TREE_ROW_HEIGHT;
     if (rowTop < scroller.scrollTop) scroller.scrollTop = rowTop;
     else if (rowBottom > scroller.scrollTop + scroller.clientHeight) {
@@ -449,7 +452,7 @@ export function NotebookFileTree({
     const index = renderRowIndexByPath.get(canonicalPath(path));
     const scroller = treeScrollerRef.current;
     if (index === undefined || !scroller) return;
-    const rowTop = index * TREE_ROW_SIZE;
+    const rowTop = TREE_HEADER_HEIGHT + index * TREE_ROW_SIZE;
     const rowBottom = rowTop + TREE_ROW_HEIGHT;
     if (rowTop < scroller.scrollTop) scroller.scrollTop = rowTop;
     else if (rowBottom > scroller.scrollTop + scroller.clientHeight) {
@@ -820,6 +823,9 @@ export function NotebookFileTree({
           onDeleteFolder={item.type === 'folder' && onDeleteFolder
             ? handleDeleteFolderPath
             : undefined}
+          onDeleteResource={item.type === 'document' && onDeleteResource
+            ? onDeleteResource
+            : undefined}
           onKeepAliveChange={handleRowKeepAliveChange}
           onPointerDown={handlePointerDownItem}
         />
@@ -1116,22 +1122,6 @@ export function NotebookFileTree({
       data-notebook-external-drop-target="true"
       className="relative flex h-full min-h-0 flex-col select-none bg-[var(--card)] text-[var(--foreground)]"
     >
-      <div className="flex h-6 shrink-0 items-center gap-1 px-3">
-        <h3 className="text-xs font-medium leading-6 text-[var(--muted-foreground)] opacity-90">
-          {t('memo.fileTree.sectionTitle')}
-        </h3>
-        {onCreateFolder && (
-          <button
-            type="button"
-            onClick={onCreateFolder}
-            aria-label={t('memo.fileTree.newFolder')}
-            title={t('memo.fileTree.newFolder')}
-            className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand)]"
-          >
-            <FolderPlus className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-        )}
-      </div>
       <div className="relative min-h-0 flex-1">
         <OverlayScrollbar
           className="h-full"
@@ -1142,6 +1132,22 @@ export function NotebookFileTree({
             setShowScrollTopHint(event.currentTarget.scrollTop > 0);
           }}
         >
+          <div className="flex h-6 shrink-0 items-center gap-1 px-3">
+            <h3 className="text-xs font-medium leading-6 text-[var(--muted-foreground)] opacity-90">
+              {t('memo.fileTree.sectionTitle')}
+            </h3>
+            {onCreateFolder && (
+              <button
+                type="button"
+                onClick={onCreateFolder}
+                aria-label={t('memo.fileTree.newFolder')}
+                title={t('memo.fileTree.newFolder')}
+                className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--brand)]"
+              >
+                <FolderPlus className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            )}
+          </div>
           <div
             ref={treeRootRef}
             role="tree"

@@ -5,6 +5,7 @@ import { Check, ChevronRight, Code2, Ellipsis, Loader2, Palette } from 'lucide-r
 import {
   LinkSimpleIcon,
   CopyIcon,
+  FolderOpenIcon,
   PushPinIcon,
   PushPinSlashIcon,
   FileMdIcon,
@@ -66,6 +67,8 @@ export const DOCUMENT_TITLEBAR_ICON_BUTTON_WIN =
 
 export interface DocumentTitlebarProps {
   reserveWindowsControls?: boolean;
+  /** Surface-specific titlebar skin for non-editable document-like views. */
+  surfaceChrome?: 'document' | 'media';
   document: {
     currentMemo: MemoItem | null;
     externalFilePath?: string | null;
@@ -101,6 +104,11 @@ export interface DocumentTitlebarProps {
     onColorsChange?: (next: MemoColor[]) => void;
     editorMode: DocumentEditorMode;
     onToggleEditorMode: () => void;
+  };
+  mediaActions?: {
+    onCopyLink: () => void | Promise<void>;
+    onRevealInFileManager: () => void;
+    onRequestDelete: () => void;
   };
 }
 
@@ -911,5 +919,60 @@ export function MemoActions({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+export function MediaActions({
+  iconButtonClass,
+  onCopyLink,
+  onRevealInFileManager,
+  onRequestDelete,
+}: {
+  iconButtonClass: string;
+  onCopyLink: () => void | Promise<void>;
+  onRevealInFileManager: () => void;
+  onRequestDelete: () => void;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Tooltip content={t('media.action.other')}>
+          <button
+            type="button"
+            aria-label={t('media.action.other')}
+            title={t('media.action.other')}
+            className={iconButtonClass}
+          >
+            <Ellipsis className="h-4 w-4" />
+          </button>
+        </Tooltip>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[200px] space-y-0.5 rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]">
+        <DropdownMenuItem
+          onClick={() => { void onCopyLink(); }}
+          className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
+        >
+          <LinkSimpleIcon className="mr-2 h-4 w-4" />
+          {t('document.action.copyLink')}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={onRevealInFileManager}
+          className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
+        >
+          <FolderOpenIcon className="mr-2 h-4 w-4" />
+          {t('memo.fileTree.reveal')}
+        </DropdownMenuItem>
+        <div role="separator" aria-hidden="true" className="mx-2 my-1 h-px bg-[var(--border-popup)] opacity-60" />
+        <DropdownMenuItem
+          onClick={onRequestDelete}
+          className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-transparent hover:text-[var(--destructive)]"
+        >
+          <TrashSimpleIcon className="mr-2 h-4 w-4" />
+          {t('media.fileTree.delete')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

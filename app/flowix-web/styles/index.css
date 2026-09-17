@@ -89,7 +89,8 @@
 	border-top-right-radius: var(--browser-column-tab-radius);
 }
 
-.agent-surface-titlebar .browser-column-tab-active {
+.agent-surface-titlebar .browser-column-tab-active,
+.media-surface-titlebar .browser-column-tab-active {
 	--browser-column-tab-surface: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
 }
 
@@ -414,8 +415,13 @@
 		 * 保持同步。由 useApplyFontSettings 运行时覆盖。 */
 		--app-font-family: var(--font-sans);
 		--app-font-size: 15px;
-		--app-line-height: 1.6;
+		--app-line-height: 1.8;
 		--app-document-width: 700px;
+		/* Shared overlay geometry: the collapsed list preview uses this value
+		 * to sit beside the note-navigation drawer instead of behind it. */
+		--flowix-note-navigation-drawer-width: min(240px, calc(100vw - 16px));
+		--flowix-note-navigation-motion-duration: 150ms;
+		--flowix-note-navigation-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
 
 		/* Agent 面板等宽字体 — 非颜色, 不参与主题 */
 		--agent-font: 'Anonymous Pro', 'PingFang SC', 'Microsoft YaHei', 'Inter', -apple-system, monospace;
@@ -545,54 +551,9 @@
 		animation: flowix-fade-out 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
 	}
 
-	/* 侧栏折叠态 hover 展开按钮 1s 后弹出的笔记列表浮层 ── 进场从左侧
-	   滑入 + 轻微 scale, 出场反向滑出。 全部用 keyframe + animation, 组件
-	   只挂/卸 className, 不参与动画状态机。 timing 函数沿用仓库统一的
-	   cubic-bezier(0.16, 1, 0.3, 1)。 进场 200ms, 出场 160ms。 */
-	@keyframes flowix-hover-preview-in {
-		from {
-			opacity: 0;
-			transform: translate3d(-12px, 0, 0) scale(0.98);
-		}
-		to {
-			opacity: 1;
-			transform: translate3d(0, 0, 0) scale(1);
-		}
-	}
-
-	@keyframes flowix-hover-preview-out {
-		from {
-			opacity: 1;
-			transform: translate3d(0, 0, 0) scale(1);
-		}
-		to {
-			opacity: 0;
-			transform: translate3d(-12px, 0, 0) scale(0.98);
-		}
-	}
-
-	.flowix-hover-preview-enter {
-		animation: flowix-hover-preview-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
-	}
-
-	.flowix-hover-preview-leave {
-		animation: flowix-hover-preview-out 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
-	}
-
-	/* The note-navigation drawer is a small, bounded overlay. Keep the blur on
-	 * that surface only: backdrop-filter is compositor-backed in the desktop
-	 * WebView, unlike a duplicated/blurred page layer. Browsers without it keep
-	 * the fully opaque card surface for legibility and zero filter cost. */
-	.flowix-note-navigation-drawer-surface {
-		background: var(--card);
-	}
-
-	@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-		.flowix-note-navigation-drawer-surface {
-			background: color-mix(in oklch, var(--card) 64%, transparent);
-			backdrop-filter: blur(8px);
-			-webkit-backdrop-filter: blur(8px);
-		}
+	.flowix-note-navigation-motion {
+		transition-duration: var(--flowix-note-navigation-motion-duration);
+		transition-timing-function: var(--flowix-note-navigation-motion-easing);
 	}
 
 	/* Popover presence lifecycle: mount invisibly, position before paint, then
@@ -962,11 +923,28 @@
   }
 }
 
-/* The list grows in stable batches to preserve dynamic-height card state.
- * Skip layout/paint work for retained cards that are far outside the viewport. */
+/* Dynamic-height memo virtualization owns row visibility and measurement.
+ * Do not add content-visibility here: browser-level intrinsic placeholders
+ * would create a second, independent height model for the same row. */
 .memo-card {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 88px;
+  overflow: hidden;
+  padding-left: calc(0.5rem + 2px);
+}
+
+.memo-card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: var(--brand);
+  content: '';
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.memo-card--selected::before {
+  opacity: 1;
 }
 
 .memo-card__running-agent-icon {

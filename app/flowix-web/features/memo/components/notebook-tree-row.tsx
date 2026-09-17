@@ -52,6 +52,7 @@ export const NotebookTreeRow = memo(function NotebookTreeRow({
   onCreateFolder,
   onRename,
   onDeleteFolder,
+  onDeleteResource,
   onPointerDown,
   onKeyDown,
   onFocus,
@@ -75,6 +76,7 @@ export const NotebookTreeRow = memo(function NotebookTreeRow({
   onRename: (item: DocTreeItem, nextName: string) => Promise<void> | void;
   onPointerDown: (item: DocTreeItem, event: ReactPointerEvent<HTMLDivElement>) => void;
   onDeleteFolder?: (path: string) => Promise<void>;
+  onDeleteResource?: (item: DocTreeItem) => Promise<void>;
   onKeyDown?: (path: string, event: ReactKeyboardEvent<HTMLDivElement>) => void;
   onFocus?: (path: string) => void;
   onKeepAliveChange?: (path: string, active: boolean) => void;
@@ -86,6 +88,7 @@ export const NotebookTreeRow = memo(function NotebookTreeRow({
   const actionParentPath = isFolder ? item.fullPath : parentPath;
   const resourceKind = isFolder ? null : item.resourceKind ?? resourceKindFromPath(item.name);
   const isNote = resourceKind === 'note';
+  const isMediaResource = resourceKind === 'image' || resourceKind === 'video';
   const [memo, setMemo] = useState<MemoItem | null>(null);
   // The memo is initially loaded by path because the file tree can contain
   // notes outside the currently loaded list query. Keep listening to the
@@ -116,9 +119,14 @@ export const NotebookTreeRow = memo(function NotebookTreeRow({
     isFolder || !isNote ? item.name : displayTitleFromFilename(item.name),
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmResourceDelete, setConfirmResourceDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const keepsVirtualRowAlive = contextMenuOpen || renaming || confirmDelete || deleting;
+  const keepsVirtualRowAlive = contextMenuOpen
+    || renaming
+    || confirmDelete
+    || confirmResourceDelete
+    || deleting;
   useEffect(() => {
     onKeepAliveChange?.(item.fullPath, keepsVirtualRowAlive);
     return () => {
@@ -175,6 +183,17 @@ export const NotebookTreeRow = memo(function NotebookTreeRow({
       setDeleting(false);
     }
   }, [deleting, item.fullPath, onDeleteFolder]);
+
+  const confirmMediaDelete = useCallback(async () => {
+    if (!onDeleteResource || deleting) return;
+    setDeleting(true);
+    try {
+      await onDeleteResource(item);
+      setConfirmResourceDelete(false);
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleting, item, onDeleteResource]);
 
   const submitRename = useCallback(() => {
     if (!renaming) return;
@@ -442,9 +461,19 @@ export const NotebookTreeRow = memo(function NotebookTreeRow({
         {!isFolder && (
           <div role="separator" aria-hidden="true" className={TREE_MENU_DIVIDER_CLASS} />
         )}
+        {!isFolder && isMediaResource && onDeleteResource && (
+          <ContextMenuItem
+            onClick={() => setConfirmResourceDelete(true)}
+            className={cn(TREE_MENU_ITEM_CLASS, 'hover:bg-transparent hover:text-[var(--destructive)]')}
+          >
+            <TrashSimpleIcon className="mr-2 h-4 w-4" />
+            {t('media.fileTree.delete')}
+          </ContextMenuItem>
+        )}
         {!isFolder && isNote && displayedMemo && (
           <MemoCardActions
             memo={displayedMemo}
+            filePath={item.fullPath}
             onOpenInSplit={onOpenInNewTab
               ? () => onOpenInNewTab(item.fullPath)
               : undefined}
@@ -472,6 +501,36 @@ export const NotebookTreeRow = memo(function NotebookTreeRow({
               {t('dialog.cancel')}
             </button>
             <button type="button" disabled={deleting} onClick={() => void confirmFolderDelete()} className="h-8 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 text-sm text-[var(--foreground)] hover:border-[var(--destructive)] hover:bg-[var(--destructive)] hover:text-white disabled:opacity-50">
+              {t('dialog.delete')}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={confirmResourceDelete} onOpenChange={(open) => {
+        if (!open && !deleting) setConfirmResourceDelete(false);
+      }}>
+        <DialogContent className="rounded-xl border border-[var(--border-popup)] bg-[var(--card)] shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]">
+          <DialogHeader>
+            <DialogTitle>{t('media.fileTree.deleteTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('media.fileTree.deleteDescription', { name: item.name })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => setConfirmResourceDelete(false)}
+              className="h-8 rounded-lg px-3 text-sm hover:bg-[var(--muted)]"
+            >
+              {t('dialog.cancel')}
+            </button>
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => void confirmMediaDelete()}
+              className="h-8 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 text-sm text-[var(--foreground)] hover:border-[var(--destructive)] hover:bg-[var(--destructive)] hover:text-white disabled:opacity-50"
+            >
               {t('dialog.delete')}
             </button>
           </div>

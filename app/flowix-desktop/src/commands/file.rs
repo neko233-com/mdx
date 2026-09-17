@@ -9,11 +9,11 @@ use tauri::{State, WebviewWindow};
 
 use crate::config::path_is_inside;
 use crate::lock_utils::read_lock;
-use flowix_core::memo_file::{notebook_path_from_relative, MemoColor};
+use flowix_core::memo_file::{media_kind_for_path, notebook_path_from_relative, MemoColor};
 
 use super::helpers::{
     can_access_document_path, can_access_scoped_file, is_agent_access_folder,
-    is_registered_notebook_path, start_security_bookmark_access,
+    is_internal_notebook_path, is_registered_notebook_path, start_security_bookmark_access,
 };
 use crate::app::state::AppState;
 
@@ -119,19 +119,57 @@ fn resource_kind_for_path(path: &Path) -> Option<DocTreeResourceKind> {
     }
     if matches!(
         extension.as_str(),
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "avif" | "ico"
-            | "tif" | "tiff" | "heic"
+        "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "webp"
+            | "bmp"
+            | "svg"
+            | "avif"
+            | "ico"
+            | "tif"
+            | "tiff"
+            | "heic"
     ) {
         return Some(DocTreeResourceKind::Image);
     }
     if matches!(
         extension.as_str(),
-        "3gp" | "avi" | "flv" | "m2ts" | "m4v" | "mkv" | "mov" | "mp4" | "mpeg"
-            | "mpg" | "mts" | "webm" | "wmv"
+        "3gp"
+            | "avi"
+            | "flv"
+            | "m2ts"
+            | "m4v"
+            | "mkv"
+            | "mov"
+            | "mp4"
+            | "mpeg"
+            | "mpg"
+            | "mts"
+            | "webm"
+            | "wmv"
     ) {
         return Some(DocTreeResourceKind::Video);
     }
     Some(DocTreeResourceKind::Other)
+}
+
+/// Hide legacy media-property YAML files from the notebook tree. New media
+/// properties are stored in `.flowix/notebook.db`; this keeps old files from
+/// becoming visible after upgrading.
+fn is_media_properties_sidecar(path: &Path) -> bool {
+    let is_yaml = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("yaml"));
+    if !is_yaml {
+        return false;
+    }
+    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+        return false;
+    };
+    media_kind_for_path(Path::new(stem)).is_some()
 }
 
 fn canonical_path(path: &Path) -> std::path::PathBuf {
@@ -217,6 +255,16 @@ fn read_dir_single_level(
                 continue;
             }
             let name = entry.file_name().to_string_lossy().to_string();
+
+            // .flowix is application-owned notebook data. It stays hidden
+            // even when the user opts into hidden directories.
+            if name == ".flowix" {
+                continue;
+            }
+
+            if is_media_properties_sidecar(&path) {
+                continue;
+            }
 
             // AGENTS.md is project-local Agent configuration, not a note or
             // a user-facing file-tree item. It remains on disk for native
@@ -304,7 +352,10 @@ pub fn get_file_tree(
 ) -> Option<Vec<DocTreeItem>> {
     let path = Path::new(&space_path);
     start_security_bookmark_access(&state, path);
-    if !path.exists() || !is_browsable_scope(path, &state) {
+    if !path.exists()
+        || is_internal_notebook_path(path, &state)
+        || !is_browsable_scope(path, &state)
+    {
         return None;
     }
     let memo_metadata = memo_tree_metadata_for_directory(path, &state);
@@ -323,7 +374,10 @@ pub fn get_dir_children(
 ) -> Vec<DocTreeItem> {
     let path = Path::new(&dir_path);
     start_security_bookmark_access(&state, path);
-    if !path.exists() || !is_browsable_scope(path, &state) {
+    if !path.exists()
+        || is_internal_notebook_path(path, &state)
+        || !is_browsable_scope(path, &state)
+    {
         return vec![];
     }
     let memo_metadata = memo_tree_metadata_for_directory(path, &state);
@@ -338,7 +392,8 @@ pub fn get_dir_children(
 /// folder entry), 两者都要求 path 本身落在作用域内 (子目录随
 /// `path_is_inside` 一并放行)。
 fn is_browsable_scope(path: &Path, state: &State<AppState>) -> bool {
-    is_registered_notebook_path(path, state) || is_agent_access_folder(path, state)
+    !is_internal_notebook_path(path, state)
+        && (is_registered_notebook_path(path, state) || is_agent_access_folder(path, state))
 }
 
 #[tauri::command]
@@ -430,7 +485,11 @@ pub fn delete_folder(folder_path: String, space_path: String, state: State<AppSt
     // Never allow the notebook root itself to be removed. The folder command
     // is intentionally recursive because a notebook folder may contain notes
     // and nested folders.
-    if !path_is_inside(folder, scope) || folder == scope || !is_browsable_scope(scope, &state) {
+    if !path_is_inside(folder, scope)
+        || folder == scope
+        || is_internal_notebook_path(folder, &state)
+        || !is_browsable_scope(scope, &state)
+    {
         eprintln!(
             "[delete_folder] refused out-of-scope or notebook-root path: {}",
             folder_path
@@ -596,11 +655,7 @@ pub async fn import_file(
     }
     if !matches!(
         resource_kind_for_path(source),
-        Some(
-            DocTreeResourceKind::Note
-                | DocTreeResourceKind::Image
-                | DocTreeResourceKind::Video
-        )
+        Some(DocTreeResourceKind::Note | DocTreeResourceKind::Image | DocTreeResourceKind::Video)
     ) {
         return Err("UNSUPPORTED_IMPORT_FILE".to_string());
     }
@@ -663,6 +718,8 @@ pub fn rename_folder(
     if source == scope
         || !path_is_inside(source, scope)
         || !path_is_inside(&target, scope)
+        || is_internal_notebook_path(source, &state)
+        || is_internal_notebook_path(&target, &state)
         || !is_browsable_scope(scope, &state)
     {
         return Err("FILE_PERMISSION_DENIED".to_string());
@@ -695,6 +752,7 @@ pub fn create_folder(
     let target_path = Path::new(&space_path).join(&name);
     if !is_browsable_scope(Path::new(&space_path), &state)
         || !path_is_inside(&target_path, Path::new(&space_path))
+        || is_internal_notebook_path(&target_path, &state)
     {
         eprintln!(
             "[create_folder] refused out-of-scope path: {}",
@@ -737,6 +795,7 @@ pub fn create_document(
     let target_path = Path::new(&space_path).join(&file_name);
     if !is_browsable_scope(Path::new(&space_path), &state)
         || !path_is_inside(&target_path, Path::new(&space_path))
+        || is_internal_notebook_path(&target_path, &state)
     {
         eprintln!(
             "[create_document] refused out-of-scope path: {}",
@@ -773,15 +832,37 @@ mod tests {
     fn directory_listing_preserves_regular_files_and_folders() {
         let directory = tempfile::tempdir().unwrap();
         fs::write(directory.path().join("note.md"), "body").unwrap();
+        fs::write(directory.path().join("photo.png.yaml"), "title: Reference").unwrap();
         fs::write(directory.path().join("AGENTS.md"), "agent rules").unwrap();
         fs::create_dir(directory.path().join("folder")).unwrap();
         fs::create_dir(directory.path().join(".flowix")).unwrap();
         fs::write(directory.path().join(".hidden.md"), "hidden").unwrap();
         let items = read_dir_single_level(directory.path(), None, false);
         assert_eq!(items.len(), 2);
+        assert!(items.iter().all(|item| item.name != "photo.png.yaml"));
         assert!(items.iter().all(|item| item.name != "AGENTS.md"));
         assert_eq!(items[0].name, "folder");
         assert_eq!(items[1].name, "note.md");
+
+        let hidden_items = read_dir_single_level(directory.path(), None, true);
+        assert!(hidden_items.iter().all(|item| item.name != ".flowix"));
+    }
+
+    #[test]
+    fn only_media_property_sidecars_are_hidden_from_directory_listing() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("photo.png.yaml"), "title: Reference").unwrap();
+        fs::write(directory.path().join("video.mp4.yml"), "kind: demo").unwrap();
+        fs::write(directory.path().join("config.yaml"), "enabled: true").unwrap();
+
+        let items = read_dir_single_level(directory.path(), None, false);
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["config.yaml", "video.mp4.yml"]
+        );
     }
 
     #[test]

@@ -7,8 +7,10 @@ import { getYOffset } from '@features/editor/components/drag-context-menu/style'
  * current selection? Pure function of editor state + DOM rects.
  *
  * The X axis is fixed (18px from the proseMirror container's left edge).
- * The Y axis follows the visible block ancestor's top, plus a per-type
- * Y offset (see ./style.ts).
+ * For headings, the Y axis follows ProseMirror's first text-line coordinate;
+ * this is important because heading spacing is implemented as padding and is
+ * therefore part of the element's border box. Other blocks retain the
+ * visible-block-top plus per-type offset fallback (see ./style.ts).
  */
 
 export interface HandlePosition {
@@ -69,12 +71,13 @@ export function computeHandlePosition(
   // In particular, subtracting ProseMirror's top loses the height of any
   // non-ProseMirror header (the memo title) and shifts every handle upward.
   const x = nodeContentX(proseMirrorRect.left, contentRect.left, editorContent.scrollLeft)
-  const y = nodeContentY(
-    nodeRect.top,
-    contentRect.top,
-    editorContent.scrollTop,
-    getYOffset(info, fontSize, lineHeight),
-  )
+  const y = headingContentY(view, info, contentRect.top, editorContent.scrollTop) ??
+    nodeContentY(
+      nodeRect.top,
+      contentRect.top,
+      editorContent.scrollTop,
+      getYOffset(info, fontSize, lineHeight),
+    )
 
   return { visible: true, x, y, blockInfo: info }
 }
@@ -94,6 +97,34 @@ export function nodeContentY(
   visualOffset: number,
 ): number {
   return nodeTop - scrollContainerTop + scrollTop + visualOffset
+}
+
+/**
+ * Resolve a heading's first rendered text-line top in the same content
+ * coordinate system as the absolutely-positioned handle.
+ *
+ * `EditorView.coordsAtPos` includes the browser's actual heading padding,
+ * font metrics and line-height. Keeping this measurement in the DOM/PM
+ * layout layer avoids duplicating the H1–H6 CSS values in TypeScript. Empty
+ * headings still have a valid position (`info.pos + 1`), while malformed or
+ * stale selections are handled by returning null and using the normal
+ * block-top fallback.
+ */
+export function headingContentY(
+  view: Editor['view'],
+  info: CurrentBlockInfo,
+  scrollContainerTop: number,
+  scrollTop: number,
+): number | null {
+  if (info.typeName !== 'heading') return null
+
+  try {
+    const textCoords = view.coordsAtPos(info.pos + 1)
+    return textCoords.top - scrollContainerTop + scrollTop
+  } catch {
+    // The view can be destroyed between selectionUpdate and the RAF callback.
+    return null
+  }
 }
 
 function getVisibleBlockElement(info: CurrentBlockInfo): HTMLElement | null {

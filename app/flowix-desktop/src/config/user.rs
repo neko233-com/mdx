@@ -40,12 +40,6 @@ pub struct PersonalizeConfig {
     pub preferred_language: String,
     #[serde(default)]
     pub selected_tags: Vec<String>,
-    #[serde(default = "default_show_conversation_entry")]
-    pub show_conversation_entry: bool,
-}
-
-fn default_show_conversation_entry() -> bool {
-    true
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -166,8 +160,7 @@ pub struct PreferenceFile {
     pub format: FormatConfig,
     #[serde(default)]
     pub theme: Theme,
-    /// UI display language. Separate from `personalize.preferred_language`,
-    /// which only guides AI replies.
+    /// UI display language.
     #[serde(default)]
     pub language: String,
     /// Installation region detected by the frontend on first launch.

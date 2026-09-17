@@ -38,6 +38,12 @@ function npmRun(script) {
 }
 
 npmRun('cli:build:dev')
-npmRun('dsh:build:dev')
+// The desktop app can start without a local DSH source build. Keep the
+// heavyweight upstream checkout opt-in for contributors working on DSH itself.
+if (process.env.FLOWIX_BUILD_DSH === '1') {
+  npmRun('dsh:build:dev')
+} else {
+  console.log('skipping local DSH build (set FLOWIX_BUILD_DSH=1 to enable)')
+}
 
 run(process.execPath, [tauriEntrypoint, 'dev', '--config', config])

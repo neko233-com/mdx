@@ -19,6 +19,13 @@ export type BrowserColumnTarget =
       notebookPath: string;
       filePath: string;
     }
+  | {
+      kind: 'media';
+      filePath: string;
+      notebookId: string;
+      notebookPath: string;
+      resourceKind: 'image' | 'video';
+    }
   | FileBrowserTarget
   | {
       kind: 'web';
@@ -107,6 +114,7 @@ export const BROWSER_COLUMN_FILE_TREE_MAX_WIDTH = 420;
 export function browserColumnTargetKey(target: BrowserColumnTarget): string | null {
   switch (target.kind) {
     case 'memo': return contentIdentityKey({ kind: 'memo', memoId: target.memoId });
+    case 'media': return contentIdentityKey({ kind: 'media', path: target.filePath });
     case 'file-browser': return target.activeFilePath
       ? contentIdentityKey({ kind: 'external', path: target.activeFilePath })
       : target.folderPath ? `file-browser:${canonicalPath(target.folderPath)}` : null;
@@ -240,6 +248,19 @@ function parseBrowserColumnTarget(value: unknown): BrowserColumnTarget | null {
             notebookId: value.notebookId,
             notebookPath: value.notebookPath,
             filePath: value.filePath,
+          }
+        : null;
+    case 'media':
+      return nonEmptyString(value.filePath)
+        && typeof value.notebookId === 'string'
+        && nonEmptyString(value.notebookPath)
+        && (value.resourceKind === 'image' || value.resourceKind === 'video')
+        ? {
+            kind: 'media',
+            filePath: value.filePath,
+            notebookId: value.notebookId,
+            notebookPath: value.notebookPath,
+            resourceKind: value.resourceKind,
           }
         : null;
     case 'file':

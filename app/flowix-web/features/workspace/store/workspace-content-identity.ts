@@ -10,6 +10,7 @@ import { canonicalPath } from '@/lib/path';
 export type ContentIdentity =
   | { kind: 'memo'; memoId: string }
   | { kind: 'artifact'; pointerMemoId: string }
+  | { kind: 'media'; path: string }
   | { kind: 'external'; path: string }
   | { kind: 'file-browser'; folderPath: string }
   | { kind: 'web'; url: string }
@@ -36,6 +37,10 @@ export function contentIdentityKey(
     case 'artifact': {
       const pointerMemoId = identity.pointerMemoId.trim();
       return pointerMemoId ? `artifact:${pointerMemoId}` : null;
+    }
+    case 'media': {
+      const path = identity.path.trim();
+      return path ? `media:${canonicalPath(path)}` : null;
     }
     case 'external': {
       const path = identity.path.trim();

@@ -44,10 +44,6 @@ export function useAgentVisibilityPreferences() {
   };
 }
 
-export function useMemoNavigationPreferences() {
-  return useUserSettingsStore((state) => state.settings.personalize.showConversationEntry);
-}
-
 /** Visibility preference consumed by the notebook file-tree runtime. */
 export function useShowHiddenNotebookFiles() {
   return useUserSettingsStore((state) => state.settings.showHiddenNotebookFiles);

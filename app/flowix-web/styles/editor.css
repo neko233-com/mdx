@@ -86,7 +86,7 @@
   outline: none;
   font-family: var(--app-font-family, var(--font-sans));
   font-size: var(--app-font-size, 15px);
-  line-height: var(--app-line-height, 1.6);
+  line-height: var(--app-line-height, 1.8);
   color: var(--document-foreground);
   background: transparent !important;
   caret-color: var(--brand);
@@ -109,8 +109,8 @@
   outline: none;
 }
 
-.markdown-editor .ProseMirror:not(.agent-thread-card__composer-editor) > *:not(.agent-thread-card, .frontmatter-property-node):first-of-type {
-  margin-top: 0.5rem;
+.markdown-editor .ProseMirror:not(.agent-thread-card__composer-editor) > :nth-child(1 of :not(.agent-thread-card, .frontmatter-property-node)) {
+  margin-top: 0;
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) h1:where(:not(.agent-thread-card__message, .agent-thread-card__message *)),
@@ -119,7 +119,9 @@
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) h4:where(:not(.agent-thread-card__message, .agent-thread-card__message *)),
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) h5:where(:not(.agent-thread-card__message, .agent-thread-card__message *)),
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) h6:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
-  margin: 1.5rem 0 0.5rem 0;
+  margin: 0;
+  padding-top: 1.5rem;
+  padding-bottom: 0.5rem;
   font-weight: 600;
   line-height: 1.3;
   white-space: pre-wrap;
@@ -127,40 +129,50 @@
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) h1:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   font-size: calc(1.9rem * var(--editor-scale));
+  padding-top: 1rem;
   padding-bottom: calc(0.3rem * var(--editor-scale));
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) h2:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
-  font-size: calc(1.4rem * var(--editor-scale));
+  font-size: calc(1.5rem * var(--editor-scale));
+  padding-top: 0.6rem;
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) h3:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
-  font-size: calc(1.15rem * var(--editor-scale));
+  font-size: calc(1.2rem * var(--editor-scale));
+  padding-top: 0.4rem;
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) h4:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   font-size: calc(1.05rem * var(--editor-scale));
 }
 
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) h4:where(:not(.agent-thread-card__message, .agent-thread-card__message *)),
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) h5:where(:not(.agent-thread-card__message, .agent-thread-card__message *)),
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) h6:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
+  padding-top: 0.3rem;
+}
+
 /* 行高相关公式统一走 var(--app-font-size) × var(--app-line-height):
  *  - 用 1rem 是错的 — 那是根 html 字号 (16px), 跟 --app-font-size (15px) 脱节,
- *    用户在 Preferences 改字号时 p 的下边距 / 空 p 的 min-height 不会跟着缩放。
- *  - 三处共享同一基线 → 空 p / 非空 p / 单 item 列表行盒等高 (24px),
- *    下边距也等宽 (12px), 互相对齐。 */
+ *    用户在 Preferences 改字号时 p 的下填充 / 空 p 的 min-height 不会跟着缩放。
+ *  - 空 p / 非空 p 共享同一行高基线 (27px),
+ *    段落下填充为行高的 0.25 倍 (6.75px)。 */
 
-.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
-  /* 半行 box, 作为块间节奏 */
-  margin: 0 0 calc(var(--app-font-size, 15px) * var(--app-line-height, 1.6) * 0.5) 0;
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
+  /* 0.25 行 box, 作为块间节奏 */
+  margin: 0;
+  padding-bottom: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.25);
   white-space: pre-wrap;
 }
 
-.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):empty,
-.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):has(> br.ProseMirror-trailingBreak:only-child) {
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):empty,
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):has(> br.ProseMirror-trailingBreak:only-child) {
   /* 1 行 box, 与非空 <p> 等高 */
-  min-height: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.6));
+  min-height: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8));
 }
 
-.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):empty::before {
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):empty::before {
   content: "\00a0";
 }
 
@@ -198,12 +210,12 @@
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) code {
-  border: 1px solid color-mix(in oklch, var(--border) 90%, transparent);
+  border: 1px solid var(--border);
   border-radius: 0.4rem;
   padding: 0rem 0.3rem;
   font-family: inherit;
   font-size: inherit;
-  color: color-mix(in oklch, var(--foreground) 80%, transparent);
+  color: var(--foreground);
 }
 
 /* Agent Thread Card messages are nested DOM under .tiptap. Their Markdown
@@ -216,13 +228,14 @@
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   padding: 0.4rem 0.8rem 1.2rem;
-  margin: 1rem 0;
+  padding-top: 0;
+  margin: 0 0 calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.25);
   font-family: inherit;
   font-size: inherit;
   white-space: pre-wrap;
   word-break: break-word;
   overflow-x: visible;
-  line-height: var(--app-line-height, 1.6);
+  line-height: var(--app-line-height, 1.8);
 }
 
 .markdown-editor
@@ -236,34 +249,33 @@
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) blockquote:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   border-left: 0.1875rem solid #ddd;
-  margin: 1rem 0;
-  padding-left: 1rem;
+  margin: 0.4rem 0 0.8rem;
+  padding: 0 0 0 1rem;
   color: #666;
   font-style: italic;
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) ul:where(:not(.agent-thread-card__message, .agent-thread-card__message *)),
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) ol:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
-  margin: 0.5rem 0;
-  padding-left: 1.5rem;
+  margin: 0;
+  padding: 0 0 calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.25) 1.5rem;
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) li:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
-  margin: 0.25rem 0;
-  line-height: var(--app-line-height, 1.6);
+  margin: 0;
+  padding: 0;
+  line-height: var(--app-line-height, 1.8);
 }
 
-/* 单 item 列表: 收掉 ul/ol + li 的多余 margin, 与单行 <p> 等高 (36px)。
- *  ul/li margin 在 ul 无 padding/border 时穿过父级合并, 单 item 场景下
- *  合并为 8 + 24 + 8 = 40px, 比 <p> 的 0 + 24 + 12 = 36px 高 4px,
- *  上下不对称 (上 +8 / 下 -4) → 视觉上"下面内容向上偏移"。
+/* 单 item 列表: 收掉 ul/ol + li 的多余 padding, 与单行 <p> 等高。
  *  多 item 列表不受影响, 仍保留原本的项间/段间节奏。
  *  仅作用于 .tiptap 直接子列表 — 嵌套在 <li> 内的二级及更深列表维持
  *  正常的 0.5rem / 0.25rem 节奏, 不被压缩。 */
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > ul:has(> li:only-child),
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > ol:has(> li:only-child) {
-  margin-top: 0;
-  margin-bottom: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.6) * 0.5);
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.25);
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > ul > li:only-child,
@@ -274,10 +286,12 @@
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) table td p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)),
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) table th p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   margin-bottom: 0;
+  padding-bottom: 0;
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) li p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   margin: 0;
+  padding-bottom: 0;
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) ul:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
@@ -590,7 +604,8 @@
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) li > p > img:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   border-radius: 8px;
   border: 1px solid var(--border);
-  margin-bottom: 1rem;
+  margin-bottom: 0;
+  padding-bottom: 1rem;
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > img.error:where(:not(.agent-thread-card__message, .agent-thread-card__message *)),
@@ -613,7 +628,8 @@
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) hr:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   border: none;
   border-top: 0.0625rem solid var(--border);
-  margin: 1rem 0 2rem 0;
+  margin: 0.4rem 0 0.8rem 0;
+  padding: 0;
   /* 让 .is-block-selected / .ProseMirror-selectednode 切到 brand 时
    * 平滑过渡, 与其他块的高亮入场节奏一致 (120ms)。 */
   transition: border-top-color 120ms ease-out;
@@ -674,8 +690,10 @@
 
 .markdown-editor .math-block-node {
   position: relative;
-  margin: 0.85rem 0;
+  margin: 0;
   padding: 0.65rem 0.75rem;
+  padding-top: 0;
+  padding-bottom: 0.55rem;
   border-radius: 8px;
   cursor: text;
   background: transparent;
@@ -683,7 +701,7 @@
 }
 
 .markdown-editor .math-block-node.is-active {
-  background: color-mix(in oklch, var(--brand) 7%, transparent);
+  background: var(--editor-block-bg);
 }
 
 .markdown-editor .math-block-display {
@@ -709,20 +727,22 @@
   left: 50%;
   top: calc(100% + 0.42rem);
   z-index: 30;
-  width: min(34rem, calc(100vw - 3rem));
+  width: 90%;
+  max-width: calc(100vw - 3rem);
   transform: translateX(-50%);
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--popover);
   color: var(--popover-foreground);
-  box-shadow: 0 10px 24px color-mix(in oklch, var(--foreground) 14%, transparent);
+  box-shadow: 0 5px 12px color-mix(in oklch, var(--foreground) 7%, transparent);
   padding: 0.55rem;
   animation: editor-block-input-popup-in 0.14s ease-out;
   transform-origin: top center;
 }
 
 .markdown-editor .math-block-hint {
-  margin-bottom: 0.35rem;
+  margin: 0;
+  padding-bottom: 0.35rem;
   font-size: 0.72rem;
   line-height: 1.2;
   color: var(--muted-foreground);
@@ -746,7 +766,8 @@
 
 .markdown-editor .web-card-node {
   position: relative;
-  margin: 0.55rem 0;
+  margin: 0;
+  padding: 0 0 0.55rem;
   cursor: text;
 }
 
@@ -768,7 +789,7 @@
 }
 
 .markdown-editor .web-card-node:not(.has-url) .web-card::before {
-  content: "网页";
+  content: "点击输入网址";
   color: var(--muted-foreground);
   font-size: 0.84rem;
   opacity: 0.72;
@@ -782,7 +803,7 @@
 
 .markdown-editor .web-card-node.is-active .web-card {
   border-color: var(--border);
-  background: color-mix(in oklch, var(--brand) 6%, transparent);
+  background: var(--editor-block-bg);
 }
 
 .markdown-editor .web-card-content {
@@ -845,7 +866,8 @@
   left: 50%;
   top: calc(100% + 0.42rem);
   z-index: 30;
-  width: min(28rem, calc(100vw - 3rem));
+  width: 90%;
+  max-width: calc(100vw - 3rem);
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -854,14 +876,10 @@
   border: 1px solid var(--border);
   background: var(--popover);
   color: var(--popover-foreground);
-  box-shadow: 0 10px 24px color-mix(in oklch, var(--foreground) 14%, transparent);
+  box-shadow: 0 5px 12px color-mix(in oklch, var(--foreground) 7%, transparent);
   padding: 0.45rem 0.55rem;
   animation: editor-block-input-popup-in 0.14s ease-out;
   transform-origin: top center;
-}
-
-.markdown-editor .web-card-editor:focus-within {
-  border-color: color-mix(in oklch, var(--brand) 45%, var(--border));
 }
 
 .markdown-editor .web-card-input {

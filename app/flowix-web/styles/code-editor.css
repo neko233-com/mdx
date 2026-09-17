@@ -41,6 +41,8 @@
 .code-editor {
 	--code-editor-font-size: 13px;
 	--code-editor-line-height: 1.65;
+	--code-editor-active-surface-bg: color-mix(in oklch, var(--muted, #f3f4f6) 58%, transparent);
+	--code-editor-source-header-height: 54px;
 	--code-editor-line-padding-left: 10px;
 	--code-editor-line-padding-right: 20px;
 	--code-editor-content-padding-top: 14px;
@@ -67,6 +69,16 @@
 	/* Keep the former separator-height footprint while reducing the space
 	 * below the title to a fixed rem-based spacing. */
 	padding-bottom: calc(0.1rem + 0.0625rem);
+}
+
+/* The source title is a separate editing host inside the CodeMirror widget.
+ * Put the active surface on the widget's full-width header rather than on the
+ * text-sized title row. This keeps the title aligned with a full `.cm-line`
+ * background while leaving the actual text selection on the title to the
+ * shared brand-colored `::selection` rule. */
+.code-editor[data-source-header-focused] .cm-source-header {
+	background-color: var(--code-editor-active-surface-bg);
+	border-radius: 4px;
 }
 
 /* The editor's normal top padding supplies the space above the title widget,
@@ -147,6 +159,7 @@
 	height: 100%;
 	box-sizing: border-box;
 	border: 0;
+	position: relative;
 	color: var(--muted-foreground, #6b7280);
 	background: var(--document-bg, #fff);
 }
@@ -158,6 +171,8 @@
 	box-sizing: border-box;
 	min-height: 100%;
 	overflow: hidden;
+	position: relative;
+	z-index: 1;
 }
 
 .code-editor .cm-gutterElement {
@@ -194,7 +209,39 @@
  * them visible in the installed app. */
 .code-editor .cm-activeLine,
 .code-editor .cm-activeLineGutter {
-	background-color: color-mix(in oklch, var(--muted, #f3f4f6) 58%, transparent);
+	background-color: var(--code-editor-active-surface-bg);
+}
+
+/* A title focus or a non-empty CodeMirror range already has its own visual
+ * selection affordance. Hide the competing current-line background while
+ * keeping CodeMirror's selection state untouched. `:has()` is already used
+ * throughout the application and is supported by the app's WebKit/WebView2
+ * targets. */
+.code-editor[data-source-header-focused] .cm-activeLine,
+.code-editor[data-source-header-focused] .cm-activeLineGutter,
+.code-editor > .cm-editor[data-has-range-selection] .cm-activeLine,
+.code-editor > .cm-editor[data-has-range-selection] .cm-activeLineGutter {
+	background-color: transparent;
+}
+
+/* A block widget lives in `.cm-content`, so CodeMirror has no gutter line
+ * marker for the title itself. The editor adds this dedicated layer as a
+ * real gutter child to keep the title surface continuous across the line
+ * number column. The gutter's text stays above this layer. */
+.code-editor .cm-source-header-gutter-background {
+	display: block;
+	position: absolute;
+	inset-inline: 0;
+	top: var(--code-editor-source-header-top, var(--code-editor-content-padding-top, 14px));
+	height: var(--code-editor-source-header-height, 54px);
+	border-radius: 4px 0 0 4px;
+	background-color: var(--code-editor-active-surface-bg);
+	pointer-events: none;
+	z-index: 0;
+}
+
+.code-editor:not([data-source-header-focused]) .cm-source-header-gutter-background {
+	visibility: hidden;
 }
 
 .code-editor .cm-selectionBackground,

@@ -4,7 +4,7 @@ use std::path::Path;
 
 use tauri::{AppHandle, State};
 
-use crate::config::path_is_inside;
+use crate::config::{path_is_inside, path_is_inside_reserved_directory};
 use crate::lock_utils::{read_lock, write_lock};
 use crate::watcher::runtime::current_watcher;
 
@@ -214,6 +214,9 @@ pub(crate) fn can_access_scoped_file_with_state(
     space_path: Option<&str>,
     state: &AppState,
 ) -> bool {
+    if is_internal_notebook_path_with_state(file_path, state) {
+        return false;
+    }
     let Some(space_path) = space_path else {
         return false;
     };
@@ -221,6 +224,23 @@ pub(crate) fn can_access_scoped_file_with_state(
     (is_registered_notebook_path_with_state(root, state)
         || is_agent_access_folder_with_state(root, state))
         && path_is_inside(file_path, root)
+}
+
+/// The notebook's .flowix directory is application-owned data, never a
+/// user-facing file. Keep this check below the generic scope helpers so hidden
+/// directory preferences cannot make the database and internal artifacts
+/// mutable.
+pub(crate) fn is_internal_notebook_path(path: &Path, state: &State<AppState>) -> bool {
+    is_internal_notebook_path_with_state(path, state.inner())
+}
+
+pub(crate) fn is_internal_notebook_path_with_state(path: &Path, state: &AppState) -> bool {
+    let memo_file = read_lock(&state.memo_file, "memo_file");
+    memo_file
+        .read_notebook_configs()
+        .unwrap_or_default()
+        .iter()
+        .any(|config| path_is_inside_reserved_directory(path, Path::new(&config.path), ".flowix"))
 }
 
 /// 侧栏"资料"文件夹作用域 ── agent access 配置里登记的 folder entry。

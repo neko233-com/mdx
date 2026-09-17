@@ -55,6 +55,21 @@
   line-height: 0;
   border-radius: 0.3rem;
   cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+html.frontmatter-property--dragging,
+html.frontmatter-property--dragging * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  cursor: pointer !important;
+}
+
+html.frontmatter-property--dragging .markdown-editor .frontmatter-property__display:hover,
+html.frontmatter-property--dragging .markdown-editor .frontmatter-property__display:has(:focus-visible) {
+  box-shadow: none !important;
+  color: inherit;
 }
 
 .markdown-editor .frontmatter-property__type-icon:hover,
@@ -120,7 +135,78 @@
   padding: var(--frontmatter-row-padding);
   font: inherit;
   text-align: left;
-  transition: box-shadow 140ms ease, color 140ms ease;
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 140ms ease, color 140ms ease;
+}
+
+.markdown-editor .frontmatter-property__display--dragging {
+  cursor: grabbing;
+}
+
+.markdown-editor .frontmatter-property__display--dragging,
+.markdown-editor .frontmatter-property__display--drag-placeholder {
+  opacity: 0.5;
+  background: color-mix(in srgb, var(--muted) 72%, transparent);
+  color: var(--muted-foreground);
+  pointer-events: none;
+  user-select: none;
+}
+
+.frontmatter-property__drag-preview {
+  position: fixed;
+  z-index: 2147483647;
+  display: grid;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 1rem));
+  box-sizing: border-box;
+  grid-template-columns: 20px minmax(3rem, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border-popup);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: 0 8px 24px -8px rgb(0 0 0 / 32%);
+  color: var(--foreground);
+  opacity: 0.94;
+  padding: 0.3rem 0.5rem;
+  pointer-events: none;
+  will-change: transform;
+  font: inherit;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.frontmatter-property__drag-preview .frontmatter-property__type-icon {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+}
+
+.frontmatter-property__drag-preview .frontmatter-property__svg-icon {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.frontmatter-property__drag-preview-key {
+  overflow: hidden;
+  font-size: 0.9em;
+  text-overflow: ellipsis;
+}
+
+.frontmatter-property__drag-preview-value {
+  max-width: 18rem;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 0.86em;
+  text-overflow: ellipsis;
 }
 
 .markdown-editor .frontmatter-property__add-property {
@@ -152,12 +238,19 @@
 
 .markdown-editor .frontmatter-property__add-property-icon {
   display: inline-flex;
+  width: var(--frontmatter-icon-size);
+  height: var(--frontmatter-icon-size);
+  flex: 0 0 var(--frontmatter-icon-size);
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  line-height: 1;
+}
+
+.markdown-editor .frontmatter-property__add-property-icon .frontmatter-property__svg-icon {
   width: 1rem;
   height: 1rem;
   flex: 0 0 1rem;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
 }
 
 .frontmatter-property__edit-popover {
@@ -172,7 +265,7 @@
   box-shadow: 0 8px 28px -6px rgb(0 0 0 / 24%);
   font-family: var(--app-font-family, var(--font-sans));
   font-size: var(--app-font-size, 15px);
-  line-height: var(--app-line-height, 1.6);
+  line-height: var(--app-line-height, 1.8);
   padding: 0.3rem 0.6rem;
 }
 
@@ -191,7 +284,7 @@
   box-shadow: 0 0 24px -3px rgb(0 0 0 / 24%);
   font-family: var(--app-font-family, var(--font-sans));
   font-size: var(--app-font-size, 15px);
-  line-height: var(--app-line-height, 1.6);
+  line-height: var(--app-line-height, 1.8);
   padding: 4px;
 }
 
@@ -229,6 +322,68 @@
   color: var(--muted-foreground);
   cursor: default;
   opacity: 0.5;
+}
+
+.frontmatter-property__preset-item {
+  position: relative;
+}
+
+.frontmatter-property__preset-button::after {
+  content: '›';
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.frontmatter-property__preset-button:hover::after,
+.frontmatter-property__preset-button:focus-visible::after,
+.frontmatter-property__preset-item[data-open='true'] .frontmatter-property__preset-button::after {
+  color: currentColor;
+}
+
+.frontmatter-property__preset-item[data-open='true'] > .frontmatter-property__preset-button {
+  background: var(--brand);
+  color: var(--primary-foreground);
+  outline: none;
+}
+
+.frontmatter-property__preset-menu {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  z-index: 1;
+  display: grid;
+  width: max-content;
+  min-width: 7rem;
+  box-sizing: border-box;
+  gap: 0.1rem;
+  border: 1px solid var(--border-popup);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: 0 8px 24px -8px rgb(0 0 0 / 28%);
+  padding: 0.2rem;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity 120ms ease, visibility 120ms ease;
+}
+
+.frontmatter-property__preset-item[data-open='true'] .frontmatter-property__preset-menu,
+.frontmatter-property__preset-item:hover .frontmatter-property__preset-menu,
+.frontmatter-property__preset-item:focus-within .frontmatter-property__preset-menu {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+}
+
+.frontmatter-property__preset-menu[data-placement='left'] {
+  right: 100%;
+  left: auto;
+}
+
+.frontmatter-property__preset-menu .frontmatter-property__edit-key-option {
+  border-radius: 8px;
 }
 
 .frontmatter-property__date-picker-popover {
@@ -305,75 +460,6 @@
 .frontmatter-property__edit-number-step:focus-visible {
   background: transparent;
   color: var(--foreground);
-}
-
-.frontmatter-property__edit-key-control {
-  position: relative;
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  align-items: center;
-}
-
-.frontmatter-property__edit-key-control .frontmatter-property__edit-input {
-  width: auto;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.frontmatter-property__edit-key-trigger {
-  display: inline-flex;
-  width: 1.25rem;
-  height: 1.25rem;
-  flex: 0 0 1.25rem;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 0.3rem;
-  outline: none;
-  background: transparent;
-  color: var(--muted-foreground);
-  padding: 0;
-  cursor: pointer;
-}
-
-.frontmatter-property__edit-key-trigger:hover,
-.frontmatter-property__edit-key-trigger:focus-visible,
-.frontmatter-property__edit-key-trigger[aria-expanded='true'] {
-  background: transparent;
-  color: var(--foreground);
-}
-
-.frontmatter-property__edit-key-trigger svg {
-  display: block;
-  width: 0.75rem;
-  height: 0.75rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.5;
-}
-
-.frontmatter-property__edit-key-menu {
-  position: absolute;
-  top: calc(100% + 0.2rem);
-  left: 0;
-  z-index: 2;
-  display: grid;
-  width: max-content;
-  min-width: 7rem;
-  box-sizing: border-box;
-  gap: 0.1rem;
-  border: 1px solid var(--border-popup);
-  border-radius: 0.45rem;
-  background: var(--card);
-  box-shadow: 0 8px 24px -8px rgb(0 0 0 / 28%);
-  padding: 0.2rem;
-}
-
-.frontmatter-property__edit-key-menu[hidden] {
-  display: none;
 }
 
 .frontmatter-property__edit-key-option {
@@ -702,6 +788,13 @@
   white-space: nowrap;
 }
 
+.frontmatter-property__edit-type-locked {
+  margin-left: 0.15rem;
+  color: var(--muted-foreground);
+  font-size: 0.9em;
+  font-weight: 400;
+}
+
 .frontmatter-property__edit-type-chevron {
   display: inline-flex;
   width: 0.7rem;
@@ -732,7 +825,7 @@
   box-sizing: border-box;
   gap: 0.1rem;
   border: 1px solid var(--border-popup);
-  border-radius: 0.45rem;
+  border-radius: 12px;
   background: var(--card);
   box-shadow: 0 8px 24px -8px rgb(0 0 0 / 28%);
   padding: 0.2rem;
@@ -746,7 +839,7 @@
   width: 100%;
   box-sizing: border-box;
   border: 0;
-  border-radius: 0.3rem;
+  border-radius: 8px;
   outline: none;
   background: transparent;
   color: var(--document-foreground);
