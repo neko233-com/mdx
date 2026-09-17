@@ -1,4 +1,5 @@
 import { Editor, Extension, renderNestedMarkdownContent } from '@tiptap/core';
+import type { JSONContent } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
@@ -9,8 +10,6 @@ import { ListItem } from '@tiptap/extension-list';
 import { Paragraph } from '@tiptap/extension-paragraph';
 import { Markdown } from '@tiptap/markdown';
 import Placeholder from '@tiptap/extension-placeholder';
-import { TextStyle } from '@tiptap/extension-text-style';
-import { Color } from '@tiptap/extension-color';
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useCallback, type ReactNode } from 'react';
 import { useShortcutScope, pushHandler } from '@features/shortcuts';
 import { AttachmentLink } from '@features/editor/extensions/attachment-link';
@@ -196,29 +195,13 @@ function normalizeMarkdownTableEmptyCells(markdown: string): string {
 }
 
 const PreservedParagraph = Paragraph.extend({
-  addAttributes() {
-    return {
-      textAlign: {
-        default: null,
-        parseHTML: element => element.style.textAlign || null,
-        renderHTML: attributes => (
-          attributes.textAlign ? { style: `text-align: ${attributes.textAlign}` } : {}
-        ),
-      },
-    };
-  },
   renderMarkdown(node, h, ctx: MarkdownRenderContext) {
     const content = Array.isArray(node.content) ? node.content : [];
     if (isEmptyParagraphForMarkdown(content, ctx)) {
       return renderEmptyParagraphMarkdown(ctx);
     }
 
-    const renderedContent = h.renderChildren(content);
-    // Markdown itself has no alignment syntax. Keep aligned paragraphs as HTML
-    // so the formatting round-trips through the Markdown editor and renderer.
-    return node.attrs?.textAlign
-      ? `<p style="text-align: ${node.attrs.textAlign}">${renderedContent}</p>`
-      : renderedContent;
+    return h.renderChildren(content);
   },
 });
 
@@ -229,6 +212,119 @@ const MarkdownEscape = Extension.create({
     return h.createTextNode(token.raw || token.text || '');
   },
 });
+
+/** Mark name used only while serializing ambiguous bold boundaries. */
+const HTMLStrongFallback = Extension.create({
+  name: 'htmlStrongFallback',
+  renderMarkdown: (node, h) => `<strong>${h.renderChildren(node)}</strong>`,
+  markdownOptions: {
+    htmlReopen: {
+      open: '<strong>',
+      close: '</strong>',
+    },
+  },
+});
+
+/**
+ * Read compatibility for notes written before the serializer fallback was
+ * added. New notes never use this form; they serialize the ambiguous run as
+ * standard inline HTML instead.
+ */
+const LegacyAdjacentStrongMarkdown = Extension.create({
+  name: 'legacyAdjacentStrongMarkdown',
+  markdownTokenizer: {
+    name: 'strong',
+    level: 'inline',
+    start: '**',
+    tokenize(src, _tokens, lexer) {
+      const match = /^\*\*(?!\s)((?:(?!\*\*)[^\n])+?\S)\*\*(?=[\p{L}\p{N}])/u.exec(src);
+      if (!match) return undefined;
+
+      return {
+        type: 'strong',
+        raw: match[0],
+        text: match[1],
+        tokens: lexer.inlineTokens(match[1]),
+      };
+    },
+  },
+});
+
+function isUnicodeLetterOrNumber(value: string | undefined): boolean {
+  return !!value && /^[\p{L}\p{N}]$/u.test(value);
+}
+
+function isUnicodePunctuation(value: string | undefined): boolean {
+  // Marked's delimiter rules treat both Unicode punctuation and symbols as
+  // punctuation around a closing `**`. Symbols include currency signs,
+  // copyright marks, and emoji, all of which can trigger the same ambiguity.
+  return !!value && /^[\p{P}\p{S}]$/u.test(value);
+}
+
+function markIsBold(mark: { type?: string }): boolean {
+  return mark.type === 'bold' || mark.type === 'htmlStrongFallback';
+}
+
+/**
+ * CommonMark rejects `**text。**下一句` because the closing delimiter is
+ * followed immediately by a letter. Convert only those bold runs to inline
+ * HTML, which is standard Markdown and remains portable across parsers.
+ */
+function markAmbiguousBoldRunsAsHtml(node: JSONContent): JSONContent {
+  if (!Array.isArray(node.content)) return node;
+
+  const content = node.content.map(child => markAmbiguousBoldRunsAsHtml(child));
+  if (node.type !== 'paragraph' && node.type !== 'heading') {
+    return { ...node, content };
+  }
+
+  const nextContent = content.map(child => ({ ...child, marks: child.marks ? [...child.marks] : child.marks }));
+  let index = 0;
+  while (index < nextContent.length) {
+    const child = nextContent[index];
+    if (child.type !== 'text' || !child.marks?.some(markIsBold)) {
+      index += 1;
+      continue;
+    }
+
+    const runStart = index;
+    while (
+      index + 1 < nextContent.length
+      && nextContent[index + 1].type === 'text'
+      && nextContent[index + 1].marks?.some(markIsBold)
+    ) {
+      index += 1;
+    }
+
+    const lastText = nextContent[index].text ?? '';
+    const followingText = nextContent[index + 1]?.type === 'text'
+      ? nextContent[index + 1].text ?? ''
+      : '';
+    const lastCharacters = Array.from(lastText);
+    const lastCharacter = lastCharacters[lastCharacters.length - 1];
+    const followingCharacter = Array.from(followingText)[0];
+    const isAmbiguous = isUnicodePunctuation(lastCharacter)
+      && isUnicodeLetterOrNumber(followingCharacter);
+
+    if (isAmbiguous) {
+      for (let runIndex = runStart; runIndex <= index; runIndex += 1) {
+        const marks = nextContent[runIndex].marks ?? [];
+        nextContent[runIndex].marks = marks.map(mark => (
+          mark.type === 'bold' ? { ...mark, type: 'htmlStrongFallback' } : mark
+        ));
+      }
+    }
+
+    index += 1;
+  }
+
+  return { ...node, content: nextContent };
+}
+
+function serializeEditorMarkdown(editor: Editor): string {
+  const json = markAmbiguousBoldRunsAsHtml(editor.getJSON());
+  return editor.markdown?.serialize(json) ?? editor.getMarkdown();
+}
 
 function isEmptyParagraphNode(node: unknown): boolean {
   if (!node || typeof node !== 'object') return false;
@@ -682,14 +778,14 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         PreservedParagraph,
         PreservedListItem,
         MarkdownEscape,
+        HTMLStrongFallback,
+        LegacyAdjacentStrongMarkdown,
         AttachmentLink.configure({ memoId }),
         MarkdownLink,
         LinkSelectionHighlight,
         CodeBlockShiki,
         MathBlock,
         WebCard,
-        TextStyle,
-        Color,
         Highlight.configure({ multicolor: true }),
         TablePlugin,
         TaskList,
@@ -753,6 +849,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     });
 
     onBeforeCreate?.(editor);
+    editor.getMarkdown = () => serializeEditorMarkdown(editor);
     editorRef.current = editor;
     setEditorInstance(editor);
     const editorDom = editor.view.dom;

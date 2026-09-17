@@ -1259,7 +1259,6 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "editor.toolbar.addLink": "Add link",
     "editor.toolbar.insertCodeBlock": "Insert code block",
     "editor.toolbar.strikethrough": "Strikethrough",
-    "editor.toolbar.justify": "Justify",
     "editor.toolbar.addAttachment": "Add attachment",
     "editor.toolbar.collapse": "Collapse toolbar",
     "editor.toolbar.collapseTooltip": "Collapse toolbar",

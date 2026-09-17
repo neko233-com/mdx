@@ -71,6 +71,118 @@ describe('MarkdownEditor select all', () => {
     expect(editor!.getMarkdown()).toBe('Body paragraph');
   });
 
+  it('drops paragraph alignment while preserving inline formatting across markdown reloads', async () => {
+    let editor: Editor | null = null;
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={'Existing'}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      editor!.commands.setContent(
+        '<p style="text-align: start">Normal <strong>bold</strong> text</p>',
+        { contentType: 'html' },
+      );
+    });
+
+    const markdown = editor!.getMarkdown();
+    expect(markdown).toBe('Normal **bold** text');
+    expect(markdown).not.toContain('<p');
+    expect(editor!.getHTML()).toBe('<p>Normal <strong>bold</strong> text</p>');
+
+    act(() => {
+      editor!.commands.setContent(markdown, { contentType: 'markdown' });
+    });
+
+    expect(editor!.getHTML()).toBe('<p>Normal <strong>bold</strong> text</p>');
+  });
+
+  it('reloads bold Chinese text when punctuation before the closing marker is followed without whitespace', async () => {
+    let editor: Editor | null = null;
+    const sourceHtml = '<p><strong>规则划定的是行为底线，公共文明则需要每个人主动守护。</strong>铁路部门不妨以此为契机。</p>';
+
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={'Existing'}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      editor!.commands.setContent(sourceHtml, { contentType: 'html' });
+    });
+
+
+    const markdown = editor!.getMarkdown();
+    expect(markdown).toBe(
+      '<strong>规则划定的是行为底线，公共文明则需要每个人主动守护。</strong>铁路部门不妨以此为契机。',
+    );
+
+    act(() => {
+      editor!.commands.setContent(markdown, { contentType: 'markdown' });
+    });
+
+    expect(editor!.getHTML()).toBe(sourceHtml);
+  });
+
+  it('reads legacy ambiguous bold markdown and migrates it to portable inline HTML on save', async () => {
+    let editor: Editor | null = null;
+    const legacyMarkdown = '**规则划定的是行为底线。**铁路部门';
+
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={legacyMarkdown}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    expect(editor!.getHTML()).toBe('<p><strong>规则划定的是行为底线。</strong>铁路部门</p>');
+    expect(editor!.getMarkdown()).toBe('<strong>规则划定的是行为底线。</strong>铁路部门');
+  });
+
+  it.each(['$', '©', '😀'])('uses portable HTML when bold text ends with the symbol %s', async (symbol) => {
+    let editor: Editor | null = null;
+    const sourceHtml = `<p><strong>文本${symbol}</strong>后续</p>`;
+
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={'Existing'}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      editor!.commands.setContent(sourceHtml, { contentType: 'html' });
+    });
+
+    const markdown = editor!.getMarkdown();
+    expect(markdown).toBe(`<strong>文本${symbol}</strong>后续`);
+
+    act(() => {
+      editor!.commands.setContent(markdown, { contentType: 'markdown' });
+    });
+
+    expect(editor!.getHTML()).toBe(sourceHtml);
+  });
+
   it('keeps focus and selects the current editable document', async () => {
     let editor: Editor | null = null;
     await act(async () => {

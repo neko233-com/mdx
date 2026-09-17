@@ -25,7 +25,8 @@ describe('heading text-line coordinates', () => {
   const headingInfo = {
     typeName: 'heading',
     pos: 7,
-  } as Parameters<typeof headingContentY>[1]
+    attrs: { level: 1 },
+  } as unknown as Parameters<typeof headingContentY>[1]
 
   it('anchors to the first text line, including heading padding', () => {
     const view = {
@@ -35,13 +36,23 @@ describe('heading text-line coordinates', () => {
       },
     } as unknown as Parameters<typeof headingContentY>[0]
 
-    expect(headingContentY(view, headingInfo, 100, 0)).toBe(136)
-    expect(headingContentY(view, headingInfo, 136, 36)).toBe(136)
+    expect(headingContentY(view, headingInfo, 100, 0)).toBe(140)
+    expect(headingContentY(view, headingInfo, 136, 36)).toBe(140)
   })
 
   it('returns null for non-heading blocks', () => {
     const view = {} as Parameters<typeof headingContentY>[0]
     expect(headingContentY(view, { ...headingInfo, typeName: 'paragraph' }, 100, 0)).toBeNull()
+  })
+
+  it('only nudges H1-H3', () => {
+    const view = {
+      coordsAtPos: () => ({ top: 236, bottom: 273, left: 0, right: 0 }),
+    } as unknown as Parameters<typeof headingContentY>[0]
+
+    expect(headingContentY(view, { ...headingInfo, attrs: { level: 2 } }, 100, 0)).toBe(139)
+    expect(headingContentY(view, { ...headingInfo, attrs: { level: 3 } }, 100, 0)).toBe(138)
+    expect(headingContentY(view, { ...headingInfo, attrs: { level: 4 } }, 100, 0)).toBe(136)
   })
 
   it('falls back when the PM view cannot resolve the position', () => {

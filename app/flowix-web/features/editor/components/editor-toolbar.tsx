@@ -2,7 +2,7 @@
 
 import { Editor } from '@tiptap/core';
 import { ChevronDown, MoreHorizontal } from 'lucide-react';
-import { TextHOneIcon, TextHTwoIcon, TextHThreeIcon, TextHFourIcon, TextTIcon, ListBulletsIcon, CheckSquareIcon, TextBIcon, TextUnderlineIcon, TextItalicIcon, TextStrikethroughIcon, TextAlignJustifyIcon, HighlighterIcon, CodeIcon, PaperclipIcon, LinkSimpleIcon, CaretDownIcon, CaretUpIcon } from '@phosphor-icons/react';
+import { TextHOneIcon, TextHTwoIcon, TextHThreeIcon, TextHFourIcon, TextTIcon, ListBulletsIcon, CheckSquareIcon, TextBIcon, TextUnderlineIcon, TextItalicIcon, TextStrikethroughIcon, HighlighterIcon, CodeIcon, PaperclipIcon, LinkSimpleIcon, CaretDownIcon, CaretUpIcon } from '@phosphor-icons/react';
 import { useEffect, useState, useRef } from 'react';
 import {
   DropdownMenu,
@@ -33,7 +33,6 @@ interface ToolbarState {
   highlight: boolean;
   strikethrough: boolean;
   link: boolean;
-  justify: boolean;
 }
 
 const headingConfigs: { level: HeadingLevel; icon: React.ReactNode; symbol: string }[] = [
@@ -55,7 +54,6 @@ const INITIAL_STATE: ToolbarState = {
   highlight: false,
   strikethrough: false,
   link: false,
-  justify: false,
 };
 
 const iconButtonStyle: React.CSSProperties = {
@@ -98,7 +96,6 @@ export function EditorToolbar({ editor, collapsed, onCollapsedChange }: EditorTo
         highlight: currentEditor.isActive('highlight'),
         strikethrough: currentEditor.isActive('strike'),
         link: currentEditor.isActive('link'),
-        justify: currentEditor.isActive('paragraph', { textAlign: 'justify' }),
       });
     };
 
@@ -294,13 +291,6 @@ export function EditorToolbar({ editor, collapsed, onCollapsedChange }: EditorTo
               >
                 <TextStrikethroughIcon size={16} weight="bold" />
                 <span>{t('editor.toolbar.strikethrough')}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className={`group h-7 items-center justify-start gap-3 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)] ${state.justify ? 'bg-[var(--brand)] text-[var(--primary-foreground)]' : ''}`}
-                onClick={() => editor.chain().focus().updateAttributes('paragraph', { textAlign: state.justify ? null : 'justify' }).run()}
-              >
-                <TextAlignJustifyIcon size={16} weight="bold" />
-                <span>{t('editor.toolbar.justify')}</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="group h-7 items-center justify-start gap-3 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"

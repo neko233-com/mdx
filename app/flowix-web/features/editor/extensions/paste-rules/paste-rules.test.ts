@@ -16,6 +16,7 @@ import {
   normalizeLooseCodeBlocks,
 } from '@features/editor/extensions/paste-rules/code-block-detector';
 import { hasMeaningfulInlineHtml, isStandaloneHtmlTable } from '@features/editor/extensions/paste-rules/html';
+import { isInternalEditorHtml, sanitizeExternalHtml } from '@features/editor/extensions/paste-rules/html-sanitizer';
 import { containsMarkdownTable, hasLeadingFrontmatter } from '@features/editor/extensions/paste-rules/markdown';
 import {
   htmlTableToTableContent,
@@ -250,6 +251,67 @@ describe('paste rule helpers', () => {
     expect(hasMeaningfulInlineHtml('<span>plain wrapper</span>')).toBe(false);
     expect(hasMeaningfulInlineHtml('<span style="color: red">red text</span>')).toBe(true);
     expect(hasMeaningfulInlineHtml('<a href="https://example.com">link</a>')).toBe(true);
+  });
+
+  it('keeps semantic formatting but drops webpage presentation styles', () => {
+    const sanitized = sanitizeExternalHtml(
+      '<p style="text-align: start; margin: 0"><span style="font-weight: 700; color: red">Bold</span><span style="font-style: italic"> italic</span></p>',
+    );
+
+    expect(sanitized).toBe('<p><strong>Bold</strong><em> italic</em></p>');
+
+    expect(sanitizeExternalHtml('<span style="font-weight: 700; font-style: italic">Both</span>'))
+      .toBe('<strong><em>Both</em></strong>');
+  });
+
+  it('preserves the minimal attributes needed for supported task lists', () => {
+    expect(sanitizeExternalHtml(
+      '<ul data-type="taskList" class="copied"><li data-type="taskItem" data-checked="true" style="margin:0">Done</li></ul>',
+    )).toBe('<ul data-type="taskList"><li data-type="taskItem" data-checked="true">Done</li></ul>');
+  });
+
+  it('removes unsafe content and unwraps unknown containers', () => {
+    const sanitized = sanitizeExternalHtml('<custom-box><script>alert(1)</script><strong>Text</strong></custom-box>');
+
+    expect(sanitized).toBe('<strong>Text</strong>');
+  });
+
+  it('does not sanitize ProseMirror internal clipboard HTML', () => {
+    expect(isInternalEditorHtml('<div data-pm-slice="1 1 []">text</div>')).toBe(true);
+    expect(isInternalEditorHtml('<p><strong>external</strong></p>')).toBe(false);
+  });
+
+  it('routes external rich HTML through the sanitizer before insertion', () => {
+    const inserted: string[] = [];
+    const rule = createManagedPasteRules().find(item => item.id === 'rich-inline-html');
+    const context = {
+      html: '<p style="text-align: start"><span style="font-weight: 700">Bold</span></p>',
+      editor: {
+        commands: {
+          insertContent(value: string) {
+            inserted.push(value);
+            return true;
+          },
+        },
+      },
+    } as unknown as Parameters<NonNullable<typeof rule>['run']>[0];
+
+    expect(rule?.match(context)).toBe(true);
+    expect(rule?.run(context)).toBe('handled');
+    expect(inserted).toEqual(['<p><strong>Bold</strong></p>']);
+  });
+
+  it('consumes external HTML even when sanitization removes everything', () => {
+    const rule = createManagedPasteRules().find(item => item.id === 'rich-html');
+    const insertContent = vi.fn(() => true);
+    const context = {
+      html: '<figure><script>alert(1)</script></figure>',
+      editor: { commands: { insertContent } },
+    } as unknown as Parameters<NonNullable<typeof rule>['run']>[0];
+
+    expect(rule?.match(context)).toBe(true);
+    expect(rule?.run(context)).toBe('handled');
+    expect(insertContent).not.toHaveBeenCalled();
   });
 
   it('only treats table-only HTML as a standalone HTML table paste', () => {

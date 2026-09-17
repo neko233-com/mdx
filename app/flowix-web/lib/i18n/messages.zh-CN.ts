@@ -1232,7 +1232,6 @@ const zhCN = {
     "editor.toolbar.addLink": "添加链接",
     "editor.toolbar.insertCodeBlock": "插入代码块",
     "editor.toolbar.strikethrough": "删除线",
-    "editor.toolbar.justify": "两端对齐",
     "editor.toolbar.addAttachment": "添加附件",
     "editor.toolbar.collapse": "折叠工具栏",
     "editor.toolbar.collapseTooltip": "折叠工具栏",

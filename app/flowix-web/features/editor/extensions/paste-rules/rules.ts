@@ -19,6 +19,10 @@ import {
   isStandaloneHtmlTable,
 } from '@features/editor/extensions/paste-rules/html';
 import {
+  isInternalEditorHtml,
+  sanitizeExternalHtml,
+} from '@features/editor/extensions/paste-rules/html-sanitizer';
+import {
   htmlTableToTableContent,
   looksLikeTsvTable,
   tsvToTableContent,
@@ -178,15 +182,23 @@ export function createManagedPasteRules(options: {
       id: 'rich-html',
       kind: 'rich-html',
       priority: 700,
-      match: ({ html }) => html.trim().length > 0 && RICH_HTML_RE.test(html),
-      run: () => 'default',
+      match: ({ html }) => html.trim().length > 0 && RICH_HTML_RE.test(html) && !isInternalEditorHtml(html),
+      run: ({ html, editor }) => {
+        const sanitized = sanitizeExternalHtml(html);
+        if (sanitized.trim().length > 0) editor.commands.insertContent(sanitized);
+        return 'handled';
+      },
     },
     {
       id: 'rich-inline-html',
       kind: 'rich-inline-html',
       priority: 650,
-      match: ({ html }) => html.trim().length > 0 && hasMeaningfulInlineHtml(html),
-      run: () => 'default',
+      match: ({ html }) => html.trim().length > 0 && hasMeaningfulInlineHtml(html) && !isInternalEditorHtml(html),
+      run: ({ html, editor }) => {
+        const sanitized = sanitizeExternalHtml(html);
+        if (sanitized.trim().length > 0) editor.commands.insertContent(sanitized);
+        return 'handled';
+      },
     },
     {
       id: 'markdown-block',

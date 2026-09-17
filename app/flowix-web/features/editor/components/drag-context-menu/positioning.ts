@@ -33,6 +33,13 @@ const BLOCK_SELECTOR =
 
 const HANDLE_X_OFFSET = 18
 
+/** Small visual nudge for the larger heading glyphs. */
+const HEADING_HANDLE_NUDGE: Record<number, number> = {
+  1: 4,
+  2: 3,
+  3: 2,
+}
+
 /** Resolve the current handle position. Returns `{ visible: false }` when
  *  the editor has no usable focus / no resolvable block (callers typically
  *  use this to hide the handle entirely).
@@ -120,7 +127,9 @@ export function headingContentY(
 
   try {
     const textCoords = view.coordsAtPos(info.pos + 1)
-    return textCoords.top - scrollContainerTop + scrollTop
+    const level = info.attrs.level
+    const nudge = typeof level === 'number' ? HEADING_HANDLE_NUDGE[level] ?? 0 : 0
+    return textCoords.top - scrollContainerTop + scrollTop + nudge
   } catch {
     // The view can be destroyed between selectionUpdate and the RAF callback.
     return null
