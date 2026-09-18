@@ -793,7 +793,7 @@ export function TagTree({
                     }
                   }}
                 >
-                  <TagSvgIcon className="h-3.5 w-3.5" />
+                  <TagSvgIcon className="h-4 w-4" />
                   {hasChildren && (
                     <span
                       aria-hidden
@@ -1066,7 +1066,7 @@ export function TagTree({
             height: dragGhost.rect.height,
           }}
         >
-          <TagSvgIcon className="h-3.5 w-3.5 shrink-0 text-[var(--primary)]" />
+          <TagSvgIcon className="h-4 w-4 shrink-0 text-[var(--primary)]" />
           <span className="min-w-0 flex-1 truncate">
             {tagOptions.find((tag) => tag.id === dragGhost.id)?.name ?? ''}
           </span>
