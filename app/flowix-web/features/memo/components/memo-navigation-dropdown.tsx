@@ -339,8 +339,8 @@ export function MemoNavigationDropdown({
         </DropdownMenuItem>
         <MemoNavigationSubmenu
           label={t('memo.navigation.tags')}
-          icon={<TagSvgIcon className="h-4 w-4 shrink-0" />}
-          itemIcon={<TagSvgIcon className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />}
+          icon={<TagSvgIcon className="h-[18px] w-[18px] shrink-0" />}
+          itemIcon={<TagSvgIcon className="h-[18px] w-[18px] shrink-0 text-[var(--muted-foreground)]" />}
           itemKind="tag"
           valueAdornment={activeFilter === 'tagged' && selectedTagName ? (
             <span className="inline-flex max-w-[100px] items-center truncate text-xs text-[var(--muted-foreground)]">
