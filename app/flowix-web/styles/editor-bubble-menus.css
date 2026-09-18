@@ -555,6 +555,11 @@
 	color: var(--muted-foreground);
 }
 
+.memo-navigation-submenu-item .mention-tag-icon {
+	width: 16px;
+	height: 16px;
+}
+
 .mention-tag-name {
   display: block;
   min-width: 0;
