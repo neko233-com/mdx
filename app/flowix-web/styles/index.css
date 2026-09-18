@@ -417,6 +417,11 @@
 		--app-font-size: 15px;
 		--app-line-height: 1.8;
 		--app-document-width: 700px;
+
+		/* Shared code typography for rendered code blocks and CodeMirror. */
+		--code-font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+		--code-font-size: 14px;
+		--code-line-height: 1.8;
 		/* Shared overlay geometry: the collapsed list preview uses this value
 		 * to sit beside the note-navigation drawer instead of behind it. */
 		--flowix-note-navigation-drawer-width: min(240px, calc(100vw - 16px));

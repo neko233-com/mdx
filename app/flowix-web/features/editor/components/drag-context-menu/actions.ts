@@ -31,7 +31,16 @@ export function unpinBlock(editor: Editor): void {
   editor.view.dispatch(editor.view.state.tr.setMeta(menuPinPluginKey, null))
 }
 
-export function applyMenuItem(editor: Editor, item: BlockMenuItem): void {
+export function applyMenuItem(
+  editor: Editor,
+  item: BlockMenuItem,
+  target?: CurrentBlockInfo | null,
+): void {
+  // AgentThreadCard is a custom block with a nested composer, not a text
+  // block that can be converted to a heading/list/code block. Its context
+  // menu intentionally exposes only actions that apply to the card itself.
+  if (target?.typeName === 'agentThreadCard') return
+
   if (item.kind === 'heading') {
     editor.chain().focus().toggleHeading({ level: item.level }).run()
   } else if (item.kind === 'paragraph') {
@@ -63,7 +72,22 @@ export function applyMenuItem(editor: Editor, item: BlockMenuItem): void {
  *    listItem, codeBlock, etc.). Tables use the table extension command.
  * Returns true if a delete was actually attempted.
  */
-export function deleteBlock(editor: Editor): boolean {
+export function deleteBlock(editor: Editor, target?: CurrentBlockInfo | null): boolean {
+  if (target) {
+    if (target.typeName === 'agentThreadCard') {
+      terminateAgentThreadCardRuntime(target.attrs)
+    }
+    if (target.typeName === 'table') {
+      editor.chain().focus().deleteTable().run()
+      return true
+    }
+    editor.chain().focus().deleteRange({
+      from: target.pos,
+      to: target.pos + target.nodeSize,
+    }).run()
+    return true
+  }
+
   const { selection } = editor.state
   if (selection instanceof NodeSelection) {
     if (selection.node.type.name === 'agentThreadCard') {

@@ -1296,6 +1296,8 @@ const zhCN = {
     "common.cancel": "取消",
     "common.save": "保存",
     "common.edit": "编辑",
+    "editor.codeblock.auto": "自动检测",
+    "editor.codeblock.searchLanguage": "搜索语言",
     "editor.codeblock.previewTab": "预览",
     "editor.codeblock.fullscreen": "全屏展示",
     "editor.mermaid.parseError": "Mermaid 格式解析异常，无法完成预览",

@@ -67,11 +67,14 @@ describe("AgentThreadCardHeaderChromeController", () => {
     vi.clearAllMocks();
   });
 
-  it("starts and drops a block drag when dragging from the title", () => {
+  it("starts and drops a block drag when dragging from the title", async () => {
     const { controller, title } = setupController();
 
     pointerEvent("pointerdown", title, { clientX: 10, clientY: 20 });
     pointerEvent("pointermove", title, { clientX: 10, clientY: 30 });
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => resolve());
+    });
     pointerEvent("pointerup", title, { clientX: 10, clientY: 80 });
 
     expect(dragMocks.startBlockDragForView).toHaveBeenCalledWith(

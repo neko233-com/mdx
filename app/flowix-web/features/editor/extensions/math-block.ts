@@ -123,7 +123,10 @@ export const MathBlock = TiptapNode.create({
   addNodeView() {
     return ({ node, getPos, editor }) => {
       let latex = normalizeLatex(node.attrs.latex);
-      let active = latex.length === 0;
+      // Empty math blocks stay in preview mode until the user explicitly
+      // clicks them. This prevents every editor mount from stealing focus
+      // into the formula textarea.
+      let active = false;
 
       const dom = document.createElement('div');
       dom.className = 'math-block-node';

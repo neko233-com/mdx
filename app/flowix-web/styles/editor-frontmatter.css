@@ -63,7 +63,7 @@ html.frontmatter-property--dragging,
 html.frontmatter-property--dragging * {
   user-select: none !important;
   -webkit-user-select: none !important;
-  cursor: pointer !important;
+  cursor: grabbing !important;
 }
 
 html.frontmatter-property--dragging .markdown-editor .frontmatter-property__display:hover,

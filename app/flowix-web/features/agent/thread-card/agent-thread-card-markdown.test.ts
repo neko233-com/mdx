@@ -122,6 +122,28 @@ describe("agent thread card Markdown math", () => {
     expect(pre?.querySelector("code")?.textContent).toBe("const answer = 42;\n");
   });
 
+  it("shows the canonical language label for fenced code blocks", () => {
+    const container = document.createElement("div");
+    fillWithAgentThreadCardMarkdownHtml(
+      container,
+      renderAgentThreadCardMarkdownToHtml("```ts\nconst answer = 42;\n```"),
+    );
+
+    expect(container.querySelector("pre")?.dataset.languageLabel).toBe(
+      "TypeScript",
+    );
+  });
+
+  it("uses Text for fenced blocks without a language", () => {
+    const container = document.createElement("div");
+    fillWithAgentThreadCardMarkdownHtml(
+      container,
+      renderAgentThreadCardMarkdownToHtml("```\nplain text\n```"),
+    );
+
+    expect(container.querySelector("pre")?.dataset.languageLabel).toBe("Text");
+  });
+
   it("does not replace ordinary text or parse link destinations", () => {
     const html = renderAgentThreadCardMarkdownToHtml(
       "FLOWIX_MATH_INLINE_0 [docs](https://example.com/\\(x\\)) and \\(y\\)",

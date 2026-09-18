@@ -101,7 +101,7 @@
 }
 
 .markdown-editor .agent-thread-card {
-  margin: 1rem 0;
+  margin: 0 0 calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.32);
   background: var(--document-bg);
   /* A Thread Card is a nested NodeView. Own the inherited editor typography
    * at the component boundary so messages and chrome do not depend on the
@@ -304,6 +304,7 @@
    * 背景透出时才有意义, 实色背景下无效果且徒增 GPU 开销。 */
   background: transparent;
   cursor: grab;
+  touch-action: none;
   user-select: none;
 }
 

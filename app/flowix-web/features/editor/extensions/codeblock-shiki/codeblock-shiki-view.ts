@@ -4,8 +4,10 @@ import svgPanZoom from 'svg-pan-zoom'
 import { translate, type I18nKey } from '@/lib/i18n'
 import { getCurrentAppLanguage } from '@features/preferences/public/runtime-api'
 import { CodeBlockClipboardController } from './clipboard-controller'
+import { detectCodeLanguage } from './language-detection'
 import { setLanguageButtonContent } from './language-button'
 import { SHIKI_LANGUAGE_LABEL_BY_ID, SHIKI_LANGUAGE_OPTIONS } from './shiki/shiki-languages'
+import { getShiki } from './shiki/shiki-highlighter'
 
 // svg-pan-zoom 实例类型 ── 库本身没有导出类型, 用 ReturnType 推断。
 // 用在 fullscreen overlay 内 ── 用户的 mermaid 流程图常因节点多而显示
@@ -26,10 +28,11 @@ const MERMAID_LANGUAGE = 'mermaid'
 //
 // 因此 id → label 解析时, 'plaintext' 必须走专门分支, 不能依赖
 // bundled.find() ── 后者会 miss, 退回 id 自身, button 上就
-// 永远停在 'plaintext' (小写)。空 attr 同理 ── dropdown "Plain Text"
+// 永远停在 'plaintext' (小写)。空 attr 同理 ── dropdown "Text"
 // 项设置的就是空值, 也走这条分支, 跟 'plaintext' 渲染统一。
 const PLAIN_TEXT_ID = 'plaintext'
-const PLAIN_TEXT_LABEL = 'Plain Text'
+const PLAIN_TEXT_LABEL = 'Text'
+const AUTO_LANGUAGE_ID = 'auto'
 
 const MERMAID_PREVIEW_ICON = `<svg class="code-block-mode-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <path d="M2 3h20"></path>
@@ -273,7 +276,22 @@ class CodeBlockShikiView implements NodeView {
     this.dom.appendChild(this.previewDOM)
 
     this.updateLanguageAttribute()
+    this.syncShikiTheme()
     this.syncMermaidView()
+  }
+
+  private syncShikiTheme(): void {
+    const highlighter = getShiki()
+    if (!highlighter) return
+
+    const cssTheme = getComputedStyle(document.documentElement)
+      .getPropertyValue('--shiki-theme')
+      .trim()
+    const themeName = cssTheme || this.node.attrs.theme || 'github-light'
+    if (!highlighter.getLoadedThemes().includes(themeName)) return
+
+    const theme = highlighter.getTheme(themeName)
+    this.dom.style.setProperty('--code-block-shiki-fg', theme.fg)
   }
 
   private createLanguageDropdownShell(): HTMLElement {
@@ -287,7 +305,7 @@ class CodeBlockShikiView implements NodeView {
     const input = document.createElement('input')
     input.classList.add('code-block-language-search')
     input.type = 'search'
-    input.placeholder = 'Search language'
+    input.placeholder = t('editor.codeblock.searchLanguage')
     input.autocomplete = 'off'
     input.spellcheck = false
     input.addEventListener('input', () => this.filterLanguageDropdown(input.value))
@@ -313,7 +331,15 @@ class CodeBlockShikiView implements NodeView {
       // 把构造时的 label 一并塞进去 ── updateLanguage 拿到同步 label
       // 就直接写 button, 跳过 applyLanguageDisplay 的 microtask,
       // 避免用户点完看到 "typescript" 闪一下再变 "TypeScript"。
-      this.updateLanguage(value, label)
+      const language = value === AUTO_LANGUAGE_ID
+        ? detectCodeLanguage(this.node.textContent)
+        : value
+      const displayLabel = value === AUTO_LANGUAGE_ID
+        ? language === PLAIN_TEXT_ID
+          ? PLAIN_TEXT_LABEL
+          : t('editor.codeblock.auto')
+        : label
+      this.updateLanguage(language, displayLabel)
       this.closeDropdown()
     })
     return item
@@ -369,12 +395,15 @@ class CodeBlockShikiView implements NodeView {
     this.dropdownSearchInput = search
     this.dropdownList = list
 
+    // Auto first ── 选择后按当前代码内容检测具体语言, 并将检测结果
+    // 写回节点属性, 让 Shiki 使用对应 grammar 重新高亮。
+    list.appendChild(this.createLanguageDropdownItem(t('editor.codeblock.auto'), AUTO_LANGUAGE_ID))
+
     // Plain text option ── dropdown 选项文案跟 button 状态描述
     // 对齐: 空 attr 在两条路径 (sync click / 初始化) 都显示
-    // "Plain Text", 用户视角一个按钮一种文案。不用 "Auto Detect"
-    // 是因为 shiki 并没有自动检测能力, 选它只是清空 attr, "Plain Text"
-    // 更准确反映 shiki "无高亮" 的语义。
-    list.appendChild(this.createLanguageDropdownItem('Plain Text', ''))
+    // "Text", 用户视角一个按钮一种文案。"Auto Detect" 表示由
+    // NodeView 根据当前代码内容执行语言检测, Text 仍只表示 "无高亮"。
+    list.appendChild(this.createLanguageDropdownItem('Text', ''))
 
     // Language options ── 硬编码精选列表 (细粒度 bundle, 不读 shiki
     // 全量 bundledLanguagesInfo, 未列出的冷门语言不会出现在 dropdown)。
@@ -483,9 +512,9 @@ class CodeBlockShikiView implements NodeView {
   // 统一入口: 初始化 / 外部 update / fallback 路径都走这里。dropdown
   // click 路径直接传 label 绕过, 避免 microtask 闪一下。
   //
-  // 空 id (用户选了 dropdown 里的 "Plain Text" 项, 或 attr 初始为
-  // 空) 走 "Plain Text" 显示 ── dropdown 项跟 button 状态描述文案
-  // 对齐: 同一份数据两种视图都用 "Plain Text", 不再区分动作/状态
+  // 空 id (用户选了 dropdown 里的 "Text" 项, 或 attr 初始为
+  // 空) 走 "Text" 显示 ── dropdown 项跟 button 状态描述文案
+  // 对齐: 同一份数据两种视图都用 "Text", 不再区分动作/状态
   // 语义, 用户视角一个空 attr 只对应一个 label。
   private applyLanguageDisplay(): void {
     if (!this.languageBtn) return
@@ -497,7 +526,7 @@ class CodeBlockShikiView implements NodeView {
     if (!id || id === PLAIN_TEXT_ID) {
       // 专门处理 'plaintext' sentinel ── 它不是真实语言, 只是无高亮
       // 占位, 精选列表 lookup 必然 miss, 会让 button 停在 'plaintext'
-      // 小写态。空 attr 同理: dropdown "Plain Text" 项设的就是空值,
+      // 小写态。空 attr 同理: dropdown "Text" 项设的就是空值,
       // 两条路径统一走 label。
       displayLabel = PLAIN_TEXT_LABEL
     } else {
@@ -631,6 +660,7 @@ class CodeBlockShikiView implements NodeView {
     })
 
     this.boundThemeChangeHandler = () => {
+      this.syncShikiTheme()
       this.lastRenderedSource = null
       if (this.isMermaidBlock() && this.viewMode === 'preview') {
         void this.renderMermaidPreview()
@@ -1039,6 +1069,7 @@ private unmountFullscreenOverlay(): void {
     if (node.type !== this.node.type) return false
 
     this.node = node
+    this.syncShikiTheme()
 
     // Update language button if changed externally
     const newId = node.attrs.language || ''

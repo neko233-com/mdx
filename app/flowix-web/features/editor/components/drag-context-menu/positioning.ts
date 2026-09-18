@@ -1,5 +1,9 @@
 import type { Editor } from '@tiptap/core'
-import { getCurrentBlockInfo, type CurrentBlockInfo } from '@features/editor/components/drag-context-menu/block-info'
+import {
+  getBlockInfoForInteraction,
+  getFocusedAgentThreadCardInfo,
+  type CurrentBlockInfo,
+} from '@features/editor/components/drag-context-menu/block-info'
 import { getYOffset } from '@features/editor/components/drag-context-menu/style'
 
 /**
@@ -56,11 +60,17 @@ export function computeHandlePosition(
   requireFocus = true,
 ): HandlePosition | HandleHidden | null {
   const view = editor.view
-  if (!view || (requireFocus && !view.hasFocus())) return null
+  if (!view) return null
+
+  // AgentThreadCard owns a nested ProseMirror composer. The outer editor is
+  // intentionally blurred while the composer is active, but the card still
+  // needs its block handle for moving the card itself.
+  const focusedAgentThreadCard = getFocusedAgentThreadCardInfo(editor)
+  if (requireFocus && !view.hasFocus() && !focusedAgentThreadCard) return null
 
   const editorDom = view.dom as HTMLElement
   const editorContent = editorDom.closest('.editor-content') as HTMLElement | null
-  const info = getCurrentBlockInfo(editor)
+  const info = focusedAgentThreadCard ?? getBlockInfoForInteraction(editor)
   if (!info || !editorContent) return null
 
   // Anchor the handle on the visible block element. Table node DOM may be the
@@ -137,6 +147,9 @@ export function headingContentY(
 }
 
 function getVisibleBlockElement(info: CurrentBlockInfo): HTMLElement | null {
+  if (info.typeName === 'image' || info.typeName === 'videoAttachment') return info.dom
+  if (info.typeName === 'agentThreadCard') return info.dom
+
   if (info.typeName === 'table') {
     if (info.dom.matches('table, .tableWrapper')) return info.dom
     const table = info.dom.querySelector('table')

@@ -21,6 +21,36 @@ interface DecorationsOptions {
   defaultLanguage: BundledLanguage | 'plaintext' | null | undefined
 }
 
+// Shiki exposes VS Code TextMate's FontStyle as a bit mask:
+// italic = 1, bold = 2, underline = 4, strikethrough = 8.
+// Keep the conversion local so the editor only needs the token data and does
+// not have to render Shiki's HTML output inside ProseMirror's contentDOM.
+const FONT_STYLE_ITALIC = 1
+const FONT_STYLE_BOLD = 2
+const FONT_STYLE_UNDERLINE = 4
+const FONT_STYLE_STRIKETHROUGH = 8
+
+export function getTokenStyle(token: {
+  color?: string
+  bgColor?: string
+  fontStyle?: number
+}): string {
+  const styles: string[] = []
+  if (token.color) styles.push(`color: ${token.color}`)
+  if (token.bgColor) styles.push(`background-color: ${token.bgColor}`)
+
+  const fontStyle = token.fontStyle ?? 0
+  if (fontStyle & FONT_STYLE_ITALIC) styles.push('font-style: italic')
+  if (fontStyle & FONT_STYLE_BOLD) styles.push('font-weight: bold')
+
+  const decorations: string[] = []
+  if (fontStyle & FONT_STYLE_UNDERLINE) decorations.push('underline')
+  if (fontStyle & FONT_STYLE_STRIKETHROUGH) decorations.push('line-through')
+  if (decorations.length > 0) styles.push(`text-decoration: ${decorations.join(' ')}`)
+
+  return styles.join('; ')
+}
+
 // ── --shiki-theme CSS var 缓存 ────────────────────────────────────
 //
 // 该 var 由 useApplyTheme 在 app 主题切换时改写, 编辑过程中静态。

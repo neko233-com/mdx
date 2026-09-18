@@ -728,6 +728,70 @@ describe("AgentThreadCard NodeView streaming", () => {
     expect(openBrowserColumnText).not.toHaveBeenCalled();
   });
 
+  it("opens a clicked tool file summary through the Thread Card link handler", async () => {
+    const { AgentThreadCard } =
+      await import("@features/agent/thread-card");
+    const { useChatStore } = await import(
+      "@features/agent/store/agent-session-test-facade",
+    );
+    const { openBrowserColumnText, openBrowserColumnFileBrowser } = await import(
+      "@features/workspace/use-cases/browser-column-navigation",
+    );
+    const threadId = "thread-card-tool-file-link";
+    vi.mocked(openBrowserColumnText).mockClear();
+    vi.mocked(openBrowserColumnFileBrowser).mockClear();
+
+    const host = document.createElement("div");
+    document.body.append(host);
+    editor = new Editor({
+      element: host,
+      extensions: [StarterKit, AgentThreadCard],
+      content: {
+        type: "doc",
+        content: [{
+          type: "agentThreadCard",
+          attrs: {
+            threadId,
+            title: "Tool file link",
+            typeKey: "codex",
+            collapsed: false,
+          },
+        }],
+      },
+    });
+
+    const store = useChatStore.getState();
+    store.bindThreadType(threadId, "codex");
+    store.dispatchAgentChunk({
+      kind: "stream_start",
+      thread_id: threadId,
+      agent_type: "codex",
+    });
+    store.dispatchAgentChunk({
+      kind: "tool_call",
+      thread_id: threadId,
+      id: "tool-file-link",
+      name: "edit",
+      input: { path: "/Users/rop/Documents/Outside.ts" },
+      agent_type: "codex",
+    });
+    await flushStreamingRender();
+
+    const link = host.querySelector<HTMLAnchorElement>(
+      ".agent-thread-card__message--tool .agent-thread-card__message-tool-summary--link",
+    );
+    expect(link?.textContent).toBe("Outside.ts");
+    expect(link?.getAttribute("href")).toBe("/Users/rop/Documents/Outside.ts");
+    link?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(openBrowserColumnText).toHaveBeenCalledWith(
+      "/Users/rop/Documents/Outside.ts",
+      "/Users/rop/Documents",
+    );
+    expect(openBrowserColumnFileBrowser).not.toHaveBeenCalled();
+  });
+
   it("uses thread runtime as the Thread Card footer running source", async () => {
     const { AgentThreadCard } =
       await import("@features/agent/thread-card");

@@ -52,15 +52,32 @@ export const BlockDragExtension = Extension.create({
         props: {
           decorations(state) {
             const drag = blockDragPluginKey.getState(state)
-            if (drag?.dropPos == null) return null
-            return DecorationSet.create(state.doc, [
-              Decoration.widget(drag.dropPos, () => {
-                const marker = document.createElement('div')
-                marker.className = 'flowix-block-drop-indicator'
-                marker.contentEditable = 'false'
-                return marker
-              }, { side: -1 }),
-            ])
+            if (!drag) return null
+
+            const decorations = []
+            const draggedNode = state.doc.nodeAt(drag.from)
+            if (draggedNode && drag.to === drag.from + draggedNode.nodeSize) {
+              decorations.push(
+                Decoration.node(drag.from, drag.to, {
+                  class: 'flowix-block-drag-source',
+                }),
+              )
+            }
+
+            if (drag.dropPos != null) {
+              decorations.push(
+                Decoration.widget(drag.dropPos, () => {
+                  const marker = document.createElement('div')
+                  marker.className = 'flowix-block-drop-indicator'
+                  marker.contentEditable = 'false'
+                  return marker
+                }, { side: -1 }),
+              )
+            }
+
+            return decorations.length > 0
+              ? DecorationSet.create(state.doc, decorations)
+              : null
           },
         },
       }),

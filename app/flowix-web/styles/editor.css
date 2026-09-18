@@ -229,7 +229,7 @@
   border-radius: 0.5rem;
   padding: 0.4rem 0.8rem 1.2rem;
   padding-top: 0;
-  margin: 0 0 calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.25);
+  margin: 0 0 calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.32);
   font-family: inherit;
   font-size: inherit;
   white-space: pre-wrap;
@@ -258,7 +258,7 @@
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) ul:where(:not(.agent-thread-card__message, .agent-thread-card__message *)),
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) ol:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   margin: 0;
-  padding: 0 0 calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.25) 1.5rem;
+  padding: 0 0 calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.32) 1.5rem;
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) li:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
@@ -275,7 +275,7 @@
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > ol:has(> li:only-child) {
   margin: 0;
   padding-top: 0;
-  padding-bottom: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.25);
+  padding-bottom: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.32);
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > ul > li:only-child,
@@ -954,6 +954,39 @@
   pointer-events: none;
 }
 
+.markdown-editor .ProseMirror:not(.agent-thread-card__composer-editor) .flowix-block-drag-source {
+  opacity: 0.3;
+}
+
+.flowix-block-drag-preview {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2147483647;
+  box-sizing: border-box;
+  padding-inline: 0.5rem;
+  max-width: min(480px, calc(100vw - 16px));
+  max-height: min(320px, calc(100vh - 16px));
+  overflow: hidden;
+  pointer-events: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--document-bg, var(--card));
+  box-shadow: 0 8px 24px -8px rgb(0 0 0 / 32%);
+  opacity: 0.9;
+  transform: translate3d(0, 0, 0);
+  transform-origin: top left;
+  will-change: transform;
+}
+
+.flowix-block-drag-preview > .markdown-editor,
+.flowix-block-drag-preview > .markdown-editor > .ProseMirror {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-width: 100%;
+}
+
 /* 节点级选中 (image / videoAttachment / fileAttachment 等
  * atom 节点被 NodeSelection 选中时): 用品牌色 outline 替代 Tiptap 默认
  * 的浅蓝 #8cf, 与 .is-block-selected 左侧描边、::selection 文字底色共
@@ -1091,4 +1124,10 @@
 .markdown-editor .ProseMirror:not(.agent-thread-card__composer-editor) .search-result-current:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   background-color: rgba(255, 193, 7, 0.6);
   outline: 1px solid rgba(255, 152, 0, 0.8);
+}
+html.flowix-block-dragging,
+html.flowix-block-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
 }

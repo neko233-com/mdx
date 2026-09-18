@@ -45,6 +45,14 @@
   cursor: text;
 }
 
+/* The card sets `cursor: default` on every descendant. Keep the editable
+ * ProseMirror surface text-like as well; the interactive controls below
+ * restore their pointer cursor later in this stylesheet. */
+.markdown-editor .agent-thread-card__composer-input,
+.markdown-editor .agent-thread-card__composer-input :where(*) {
+  cursor: text;
+}
+
 /* 非全屏单行 composer 的外层高度基线。仅约束输入框容器，不改变
  * Tiptap 编辑器自身的内容高度；左右操作按钮以该容器为基准垂直居中。 */
 .markdown-editor

@@ -1,6 +1,7 @@
 import { translate, type AppLanguage } from "@/lib/i18n";
 import {
   createAgentThreadCardMessageElement,
+  disposeAgentThreadCardMessageTree,
 } from "@features/agent/thread-card/messages/message-item-renderer";
 import {
   isFailedToolMessage,
@@ -16,6 +17,16 @@ import {
 } from "@features/agent/thread-card/agent-thread-card-icons";
 
 type ToolGroup = Extract<AgentRenderItem, { kind: "tool-group" }>;
+
+function replaceChildrenWithCleanup(
+  parent: HTMLElement,
+  ...children: HTMLElement[]
+): void {
+  for (const child of Array.from(parent.children)) {
+    disposeAgentThreadCardMessageTree(child);
+  }
+  parent.replaceChildren(...children);
+}
 
 function parseEventTimestamp(
   event: Record<string, unknown> | undefined,
@@ -162,20 +173,20 @@ export function createToolGroupElement(options: {
       ? currentGroup.completedTools
       : currentGroup.completedTools.filter(isFailedToolMessage);
     if (visibleTools.length === 0) {
-      completedTools.replaceChildren();
+      replaceChildrenWithCleanup(completedTools);
       return;
     }
     const renderedTools = visibleTools
       .map((tool) => renderTool(tool, currentContext))
       .filter((element): element is HTMLElement => element !== null);
-    completedTools.replaceChildren(...renderedTools);
+    replaceChildrenWithCleanup(completedTools, ...renderedTools);
   };
 
   const syncRunningTools = () => {
     const renderedTools = currentGroup.runningTools
       .map(createRunningTool)
       .filter((element): element is HTMLElement => element !== null);
-    runningTools.replaceChildren(...renderedTools);
+    replaceChildrenWithCleanup(runningTools, ...renderedTools);
   };
 
   const label = document.createElement("span");

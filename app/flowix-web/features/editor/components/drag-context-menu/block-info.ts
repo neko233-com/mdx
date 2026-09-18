@@ -82,6 +82,107 @@ export function getCurrentBlockInfo(editor: Editor): CurrentBlockInfo | null {
   }
 }
 
+/**
+ * Resolve an AgentThreadCard whose nested composer currently owns focus.
+ *
+ * The composer is a second ProseMirror editor mounted inside the card's
+ * NodeView. In that state the outer editor selection is deliberately cleared
+ * (so the card does not remain NodeSelected), which means
+ * `getCurrentBlockInfo()` can no longer describe the card. Match the live
+ * NodeView DOM back to the document instead of relying on the outer selection.
+ */
+export function getFocusedAgentThreadCardInfo(editor: Editor): CurrentBlockInfo | null {
+  if (editor.isDestroyed) return null
+
+  const view = editor.view
+  if (!view || view.isDestroyed) return null
+
+  const activeElement = view.dom.ownerDocument.activeElement
+  if (!(activeElement instanceof HTMLElement)) return null
+
+  const composer = activeElement.closest<HTMLElement>('.agent-thread-card__composer')
+  if (!composer || !view.dom.contains(composer)) return null
+
+  const card = composer.closest<HTMLElement>('[data-agent-thread-card="true"]')
+  if (!card || !view.dom.contains(card)) return null
+
+  let result: CurrentBlockInfo | null = null
+  view.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'agentThreadCard') return true
+    if (view.nodeDOM(pos) !== card) return true
+
+    result = {
+      node,
+      typeName: node.type.name,
+      attrs: node.attrs,
+      pos,
+      nodeSize: node.nodeSize,
+      dom: card,
+    }
+    return false
+  })
+
+  return result
+}
+
+function isCurrentBlockInfo(editor: Editor, info: CurrentBlockInfo): boolean {
+  if (editor.isDestroyed || editor.view.isDestroyed) return false
+
+  const { doc } = editor.view.state
+  const node = doc.nodeAt(info.pos)
+  return !!(
+    node &&
+    node.type.name === info.typeName &&
+    node.nodeSize === info.nodeSize &&
+    editor.view.nodeDOM(info.pos) === info.dom
+  )
+}
+
+/** Resolve the block that should own the next drag-handle interaction. */
+export function getBlockInfoForInteraction(
+  editor: Editor,
+  preferredInfo?: CurrentBlockInfo | null,
+): CurrentBlockInfo | null {
+  if (preferredInfo && isCurrentBlockInfo(editor, preferredInfo)) return preferredInfo
+  return getFocusedAgentThreadCardInfo(editor) ?? getCurrentBlockInfo(editor)
+}
+
+/**
+ * Re-activate the AgentThreadCard before the handle opens its menu or starts
+ * a drag. The nested composer intentionally leaves the outer editor selection
+ * on the previous text block, so relying on that selection would target the
+ * wrong block.
+ */
+export function activateAgentThreadCard(
+  editor: Editor,
+  info: CurrentBlockInfo | null,
+): boolean {
+  if (editor.isDestroyed || !info || info.typeName !== 'agentThreadCard') return false
+
+  const view = editor.view
+  if (!view || view.isDestroyed) return false
+
+  const node = view.state.doc.nodeAt(info.pos)
+  if (
+    !node ||
+    node.type.name !== 'agentThreadCard' ||
+    node.nodeSize !== info.nodeSize ||
+    view.nodeDOM(info.pos) !== info.dom
+  ) {
+    return false
+  }
+
+  const { selection } = view.state
+  if (selection instanceof NodeSelection && selection.from === info.pos) return true
+
+  try {
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, info.pos)))
+    return true
+  } catch {
+    return false
+  }
+}
+
 function getTargetBlockDepth($from: { depth: number; node: (depth: number) => PMNode }): number {
   for (let depth = $from.depth; depth >= 1; depth--) {
     if ($from.node(depth).type.name === 'table') {

@@ -67,7 +67,8 @@
 }
 
 .markdown-editor .agent-thread-card__message-content p {
-  margin: 6px 0;
+  margin: 0;
+  padding: 0 0 8px;
 }
 
 .markdown-editor .agent-thread-card__message-display-toggle {
@@ -100,19 +101,25 @@
 .markdown-editor .agent-thread-card__message-content h4,
 .markdown-editor .agent-thread-card__message-content h5,
 .markdown-editor .agent-thread-card__message-content h6 {
-  margin: 8px 0 4px;
+  margin: 0;
+  padding: 8px 0;
   color: var(--foreground);
   font-weight: 600;
   line-height: 1.3;
 }
+.markdown-editor .agent-thread-card__message-content h4,
+.markdown-editor .agent-thread-card__message-content h5,
+.markdown-editor .agent-thread-card__message-content h6 {
+  padding-top: 0;
+}
 .markdown-editor .agent-thread-card__message-content h1 {
-  font-size: calc(var(--app-font-size, 15px) * 0.9);
+  font-size: calc(var(--app-font-size, 15px) * 1.2);
 }
 .markdown-editor .agent-thread-card__message-content h2 {
-  font-size: calc(var(--app-font-size, 15px) * 0.9);
+  font-size: calc(var(--app-font-size, 15px) * 1.2);
 }
 .markdown-editor .agent-thread-card__message-content h3 {
-  font-size: calc(var(--app-font-size, 15px) * 0.9);
+  font-size: calc(var(--app-font-size, 15px) * 1.2);
 }
 .markdown-editor .agent-thread-card__message-content h4 {
   font-size: calc(var(--app-font-size, 15px) * 0.9);
@@ -126,7 +133,9 @@
 
 .markdown-editor .agent-thread-card__message-content ul,
 .markdown-editor .agent-thread-card__message-content ol {
-  margin: 6px 0;
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: 8px;
   padding-left: 22px;
 }
 .markdown-editor .agent-thread-card__message-content ul {
@@ -136,11 +145,11 @@
   list-style: decimal;
 }
 .markdown-editor .agent-thread-card__message-content li {
-  margin: 2px 0;
+  margin: 0;
   line-height: 1.7;
 }
 .markdown-editor .agent-thread-card__message-content li > p {
-  margin: 2px 0;
+  margin: 0;
 }
 
 .markdown-editor .agent-thread-card__message-content strong {
@@ -346,7 +355,7 @@
  *   border: 1px solid color-mix(in oklch, var(--border) 90%, transparent)
  *   border-radius: 0.4rem
  *   padding: 0 0.3rem
- *   color:   color-mix(in oklch, var(--foreground) 80%, transparent)
+ *   color:   var(--brand)
  *   font-family: inherit; font-size: 0.84rem
  *
  * 选择器用 :not(pre) > code ── 让 inline code 规则只命中"pre 之外
@@ -357,7 +366,7 @@
  *  - <li>foo <code>bar</code></li>        命中 (li 不是 pre)
  *  - <h1>foo <code>bar</code></h1>        命中 (h1 不是 pre)
  *  - <pre><code>foo</code></pre>          不命中 (pre 是 pre)
- * 编辑器正文也不带背景色 ── 仅靠 1px 边框 + 字色 80% 透明弱化做区分。
+ * 编辑器正文也不带背景色 ── 仅靠 1px 边框 + 品牌色文字做区分。
  * 卡片跨三处 (Tiptap 正文 / 卡片 / 右栏面板) 走同一套 token。 */
 .markdown-editor .agent-thread-card__message-content .agent-thread-card__math,
 .markdown-editor
@@ -445,7 +454,7 @@
   padding: 0 0.3rem;
   border: 1px solid color-mix(in oklch, var(--border) 90%, transparent);
   border-radius: 0.4rem;
-  color: color-mix(in oklch, var(--foreground) 80%, transparent);
+  color: var(--brand);
   font-family: inherit;
   font-size: calc(var(--app-font-size, 15px) * 0.9); /* was 0.84rem ≈ 13.44px */
 }
@@ -458,10 +467,11 @@
  *   pre:     background  var(--editor-block-bg)
  *            border      var(--border)
  *            radius      0.5rem
- *            padding     0.5rem 1rem 1rem
- *            margin      1rem 0
- *            font-size   0.85em  (相对父级 message-content 14px ≈ 12px)
- *            line-height inherit (from message-content)
+ *            padding     0.5rem 0.8rem 8px
+ *            margin      0 0 6px
+ *            font-size   inherit (from message-content)
+ *            line-height 1.5
+ *            language   small label in the top-right corner
  *            white-space pre-wrap (跟编辑器一致, 长代码在卡片宽度下自动换行)
  *   pre code: padding 0 / background transparent (还原内层, 让 pre
  *            的样式不被 code 覆盖)
@@ -470,17 +480,31 @@
  * pre。pre-wrap + 卡片宽度窄, 代码块天然按卡片宽换行, 不需要
  * overflow-x: auto (编辑器是 overflow-x: visible, 同源)。 */
 .markdown-editor .agent-thread-card__message-content pre {
-  margin: 1rem 0;
-  padding: 0.5rem 1rem 1rem;
+  position: relative;
+  margin: 0 0 6px;
+  padding: 0.5rem 0.8rem 8px;
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   background: var(--editor-block-bg);
-  font-family: inherit;
-  font-size: calc(var(--app-font-size, 15px) * 0.9); /* 从 0.85em (≈ 11.9px @ 父级 14px) 升到 0.82rem ≈ 13.12px, 与右栏面板代码块对齐 */
-  line-height: inherit;
+  font-family: var(--code-font-family);
+  font-size: inherit;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
   tab-size: 5;
+}
+.markdown-editor .agent-thread-card__message-content pre::before {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.8rem;
+  color: var(--muted-foreground);
+  content: attr(data-language-label);
+  font-family: var(--app-font-family, var(--font-sans));
+  font-size: 0.75em;
+  line-height: 1.2;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
 }
 .markdown-editor .agent-thread-card__message-content pre code {
   /* 还原: 1) 上方 :not(pre) > code 已经让 inline code 规则不命中
@@ -501,27 +525,49 @@
 }
 
 /* 表格 ── 沿用编辑器 .tiptap table 的视觉规格 (separate + 单边 border)
- * 但圆角职责收口到 tbody ── tbody 自身 8px 圆角 + overflow: hidden
- * 把内部 cell 边框按 tbody 形状自然裁剪, 不再按行在角 cell 上单独设
- * border-radius。 border-collapse: separate + border-spacing: 0 是
- * 实现 tbody border-radius 视觉生效的前提。 */
+ * table 统一负责整体 8px 圆角与 overflow 裁剪; border-collapse: separate
+ * + border-spacing: 0 保证 cell 边框按整体形状自然收口。 */
 .markdown-editor .agent-thread-card__message-content table {
   width: 100%;
   margin: 8px 0;
   border-collapse: separate;
   border-spacing: 0;
+  border-radius: 8px;
+  overflow: hidden;
   font-size: calc(var(--app-font-size, 15px) * 0.9);
 }
 .markdown-editor .agent-thread-card__message-content thead {
   background: transparent;
 }
-/* tbody 是外层圆角容器 ── 8px 圆角 + overflow: hidden 把内部 cell
- * 边框按 tbody 形状裁剪成圆角视觉。 thead 紧贴 tbody 上沿, tbody
- * 顶 2 角圆角与 thead 接缝形成"圆角下行"的整体外观; 底 2 角圆角
- * 则是表整体的视觉收口。 */
+/* table 是外层圆角容器, tbody 保留圆角作为内部边界兜底; overflow: hidden
+ * 把 thead / tbody 的 cell 边框按表格整体形状裁剪成圆角视觉。 */
 .markdown-editor .agent-thread-card__message-content tbody {
   border-radius: 8px;
   overflow: hidden;
+}
+.markdown-editor
+  .agent-thread-card__message-content
+  tbody
+  tr:last-child
+  td:first-child,
+.markdown-editor
+  .agent-thread-card__message-content
+  tbody
+  tr:last-child
+  th:first-child {
+  border-bottom-left-radius: 8px;
+}
+.markdown-editor
+  .agent-thread-card__message-content
+  tbody
+  tr:last-child
+  td:last-child,
+.markdown-editor
+  .agent-thread-card__message-content
+  tbody
+  tr:last-child
+  th:last-child {
+  border-bottom-right-radius: 8px;
 }
 .markdown-editor .agent-thread-card__message-content th,
 .markdown-editor .agent-thread-card__message-content td {

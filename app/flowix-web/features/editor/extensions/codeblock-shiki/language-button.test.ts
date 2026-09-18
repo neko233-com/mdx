@@ -15,7 +15,7 @@ describe('code block language label', () => {
   it('handles non-string attributes without coercing them to HTML', () => {
     const button = document.createElement('button');
     setLanguageButtonContent(button, { toString: () => '<script>bad</script>' });
-    expect(button.textContent).toBe('Plain Text');
+    expect(button.textContent).toBe('Text');
     expect(button.querySelector('script')).toBeNull();
   });
 });

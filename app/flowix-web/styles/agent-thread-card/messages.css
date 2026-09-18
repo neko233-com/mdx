@@ -30,7 +30,7 @@
  * 替代 row-reverse, 不破坏 assistant 左对齐)。 */
 .markdown-editor .agent-thread-card__message--user {
   width: 100%;
-  margin-top: 1rem;
+  margin-top: 0;
   max-width: 100%;
   padding: 0;
   justify-items: end;
@@ -109,6 +109,7 @@
 
 .markdown-editor .agent-thread-card__message-context-compaction {
   align-self: flex-start;
+  padding-top: 8px;
   font-size: calc(var(--app-font-size, 15px) * 0.9);
   line-height: 1.4;
   font-style: italic;
@@ -206,6 +207,7 @@
 .markdown-editor .agent-thread-card__message-actions {
   display: flex;
   position: relative;
+  top: -10px;
   align-items: center;
   justify-content: flex-start;
   gap: 2px;
@@ -448,7 +450,7 @@
   align-items: flex-start;
   gap: 6px;
   padding: 4px 0;
-  background: transparent;
+  background: var(--document-bg);
   color: var(--muted-foreground);
   font-size: calc(var(--app-font-size, 15px) * 0.9);
   line-height: 18px;
@@ -461,10 +463,13 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  padding-top: 6px;
+  padding-bottom: 6px;
   padding-left: 4px;
   padding-right: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
+  background: var(--document-bg);
   color: var(--muted-foreground);
 }
 
@@ -473,7 +478,6 @@
   align-items: center;
   align-self: stretch;
   gap: 6px;
-  min-height: 30px;
   width: 100%;
   min-width: 0;
   padding: 2px 6px 2px 0;
@@ -559,7 +563,8 @@
 .markdown-editor .agent-thread-card__tool-group-completed-tools {
   display: none;
   min-width: 0;
-  padding-left: 18px;
+  padding-top: 6px;
+  padding-left: 24px;
 }
 
 .markdown-editor .agent-thread-card__tool-group--expanded
@@ -721,6 +726,17 @@
   line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.markdown-editor .agent-thread-card__message-tool-summary--link {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.markdown-editor .agent-thread-card__message-tool-summary--link:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .markdown-editor .agent-thread-card__message-tool-input {

@@ -14,6 +14,7 @@ import {
 import {
   createAgentThreadCardMessageElement,
   attachMessageActions,
+  disposeAgentThreadCardMessageTree,
   renderAgentThreadCardBudgetedMarkdown,
 } from "@features/agent/thread-card/messages/message-item-renderer";
 import {
@@ -181,6 +182,7 @@ function syncMessageActions(
         context.onForkMessage,
       );
     } else if (!shouldShow && actions) {
+      disposeAgentThreadCardMessageTree(actions);
       actions.remove();
     }
   }

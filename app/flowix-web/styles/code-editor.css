@@ -13,7 +13,7 @@
 	box-sizing: border-box;
 	color: var(--document-foreground, var(--foreground, #1f2937));
 	background: transparent;
-	font-size: var(--code-editor-font-size, 13px);
+	font-size: var(--code-editor-font-size, var(--code-font-size, 14px));
 }
 
 .code-editor > .cm-editor.cm-focused {
@@ -29,8 +29,8 @@
 	overflow-y: auto;
 	position: relative;
 	z-index: 0;
-	font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-	line-height: var(--code-editor-line-height, 1.65);
+	font-family: var(--code-editor-font-family, var(--code-font-family));
+	line-height: var(--code-editor-line-height, var(--code-line-height, 1.8));
 	overflow-anchor: none;
 }
 
@@ -39,8 +39,9 @@
  * absolute layers, and virtual viewport continue to share one coordinate
  * system. */
 .code-editor {
-	--code-editor-font-size: 13px;
-	--code-editor-line-height: 1.65;
+	--code-editor-font-family: var(--code-font-family);
+	--code-editor-font-size: var(--code-font-size);
+	--code-editor-line-height: var(--code-line-height);
 	--code-editor-active-surface-bg: color-mix(in oklch, var(--muted, #f3f4f6) 58%, transparent);
 	--code-editor-source-header-height: 54px;
 	--code-editor-line-padding-left: 10px;
@@ -54,9 +55,9 @@
 	width: 100%;
 	min-width: 0;
 	box-sizing: border-box;
-	font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-	font-size: var(--code-editor-font-size, 13px);
-	line-height: var(--code-editor-line-height, 1.65);
+	font-family: var(--code-editor-font-family, var(--code-font-family));
+	font-size: var(--code-editor-font-size, var(--code-font-size, 14px));
+	line-height: var(--code-editor-line-height, var(--code-line-height, 1.8));
 	color: var(--document-foreground, var(--foreground, #1f2937));
 	white-space: normal;
 }

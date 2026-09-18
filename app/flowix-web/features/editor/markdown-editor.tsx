@@ -1,7 +1,7 @@
 import { Editor, Extension, renderNestedMarkdownContent } from '@tiptap/core';
 import type { JSONContent } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
-import { TextSelection } from '@tiptap/pm/state';
+import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 import Highlight from '@tiptap/extension-highlight';
 import { TaskList } from '@tiptap/extension-task-list';
@@ -459,6 +459,51 @@ function createEmptyParagraph(editor: Editor, text?: string): ProseMirrorNode {
   return paragraph.create(null, text ? editor.state.schema.text(text) : undefined);
 }
 
+/**
+ * WebKit can fail to place the native caret in an empty paragraph immediately
+ * after a non-editable block NodeView. The first click then only focuses the
+ * editor and a second click is needed before typing works. Resolve that
+ * paragraph explicitly while a media block is selected.
+ */
+function focusEmptyParagraphAfterMedia(
+  view: Editor['view'],
+  event: MouseEvent,
+): boolean {
+  if (event.button !== 0) return false;
+
+  const selection = view.state.selection;
+  if (
+    !(selection instanceof NodeSelection) ||
+    (selection.node.type.name !== 'image' && selection.node.type.name !== 'videoAttachment')
+  ) return false;
+
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return false;
+
+  const paragraph = target.closest('p');
+  if (
+    !(paragraph instanceof HTMLElement) ||
+    !view.dom.contains(paragraph) ||
+    paragraph.textContent !== '' ||
+    paragraph.closest('[contenteditable="false"]')
+  ) return false;
+
+  try {
+    const textPosition = view.posAtDOM(paragraph, 0);
+    const nextSelection = TextSelection.create(view.state.doc, textPosition);
+    if (!nextSelection.$from.parent.isTextblock || !nextSelection.empty) return false;
+
+    view.dispatch(view.state.tr.setSelection(nextSelection).setMeta('pointer', true));
+    view.focus();
+    event.preventDefault();
+    return true;
+  } catch {
+    // The DOM may have been replaced between the pointer event and the
+    // position lookup (for example while a NodeView is updating).
+    return false;
+  }
+}
+
 export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({
   memoId,
   content,
@@ -483,8 +528,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   // placeholder 是 mount effect 的输入字符串，但本身不应成为 mount 的依赖：
   // i18n 切换会让 resolvedPlaceholder 重新生成，导致 Editor 被 destroy→重建，
   // 重建间隙各 extension 读 view.dom 触发 "editor view is not available"。
-  // 这里把最新值放在 ref 里：mount 时读一次初值，运行时通过下面的同步 effect
-  // 原地更新 Placeholder.options 并 dispatch meta 触发重新装饰。
+  // 这里把最新值放在 ref 里：mount 时读取，placeholder 回调始终拿最新值；
+  // 运行时通过下面的同步 effect dispatch meta 触发重新装饰。
   const resolvedPlaceholderRef = useRef(resolvedPlaceholder);
   resolvedPlaceholderRef.current = resolvedPlaceholder;
   const elementRef = useRef<HTMLDivElement>(null);
@@ -736,6 +781,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         clipboardTextSerializer(content) {
           return content.content.textBetween(0, content.content.size, '\n', '\n');
         },
+        handleDOMEvents: {
+          mousedown: (view, event) => focusEmptyParagraphAfterMedia(view, event),
+        },
         handleKeyDown: (_view, event) => {
           if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) {
             return false;
@@ -799,8 +847,23 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           },
         }),
         Placeholder.configure({
-          placeholder: resolvedPlaceholderRef.current,
           showOnlyCurrent: true,
+          // `showOnlyCurrent` uses an inclusive range check. A block
+          // NodeSelection starts exactly at the end of the preceding block,
+          // so an empty paragraph immediately before a selected video/image
+          // would otherwise be treated as the current block and show its
+          // placeholder. Node selections have no text caret, so that boundary
+          // paragraph is not an editable current block.
+          placeholder: ({ editor, node, pos }) => {
+            const selection = editor.state.selection;
+            if (
+              selection instanceof NodeSelection &&
+              selection.from === pos + node.nodeSize
+            ) {
+              return '';
+            }
+            return resolvedPlaceholderRef.current;
+          },
         }),
         Tag,
         ManagedPasteRules,
@@ -925,8 +988,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     serializePendingChanges,
   ]);
 
-  // 语言切换时，原地把 Placeholder extension 的 placeholder 字符串换掉，
-  // 再 dispatch 一条带 'placeholder-update' meta 的空事务触发装饰重算。
+  // 语言切换时，placeholder 回调会读取最新的 ref；dispatch 一条带
+  // 'placeholder-update' meta 的空事务触发重新装饰。不能把回调改回字符串，
+  // 否则视频/图片 NodeSelection 位于空段落边界时的抑制逻辑会丢失。
   // 不重建 Editor — 重建会让 view.dom 瞬间失效，extension 子树的 unmount
   // 路径里读 view.dom 会触发 "The editor view is not available"。
   useEffect(() => {
@@ -936,7 +1000,6 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       (ext) => ext.name === 'placeholder',
     );
     if (!placeholderExt) return;
-    placeholderExt.options.placeholder = resolvedPlaceholder;
     editor.view.dispatch(
       editor.state.tr.setMeta('placeholder-update', true),
     );

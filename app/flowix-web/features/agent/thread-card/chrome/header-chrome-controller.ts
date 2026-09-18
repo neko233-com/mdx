@@ -9,11 +9,19 @@ import {
   getEventElement,
   isAgentThreadCardInteractiveTarget,
 } from "@features/agent/thread-card/agent-thread-card-dom";
+import {
+  createBlockDragPreview,
+  removeBlockDragPreview,
+  updateBlockDragPreview,
+  type BlockDragPreview,
+} from "@features/editor/components/drag-context-menu/block-drag-preview";
 
 interface HeaderDragState {
   pointerId: number;
   startX: number;
   startY: number;
+  currentX: number;
+  currentY: number;
   started: boolean;
 }
 
@@ -38,6 +46,8 @@ export class AgentThreadCardHeaderChromeController {
   private readonly closeTransientUi: () => void;
   private readonly dragThresholdPx: number;
   private dragState: HeaderDragState | null = null;
+  private dragPreview: BlockDragPreview | null = null;
+  private moveFrame: number | null = null;
   private suppressNextHeaderClick = false;
 
   constructor(options: AgentThreadCardHeaderChromeControllerOptions) {
@@ -56,6 +66,7 @@ export class AgentThreadCardHeaderChromeController {
     this.header.addEventListener("pointermove", this.handlePointerMove);
     this.header.addEventListener("pointerup", this.handlePointerUp);
     this.header.addEventListener("pointercancel", this.handlePointerCancel);
+    this.header.addEventListener("lostpointercapture", this.handleLostPointerCapture);
     this.header.addEventListener("click", this.handleClick, true);
   }
 
@@ -64,13 +75,15 @@ export class AgentThreadCardHeaderChromeController {
     this.header.removeEventListener("pointermove", this.handlePointerMove);
     this.header.removeEventListener("pointerup", this.handlePointerUp);
     this.header.removeEventListener("pointercancel", this.handlePointerCancel);
+    this.header.removeEventListener("lostpointercapture", this.handleLostPointerCapture);
     this.header.removeEventListener("click", this.handleClick, true);
+    this.cancelScheduledMove();
     if (this.dragState) {
       cancelBlockDragForView(this.view);
       this.releasePointerCapture(this.dragState.pointerId);
       this.dragState = null;
-      this.dom.classList.remove("agent-thread-card--dragging");
     }
+    this.clearDragVisuals();
   }
 
   private readonly handlePointerDown = (event: PointerEvent): void => {
@@ -83,6 +96,8 @@ export class AgentThreadCardHeaderChromeController {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      currentX: event.clientX,
+      currentY: event.clientY,
       started: false,
     };
     this.header.setPointerCapture(event.pointerId);
@@ -91,6 +106,9 @@ export class AgentThreadCardHeaderChromeController {
   private readonly handlePointerMove = (event: PointerEvent): void => {
     const drag = this.dragState;
     if (!drag || drag.pointerId !== event.pointerId) return;
+
+    drag.currentX = event.clientX;
+    drag.currentY = event.clientY;
 
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
@@ -114,12 +132,14 @@ export class AgentThreadCardHeaderChromeController {
       }
       drag.started = true;
       this.dom.classList.add("agent-thread-card--dragging");
+      document.documentElement.classList.add("flowix-block-dragging");
+      this.dragPreview = createBlockDragPreview(this.dom, event.clientX, event.clientY);
       this.closeTransientUi();
     }
 
-    updateBlockDragPositionForView(this.view, event.clientX, event.clientY);
     event.preventDefault();
     event.stopPropagation();
+    this.scheduleDragUpdate();
   };
 
   private readonly handlePointerUp = (event: PointerEvent): void => {
@@ -128,6 +148,7 @@ export class AgentThreadCardHeaderChromeController {
 
     this.dragState = null;
     if (drag.started) {
+      this.cancelScheduledMove();
       dropBlockDragAtForView(this.view, event.clientX, event.clientY);
       this.finishDragInteraction();
       event.preventDefault();
@@ -142,12 +163,17 @@ export class AgentThreadCardHeaderChromeController {
 
     this.dragState = null;
     if (drag.started) {
+      this.cancelScheduledMove();
       cancelBlockDragForView(this.view);
       this.finishDragInteraction();
       event.preventDefault();
       event.stopPropagation();
     }
     this.releasePointerCapture(event.pointerId);
+  };
+
+  private readonly handleLostPointerCapture = (event: PointerEvent): void => {
+    this.handlePointerCancel(event);
   };
 
   private readonly handleClick = (event: MouseEvent): void => {
@@ -163,8 +189,32 @@ export class AgentThreadCardHeaderChromeController {
     }
   }
 
-  private finishDragInteraction(): void {
+  private scheduleDragUpdate(): void {
+    if (this.moveFrame !== null) return;
+    this.moveFrame = window.requestAnimationFrame(() => {
+      this.moveFrame = null;
+      const drag = this.dragState;
+      if (!drag?.started) return;
+      updateBlockDragPreview(this.dragPreview, drag.currentX, drag.currentY);
+      updateBlockDragPositionForView(this.view, drag.currentX, drag.currentY);
+    });
+  }
+
+  private cancelScheduledMove(): void {
+    if (this.moveFrame === null) return;
+    window.cancelAnimationFrame(this.moveFrame);
+    this.moveFrame = null;
+  }
+
+  private clearDragVisuals(): void {
+    removeBlockDragPreview(this.dragPreview);
+    this.dragPreview = null;
     this.dom.classList.remove("agent-thread-card--dragging");
+    document.documentElement.classList.remove("flowix-block-dragging");
+  }
+
+  private finishDragInteraction(): void {
+    this.clearDragVisuals();
     this.suppressNextHeaderClick = true;
     window.setTimeout(() => {
       this.suppressNextHeaderClick = false;

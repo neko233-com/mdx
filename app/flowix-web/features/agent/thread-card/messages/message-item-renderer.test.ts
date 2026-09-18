@@ -487,6 +487,35 @@ describe("unified tool message rendering", () => {
     )).toBeNull();
   });
 
+  it("makes file tool summaries open their source file", () => {
+    const result = createAgentThreadCardMessageElement({
+      message: {
+        id: "tool-file-link",
+        role: "tool",
+        content: "",
+        timestamp: new Date().toISOString(),
+        toolName: "edit",
+        toolDisplay: {
+          kind: "file",
+          summary: "Change index.tsx (+1)",
+          title: "/workspace/index.tsx",
+          targetPath: "/workspace/index.tsx",
+        },
+      },
+      language: "zh-CN",
+      getReasoningCollapsed: () => true,
+      setReasoningCollapsed: () => undefined,
+      getDisplayExpanded: () => false,
+      setDisplayExpanded: () => undefined,
+    });
+
+    const link = result?.element.querySelector<HTMLAnchorElement>(
+      ".agent-thread-card__message-tool-summary--link",
+    );
+    expect(link?.textContent).toBe("Change index.tsx (+1)");
+    expect(link?.getAttribute("href")).toBe("/workspace/index.tsx");
+  });
+
   it("uses the same expansion control for overflowing non-command tools", async () => {
     const fullSummary = `first line\nsecond line\n${"x".repeat(1200)}`;
     const result = createAgentThreadCardMessageElement({

@@ -191,11 +191,13 @@ function display(
   summary: string | undefined,
   kind: AgentToolDisplayKind,
   title?: string,
+  targetPath?: string,
 ): AgentToolDisplay | undefined {
   if (!summary) return undefined;
   return {
     summary,
     title: title || summary,
+    ...(targetPath ? { targetPath } : {}),
     kind,
   };
 }
@@ -225,14 +227,14 @@ function fileDisplay(
   // OpenCode ACP 用 camelCase `filePath`, Claude Code 用 `file_path`, 其余
   // CLI 多用 `path` ── 全部尝试, 命中第一个非空字符串。
   const path = stringField(input, ["path", "filePath", "file_path", "filepath"]);
-  return display(path ? extractFileName(path) : undefined, "file", path);
+  return display(path ? extractFileName(path) : undefined, "file", path, path);
 }
 
 function directoryDisplay(
   input: Record<string, unknown>,
 ): AgentToolDisplay | undefined {
   const path = stringField(input, ["path", "cwd", "directory"]);
-  return display(path ? extractFileName(path) : undefined, "file", path);
+  return display(path ? extractFileName(path) : undefined, "file", path, path);
 }
 
 function commandDisplay(
@@ -481,18 +483,20 @@ function fileChangeDisplay(
     entries.length === 1
       ? `${verb} ${name}`
       : `${verb} ${name} (+${entries.length - 1})`;
-  return display(summary, "file", first.path);
+  return display(summary, "file", first.path, first.path);
 }
 
 function viewImageDisplay(
   input: Record<string, unknown>,
 ): AgentToolDisplay | undefined {
   const directPath = deepStringField(input, ["path", "image_path", "file"]);
-  if (directPath) return display(extractFileName(directPath), "file", directPath);
+  if (directPath) {
+    return display(extractFileName(directPath), "file", directPath, directPath);
+  }
   const command = stringField(input, ["command", "script"]);
   const wrappedPath = command?.match(/\bpath\s*:\s*["']([^"']+)["']/)?.[1];
   return wrappedPath
-    ? display(extractFileName(wrappedPath), "file", wrappedPath)
+    ? display(extractFileName(wrappedPath), "file", wrappedPath, wrappedPath)
     : undefined;
 }
 
@@ -653,7 +657,7 @@ function patchDisplay(
     entries.length === 1
       ? `${verb} ${name}`
       : `${verb} ${name} (+${entries.length - 1})`;
-  return display(summary, "patch", first.path);
+  return display(summary, "patch", first.path, first.path);
 }
 
 /* ════════════════════════════════════════════════════════════════════════

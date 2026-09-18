@@ -42,11 +42,13 @@ describe('MarkdownEditor select all', () => {
     });
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
     vi.stubGlobal('ResizeObserver', ResizeObserverStub);
+    vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
   });
 
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     reactActEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
   });
@@ -69,6 +71,47 @@ describe('MarkdownEditor select all', () => {
     expect(title?.parentElement?.classList.contains('editor-content')).toBe(true);
     expect(editor!.view.dom.contains(title)).toBe(false);
     expect(editor!.getMarkdown()).toBe('Body paragraph');
+  });
+
+  it('does not show the paragraph placeholder at a selected block boundary', async () => {
+    let editor: Editor | null = null;
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content="Existing"
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      editor!.commands.setContent({
+        type: 'doc',
+        content: [
+          { type: 'paragraph' },
+          {
+            type: 'videoAttachment',
+            attrs: { src: 'https://example.com/video.mp4' },
+          },
+          { type: 'paragraph' },
+        ],
+      });
+      editor!.commands.setNodeSelection(2);
+    });
+
+    const paragraphs = editor!.view.dom.querySelectorAll('p');
+    expect(paragraphs[0]?.classList.contains('is-empty')).toBe(true);
+    expect(paragraphs[0]?.getAttribute('data-placeholder')).toBe('');
+
+    paragraphs[1]?.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    }));
+    expect(editor!.state.selection.empty).toBe(true);
+    expect(editor!.state.selection.$from.parent.type.name).toBe('paragraph');
   });
 
   it('drops paragraph alignment while preserving inline formatting across markdown reloads', async () => {

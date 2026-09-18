@@ -1323,6 +1323,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "common.cancel": "Cancel",
     "common.save": "Save",
     "common.edit": "Edit",
+    "editor.codeblock.auto": "Auto Detect",
+    "editor.codeblock.searchLanguage": "Search language",
     "editor.codeblock.previewTab": "Preview",
     "editor.codeblock.fullscreen": "Fullscreen",
     "editor.mermaid.parseError": "Failed to parse Mermaid diagram",
