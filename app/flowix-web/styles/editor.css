@@ -674,7 +674,7 @@
    * run, so the caret is painted above the glyph instead of behind a layer. */
   display: inline;
   font-family: 'Flowix Tag Icon', var(--app-font-family, var(--font-sans));
-  font-size: inherit;
+  font-size: 1.08em;
   font-weight: 400;
   color: var(--document-tag-foreground, var(--primary-foreground));
   caret-color: currentColor;
