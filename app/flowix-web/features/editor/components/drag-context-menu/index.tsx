@@ -320,7 +320,7 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
         alignItems: 'center',
         justifyContent: 'center',
         pointerEvents: 'auto',
-        zIndex: 100,
+        zIndex: 1,
         background: showMenu ? 'var(--brand)' : (isHovered ? 'var(--muted)' : 'transparent'),
         color: showMenu ? 'var(--primary-foreground)' : 'var(--brand)',
         borderRadius: '4px',

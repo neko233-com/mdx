@@ -132,9 +132,9 @@ export function NotebookAccessFilesList({
     [notebookId, folderPaths, defaultFiles, folderItems, setDefaultFiles, t],
   );
 
-  // 资料组 ── 外侧容器, pt-1 提供组上方留白 (与标签组对称, 用 padding 而非 margin); pb-4 是滚动列表末尾底部留白。
+  // 资料组 ── 外侧容器, pt-1 提供组上方留白; pb-2 将滚动列表末尾底部留白缩小一半。
   return (
-    <div className="pt-1 pb-4">
+    <div className="pt-1 pb-2">
       <div className="agent-thread-card__access-section-label">
         {t('memo.navigation.files')}
       </div>

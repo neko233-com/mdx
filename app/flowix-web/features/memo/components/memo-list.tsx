@@ -17,6 +17,7 @@ import {
   type ColorFilterValue,
 } from '@features/memo/store/memo-store';
 import { useMemoLibraryMetadataStore } from '@features/memo/store/memo-library-metadata-store';
+import { useCustomFilterStore } from '@features/memo/store/custom-filter-store';
 import { useTagStore } from '@features/memo/store/tag-store';
 import type { MemoColor, MemoItem } from '@/types/memo-item';
 import { resolveSelectedTagId } from '@features/memo/services/memo-list-metadata-service';
@@ -120,8 +121,14 @@ export function MemoList({
   const refreshTrigger = useMemoStore((s) => s.refreshTrigger);
   const activeFilter = useMemoStore((s) => s.activeFilter);
   const activePluginId = useMemoStore((s) => s.activePluginId);
+  const activeCustomFilterId = useMemoStore((s) => s.activeCustomFilterId);
   const activeSort = useMemoStore((s) => s.activeSort);
   const colorFilter = useMemoStore((s) => s.colorFilter);
+  const activeCustomFilter = useCustomFilterStore((s) => (
+    activeCustomFilterId
+      ? s.filters.find((filter) => filter.id === activeCustomFilterId) ?? null
+      : null
+  ));
   const startupPhase = useMemoStore((s) => s.startupPhase);
   const startupError = useMemoStore((s) => s.startupError);
   const initialMemoQueryKey = useMemoStore((s) => s.initialMemoQueryKey);
@@ -272,6 +279,7 @@ export function MemoList({
     activeTagId,
     colorFilter,
     activePluginId,
+    activeCustomFilterId,
   );
   const showMemoListLoading = startupPhase === 'loading' || shouldShowMemoListLoading({
       selectedNotebookId,
@@ -299,6 +307,9 @@ export function MemoList({
           : activePluginId === 'webpage' ? '网页' : activePluginId,
         hasActiveFilter: true,
       };
+    }
+    if (activeFilter === 'custom' && activeCustomFilter) {
+      return { headerLabel: activeCustomFilter.name, hasActiveFilter: true };
     }
     // tag 保留 "#" 前缀; 其余筛选 (待办/对话/颜色/只看本周/只看本月) 仅展示文案,
     // 不带 "@" 前缀。
@@ -722,6 +733,7 @@ export function MemoList({
         activeTagId={activeTagId}
         colorFilter={colorFilter}
         activePluginId={activePluginId}
+        activeCustomFilterId={activeCustomFilterId}
         refreshTrigger={refreshTrigger}
         loadedMemoListQueryKey={loadedMemoListQueryKey}
         loadMemos={loadMemos}

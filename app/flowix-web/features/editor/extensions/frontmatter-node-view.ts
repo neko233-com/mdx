@@ -24,7 +24,8 @@ import {
 } from '@features/document/properties/property-icons';
 import {
   PROPERTY_KINDS,
-  resolvePreset,
+  getAllPresets,
+  resolvePropertyPreset,
   type PropertyKind,
 } from '@features/document/properties/presets';
 import {
@@ -35,8 +36,11 @@ import {
 } from '@features/document/properties/property-type';
 import { DateValueInput } from '@features/document/components/note-properties/date-value-input';
 import { getCurrentAppLanguage, subscribeAppLanguage } from '@features/preferences/public/runtime-api';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 import { canonicalizePropertyKey } from '@features/document/properties/property-key';
 import { isImeKeyboardEvent } from '@/lib/input-method';
+import { useSettingsStore } from '@/lib/store/settings-store';
+import { windows } from '@platform/tauri/client';
 
 function createElement<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -56,6 +60,7 @@ type PropertyEditKind = PropertyKind;
 
 const PROPERTY_EDIT_KIND_LABEL_KEYS = {
   Text: 'document.properties.type.text',
+  Boolean: 'document.properties.type.boolean',
   Number: 'document.properties.type.number',
   Date: 'document.properties.type.date',
   URL: 'document.properties.type.url',
@@ -64,25 +69,6 @@ const PROPERTY_EDIT_KIND_LABEL_KEYS = {
   MultiSelect: 'document.properties.category.tags',
   List: 'document.properties.type.list',
 } as const;
-
-const COMMON_PROPERTY_KEYS = [
-  { key: 'name', labelKey: 'document.properties.commonKey.name' },
-  { key: 'description', labelKey: 'document.properties.commonKey.description' },
-  { key: 'tags', labelKey: 'document.properties.category.tags' },
-  // Flowix note colors are managed by the product color palette and are
-  // persisted under the internal frontmatter key, not a generic `color` key.
-  { key: 'flowix_colors', labelKey: 'document.properties.commonKey.color' },
-  { key: 'flowix_icon', labelKey: 'document.properties.category.icon' },
-] as const;
-
-const PROPERTY_DISPLAY_KEY_LABEL_KEYS: Partial<Record<string, I18nKey>> = {
-  flowix_colors: 'document.properties.commonKey.color',
-  name: 'document.properties.commonKey.name',
-  description: 'document.properties.commonKey.description',
-  tags: 'document.properties.category.tags',
-  flowix_icon: 'document.properties.category.icon',
-  flowix_favorited: 'document.action.pin',
-};
 
 const FLOWIX_COLOR_LABEL_KEYS: Record<MemoColor, I18nKey> = {
   red: 'document.color.red',
@@ -99,7 +85,19 @@ function getPropertyDisplayKind(
   value: unknown,
   isFlowSequence = false,
 ): PropertyDisplayKind {
-  return resolvePropertyType(key, value, isFlowSequence).displayKind;
+  return resolvePropertyType(
+    key,
+    value,
+    isFlowSequence,
+    useUserSettingsStore.getState().settings.properties.fields,
+  ).displayKind;
+}
+
+function resolveRuntimePropertyPreset(key: string) {
+  return resolvePropertyPreset(
+    key,
+    useUserSettingsStore.getState().settings.properties.fields,
+  );
 }
 
 function getPropertyEditKind(
@@ -107,6 +105,8 @@ function getPropertyEditKind(
   value: unknown,
   isFlowSequence = false,
 ): PropertyEditKind {
+  const preset = resolveRuntimePropertyPreset(key);
+  if (preset) return preset.kind;
   return resolvePropertyType(key, value, isFlowSequence).kind;
 }
 
@@ -114,6 +114,7 @@ function createPropertySvgIcon(
   kind: PropertyDisplayKind | 'properties' | 'add',
 ): SVGSVGElement {
   if (kind === 'number') return createNumberPropertySvgIcon();
+  if (kind === 'color') return createColorPropertySvgIcon();
 
   const paths: Record<Exclude<PropertyDisplayKind, 'number'> | 'properties' | 'add', string> = {
     properties: 'M5 6h14M5 12h14M5 18h14M3.5 6h.01M3.5 12h.01M3.5 18h.01',
@@ -123,6 +124,7 @@ function createPropertySvgIcon(
     url: 'm9 15 6-6M7 17H6a4 4 0 0 1 0-8h3M17 7h1a4 4 0 0 1 0 8h-3',
     boolean: 'M5 6h14M5 12h14M5 18h9',
     array: 'M8 5v14M16 5v14M5 8h14M5 16h14',
+    color: 'M9 16.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Zm6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9Z',
     list: 'M7 6h12M7 12h12M7 18h12M4 6h.01M4 12h.01M4 18h.01',
     icon: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM9 10h.01M15 10h.01M8.5 14a5 5 0 0 0 7 0',
   };
@@ -134,6 +136,30 @@ function createPropertySvgIcon(
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   path.setAttribute('d', paths[kind]);
   svg.append(path);
+  return svg;
+}
+
+function createColorPropertySvgIcon(): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  svg.classList.add('frontmatter-property__svg-icon', 'frontmatter-property__svg-icon--color');
+
+  const createCircle = (cx: string, cy: string, radius: string, opacity: string) => {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', cx);
+    circle.setAttribute('cy', cy);
+    circle.setAttribute('r', radius);
+    circle.setAttribute('fill', 'none');
+    circle.setAttribute('stroke', 'currentColor');
+    circle.setAttribute('stroke-width', '1.8');
+    circle.setAttribute('stroke-linecap', 'round');
+    circle.setAttribute('opacity', opacity);
+    return circle;
+  };
+
+  svg.append(createCircle('9', '9', '4.5', '0.48'), createCircle('14.5', '14.5', '5.8', '0.9'));
   return svg;
 }
 
@@ -161,6 +187,18 @@ function createPropertyTypeChevron(): SVGSVGElement {
   svg.setAttribute('focusable', 'false');
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   path.setAttribute('d', 'm4 6 4 4 4-4');
+  svg.append(path);
+  return svg;
+}
+
+function createPropertyCheckIcon(): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  svg.classList.add('frontmatter-property__edit-option-check');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', 'm5 12 4 4L19 6');
   svg.append(path);
   return svg;
 }
@@ -309,7 +347,18 @@ export class FrontmatterPropertyNodeView implements NodeView {
     this.memoId = memoId;
     this.dom = createElement('div', 'frontmatter-property-node');
     this.dom.contentEditable = 'false';
-    this.unsubscribeSettings = subscribeAppLanguage(() => this.render());
+    const unsubscribeLanguage = subscribeAppLanguage(() => this.render());
+    const unsubscribeProperties = useSettingsStore.subscribe((state, previous) => {
+      if (state.propertiesVisible !== previous.propertiesVisible) this.render();
+    });
+    const unsubscribePropertyPresets = useUserSettingsStore.subscribe((state, previous) => {
+      if (state.settings.properties !== previous.settings.properties) this.render();
+    });
+    this.unsubscribeSettings = () => {
+      unsubscribeLanguage();
+      unsubscribeProperties();
+      unsubscribePropertyPresets();
+    };
     this.dom.ownerDocument.addEventListener(
       'pointerdown',
       this.handleDocumentPointerDown,
@@ -437,11 +486,13 @@ export class FrontmatterPropertyNodeView implements NodeView {
     nextKey: string,
   ) {
     try {
+      const preset = resolveRuntimePropertyPreset(nextKey);
       const nextYamlContent = updateVisibleFrontmatterProperty(
         String(this.node.attrs.yamlContent ?? ''),
         property.key,
         nextKey,
         getPropertyEditValue(property.value),
+        preset?.kind,
       );
       const pos = this.getPos();
       if (typeof pos !== 'number') return;
@@ -815,22 +866,57 @@ export class FrontmatterPropertyNodeView implements NodeView {
     occupiedKeys: ReadonlySet<string>,
     onSelect: (key: string) => void,
   ) {
-    COMMON_PROPERTY_KEYS.forEach(({ key, labelKey }) => {
+    getAllPresets(
+      useUserSettingsStore.getState().settings.properties.fields,
+      (key) => this.t(key),
+    ).filter((preset) => preset.source === 'builtin' && preset.key !== 'flowix_favorited').forEach((preset) => {
       const option = createElement(
         'button',
         'frontmatter-property__edit-key-option',
-        this.t(labelKey),
+        preset.label,
       );
-      const alreadyExists = occupiedKeys.has(canonicalizePropertyKey(key));
+      const alreadyExists = occupiedKeys.has(canonicalizePropertyKey(preset.key));
       option.type = 'button';
-      option.dataset.value = key;
+      option.dataset.value = preset.key;
       option.setAttribute('role', 'option');
       option.disabled = alreadyExists;
       if (alreadyExists) option.title = this.t('document.properties.commonKey.alreadyExists');
       option.addEventListener('click', (event) => {
         event.preventDefault();
         if (option.disabled) return;
-        onSelect(key);
+        onSelect(preset.key);
+      });
+      menu.append(option);
+    });
+  }
+
+  private appendCustomPropertyOptions(
+    menu: HTMLElement,
+    occupiedKeys: ReadonlySet<string>,
+    onSelect: (key: string) => void,
+  ) {
+    const customPresets = getAllPresets(
+      useUserSettingsStore.getState().settings.properties.fields,
+      (key) => this.t(key),
+    ).filter((preset) => preset.source === 'custom');
+    customPresets.forEach((preset) => {
+      const option = createElement(
+        'button',
+        'frontmatter-property__edit-key-option',
+        preset.label,
+      );
+      const key = canonicalizePropertyKey(preset.key);
+      option.type = 'button';
+      option.dataset.value = preset.key;
+      option.setAttribute('role', 'option');
+      option.title = `${preset.label} (${preset.key})`;
+      const alreadyExists = occupiedKeys.has(key);
+      option.disabled = alreadyExists;
+      if (alreadyExists) option.title = this.t('document.properties.commonKey.alreadyExists');
+      option.addEventListener('click', (event) => {
+        event.preventDefault();
+        if (option.disabled) return;
+        onSelect(preset.key);
       });
       menu.append(option);
     });
@@ -871,6 +957,11 @@ export class FrontmatterPropertyNodeView implements NodeView {
     presetMenu.setAttribute('role', 'listbox');
     presetMenu.setAttribute('aria-label', this.t('document.properties.preset'));
     this.appendCommonPropertyOptions(
+      presetMenu,
+      occupiedKeys,
+      (nextKey) => this.updatePropertyKey(property, nextKey),
+    );
+    this.appendCustomPropertyOptions(
       presetMenu,
       occupiedKeys,
       (nextKey) => this.updatePropertyKey(property, nextKey),
@@ -1120,32 +1211,79 @@ export class FrontmatterPropertyNodeView implements NodeView {
     };
 
     const createSelectControl = (value: string): PropertyEditControl => {
-      const configuredOptions = resolvePreset(property.key)?.options ?? [];
+      const configuredOptions = resolveRuntimePropertyPreset(property.key)?.options ?? [];
       const options = [...new Set([
         ...configuredOptions,
         ...(value && !configuredOptions.includes(value) ? [value] : []),
       ])];
       if (options.length === 0) return createPlainTextControl(value);
 
-      const select = createElement('select', 'frontmatter-property__edit-input frontmatter-property__edit-select');
-      select.setAttribute('aria-label', property.key);
-      select.setAttribute('data-property-key', property.key);
-      options.forEach((optionValue) => {
-        const option = createElement('option', '', optionValue);
-        option.value = optionValue;
-        select.append(option);
+      const optionControl = createElement('div', 'frontmatter-property__edit-option-menu');
+      const trigger = createElement('button', 'frontmatter-property__edit-input frontmatter-property__edit-option-trigger');
+      const menu = createElement('div', 'frontmatter-property__edit-option-list');
+      let selectedValue = value;
+      trigger.type = 'button';
+      trigger.setAttribute('aria-haspopup', 'listbox');
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger.setAttribute('aria-label', property.key);
+      menu.setAttribute('role', 'listbox');
+      menu.hidden = true;
+
+      const renderOptions = () => {
+        trigger.textContent = selectedValue || this.t('document.properties.select.placeholder');
+        menu.replaceChildren();
+        options.forEach((optionValue) => {
+          const option = createElement('button', 'frontmatter-property__edit-option-item', optionValue);
+          option.type = 'button';
+          option.setAttribute('role', 'option');
+          option.setAttribute('aria-selected', String(selectedValue === optionValue));
+          if (selectedValue === optionValue) {
+            option.append(createPropertyCheckIcon());
+          }
+          option.addEventListener('click', () => {
+            selectedValue = optionValue;
+            menu.hidden = true;
+            trigger.setAttribute('aria-expanded', 'false');
+            renderOptions();
+            trigger.focus();
+          });
+          menu.append(option);
+        });
+      };
+      trigger.addEventListener('click', () => {
+        menu.hidden = !menu.hidden;
+        trigger.setAttribute('aria-expanded', String(!menu.hidden));
       });
-      select.value = value;
-      select.addEventListener('keydown', handleKeyDown);
+      trigger.addEventListener('keydown', handleKeyDown);
+      menu.addEventListener('keydown', handleKeyDown);
+      renderOptions();
+      optionControl.append(trigger, menu);
       return {
-        dom: select,
-        focusTarget: select,
-        getValue: () => select.value,
+        dom: optionControl,
+        focusTarget: trigger,
+        getValue: () => selectedValue,
         storageKind: 'Select',
       };
     };
 
     const createControl = (kind: PropertyEditKind, value: string): PropertyEditControl => {
+      if (kind === 'Boolean') {
+        const label = createElement('label', 'frontmatter-property__edit-checkbox-label');
+        const checkbox = createElement('input', 'frontmatter-property__edit-checkbox');
+        checkbox.type = 'checkbox';
+        checkbox.checked = value.trim() === 'true';
+        checkbox.setAttribute('aria-label', property.key);
+        checkbox.setAttribute('data-property-key', property.key);
+        checkbox.addEventListener('keydown', handleKeyDown);
+        label.append(checkbox);
+        return {
+          dom: label,
+          focusTarget: checkbox,
+          getValue: () => String(checkbox.checked),
+          storageKind: 'Boolean',
+        };
+      }
+
       if (kind === 'Number') {
         const numberControl = createElement('div', 'frontmatter-property__edit-number-control');
         const input = createElement('input', 'frontmatter-property__edit-input');
@@ -1385,8 +1523,60 @@ export class FrontmatterPropertyNodeView implements NodeView {
         };
       }
 
+      if (kind === 'MultiSelect') {
+        const configuredOptions = resolveRuntimePropertyPreset(property.key)?.options ?? [];
+        if (configuredOptions.length > 0) {
+          const optionControl = createElement('div', 'frontmatter-property__edit-option-menu');
+          const trigger = createElement('button', 'frontmatter-property__edit-input frontmatter-property__edit-option-trigger');
+          const menu = createElement('div', 'frontmatter-property__edit-option-list');
+          const selected = new Set(value.split(',').map((item) => item.trim()).filter(Boolean));
+          trigger.type = 'button';
+          trigger.setAttribute('aria-haspopup', 'listbox');
+          trigger.setAttribute('aria-expanded', 'false');
+          trigger.setAttribute('aria-label', property.key);
+          menu.setAttribute('role', 'listbox');
+          menu.hidden = true;
+
+          const renderOptions = () => {
+            trigger.textContent = selected.size > 0
+              ? [...selected].join(', ')
+              : this.t('document.properties.select.placeholder');
+            menu.replaceChildren();
+            configuredOptions.forEach((optionValue) => {
+              const option = createElement('button', 'frontmatter-property__edit-option-item', optionValue);
+              option.type = 'button';
+              option.setAttribute('role', 'option');
+              option.setAttribute('aria-selected', String(selected.has(optionValue)));
+              if (selected.has(optionValue)) {
+                option.append(createPropertyCheckIcon());
+              }
+              option.addEventListener('click', () => {
+                if (selected.has(optionValue)) selected.delete(optionValue);
+                else selected.add(optionValue);
+                renderOptions();
+              });
+              menu.append(option);
+            });
+          };
+          trigger.addEventListener('click', () => {
+            menu.hidden = !menu.hidden;
+            trigger.setAttribute('aria-expanded', String(!menu.hidden));
+          });
+          trigger.addEventListener('keydown', handleKeyDown);
+          menu.addEventListener('keydown', handleKeyDown);
+          renderOptions();
+          optionControl.append(trigger, menu);
+          return {
+            dom: optionControl,
+            focusTarget: trigger,
+            getValue: () => [...selected].join(', '),
+            storageKind: 'MultiSelect',
+          };
+        }
+      }
+
       if (kind === 'Select') {
-        const hasConfiguredOptions = (resolvePreset(property.key)?.options?.length ?? 0) > 0;
+        const hasConfiguredOptions = (resolveRuntimePropertyPreset(property.key)?.options?.length ?? 0) > 0;
         if (typeof property.value !== 'boolean' && hasConfiguredOptions) {
           return createSelectControl(value);
         }
@@ -1581,8 +1771,15 @@ export class FrontmatterPropertyNodeView implements NodeView {
     if (initialKind) {
       const typeRow = createElement('div', 'frontmatter-property__edit-type-row');
       const typeTrigger = createElement('button', 'frontmatter-property__edit-type-trigger');
+      const propertyPreset = resolvePropertyPreset(
+        property.key,
+        useUserSettingsStore.getState().settings.properties.fields,
+      );
       const isFixedPropertyKind = target === 'value'
-        && FIXED_PROPERTY_KINDS[canonicalizePropertyKey(property.key)] !== undefined;
+        && (
+          FIXED_PROPERTY_KINDS[canonicalizePropertyKey(property.key)] !== undefined
+          || propertyPreset !== null
+        );
       typeTrigger.type = 'button';
       typeTrigger.disabled = isFixedPropertyKind;
       typeTrigger.setAttribute('aria-haspopup', 'listbox');
@@ -1719,7 +1916,7 @@ export class FrontmatterPropertyNodeView implements NodeView {
       return valueContainer;
     }
 
-    if (kind === 'array') {
+    if (kind === 'array' || kind === 'color') {
       if (!Array.isArray(property.value)) {
         valueContainer.append(createTextValue(property.value));
         return valueContainer;
@@ -1880,11 +2077,15 @@ export class FrontmatterPropertyNodeView implements NodeView {
 
     const key = createElement('span', 'frontmatter-property__display-key');
     key.title = property.key;
-    const displayKey = PROPERTY_DISPLAY_KEY_LABEL_KEYS[canonicalizePropertyKey(property.key)];
+    const preset = resolvePropertyPreset(
+      property.key,
+      useUserSettingsStore.getState().settings.properties.fields,
+      (labelKey) => this.t(labelKey),
+    );
     key.append(createElement(
       'span',
       'frontmatter-property__key',
-      displayKey ? this.t(displayKey) : property.key,
+      preset?.label ?? property.key,
     ));
     const value = this.renderPropertyValue(property, isFlowSequence);
 
@@ -1934,17 +2135,27 @@ export class FrontmatterPropertyNodeView implements NodeView {
     if (!this.memoId || !this.view.editable) return;
     const add = createElement('button', 'frontmatter-property__add-property');
     add.type = 'button';
-    add.title = this.t('document.properties.addField');
-    add.setAttribute('aria-label', this.t('document.properties.addField'));
+    add.title = this.t('document.properties.add');
+    add.setAttribute('aria-label', this.t('document.properties.add'));
     const addIcon = createElement('span', 'frontmatter-property__add-property-icon');
     addIcon.append(createPropertySvgIcon('add'));
     add.append(
       addIcon,
-      createElement('span', 'frontmatter-property__add-property-label', this.t('document.properties.addField')),
+      createElement('span', 'frontmatter-property__add-property-label', this.t('document.properties.add')),
     );
     add.addEventListener('click', () => this.addEmptyProperty());
     const addRow = createElement('div', 'frontmatter-property__add-property-row');
-    addRow.append(add);
+    const preset = createElement('button', 'frontmatter-property__preset-properties');
+    preset.type = 'button';
+    preset.title = this.t('document.properties.presetProperties');
+    preset.setAttribute('aria-label', this.t('document.properties.presetProperties'));
+    preset.append(
+      createElement('span', 'frontmatter-property__preset-properties-label', this.t('document.properties.presetProperties')),
+    );
+    preset.addEventListener('click', () => {
+      void windows.openPreferences('noteSettings');
+    });
+    addRow.append(add, preset);
     container.append(addRow);
   }
 
@@ -1975,6 +2186,10 @@ export class FrontmatterPropertyNodeView implements NodeView {
     this.closePropertyMenu();
     this.closePropertyEditor();
     const parsed = parseVisibleFrontmatter(String(this.node.attrs.yamlContent ?? ''));
+    if (!useSettingsStore.getState().propertiesVisible) {
+      this.dom.replaceChildren();
+      return;
+    }
     const container = createElement('div', 'frontmatter-property');
 
     if (parsed.parseError) {

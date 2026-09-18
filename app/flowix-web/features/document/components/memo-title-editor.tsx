@@ -4,6 +4,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useI18n } from '@/lib/i18n';
 import { useComposingValue } from '@shared/hooks/use-composing-value';
 import { useMemoTitleSession } from './memo-title-session';
+import { useSettingsStore } from '@/lib/store/settings-store';
 
 interface MemoTitleEditorProps {
   memoId: string;
@@ -37,6 +38,8 @@ export const MemoTitleEditor = forwardRef<MemoTitleEditorHandle, MemoTitleEditor
   onMoveToBody,
 }: MemoTitleEditorProps, ref) {
   const { t } = useI18n();
+  const propertiesVisible = useSettingsStore((state) => state.propertiesVisible);
+  const togglePropertiesVisible = useSettingsStore((state) => state.togglePropertiesVisible);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const documentTitleRef = useRef<HTMLDivElement>(null);
   const documentTitleComposingRef = useRef(false);
@@ -213,6 +216,25 @@ export const MemoTitleEditor = forwardRef<MemoTitleEditorHandle, MemoTitleEditor
 
   return (
     <div className="memo-title-shell">
+      <button
+        type="button"
+        className="memo-title-properties-toggle"
+        aria-label={t(propertiesVisible ? 'document.properties.hide' : 'document.properties.show')}
+        title={t(propertiesVisible ? 'document.properties.hide' : 'document.properties.show')}
+        aria-pressed={propertiesVisible}
+        data-state={propertiesVisible ? 'visible' : 'hidden'}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={togglePropertiesVisible}
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M3 6H21V18H3V6ZM2 4C1.44772 4 1 4.44772 1 5V19C1 19.5523 1.44772 20 2 20H22C22.5523 20 23 19.5523 23 19V5C23 4.44772 22.5523 4 22 4H2ZM13 9H19V11H13V9ZM18 13H13V15H18V13ZM6 13H7V16H9V11H6V13ZM9 8H7V10H9V8Z" />
+        </svg>
+      </button>
       {useDocumentSelection ? (
         <div
           ref={documentTitleRef}

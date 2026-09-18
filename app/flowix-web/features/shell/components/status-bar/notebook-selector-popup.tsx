@@ -2,8 +2,14 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronsUpDown, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronsUpDown, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@shared/ui/popover';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@shared/ui/dropdown-menu';
 import { notebooks as notebooksClient } from '@platform/tauri/client';
 import { NotebookIcon } from '@features/memo/components/notebook-icon';
 import { useMemoStore, type Notebook } from '@features/memo/store/memo-store';
@@ -380,6 +386,16 @@ export function NotebookSelectorPopup({
             </div>
           )}
           <div className="grid grid-cols-[repeat(auto-fill,minmax(108px,1fr))] gap-2.5">
+            <button
+              type="button"
+              onClick={() => closeThen(onCreateNotebook)}
+              className="group relative flex min-h-[124px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] bg-transparent text-[var(--muted-foreground)] transition-colors hover:border-solid hover:text-[var(--primary)]"
+              aria-label={t('status.newNotebook')}
+              title={t('status.newNotebook')}
+            >
+              <Plus className="h-7 w-7" />
+              <span className="text-sm">{t('status.newNotebook')}</span>
+            </button>
             {previewNotebookIds.map((notebookId) => {
                 if (notebookId === draggingId) {
                   return (
@@ -421,7 +437,7 @@ export function NotebookSelectorPopup({
                         ? {
                             backgroundColor: 'var(--popover)',
                             backgroundImage:
-                              'radial-gradient(ellipse 90% 145% at 100% 0%, color-mix(in oklch, var(--primary) 18%, transparent), transparent 58%)',
+                              'radial-gradient(ellipse 90% 145% at 100% 0%, var(--brand) 0%, color-mix(in oklch, var(--brand) 80%, transparent) 100%)',
                           }
                         : {}),
                     }}
@@ -431,52 +447,77 @@ export function NotebookSelectorPopup({
                         icon={notebook.icon}
                         name={notebook.name}
                         className={cn(
-                          'h-8 w-8 shrink-0 rounded-md text-[11px] font-semibold transition-[color,background-color,opacity,filter] duration-150',
+                          'h-8 w-8 shrink-0 rounded-md text-[15px] font-semibold transition-[color,background-color,opacity,filter] duration-150',
                           isActive
-                            ? 'bg-[color-mix(in_oklch,var(--primary)_14%,var(--muted))] !text-[var(--primary)] opacity-100'
-                            : 'bg-[var(--muted)] text-[var(--secondary-foreground)] opacity-75 saturate-75 group-hover:opacity-90 group-hover:saturate-90',
+                            ? 'bg-[color-mix(in_oklch,var(--inverse-foreground)_10%,transparent)] !text-white opacity-100'
+                            : 'bg-[var(--muted)] !text-[var(--foreground)]',
                         )}
                         imageClassName="h-[72%] w-[72%]"
                       />
-                      <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                        <button
-                          type="button"
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            closeThen(() => onEdit(notebook));
-                          }}
-                          className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                          aria-label={t('status.editNotebook')}
+                      <DropdownMenu className="shrink-0">
+                        <DropdownMenuTrigger
+                          asChild
+                          onClick={(event) => event.stopPropagation()}
                         >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            closeThen(() => onDelete(notebook));
-                          }}
-                          className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:text-[var(--destructive)]"
-                          aria-label={t('status.deleteNotebook')}
+                          <button
+                            type="button"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            className={cn(
+                              'flex h-6 w-6 items-center justify-center rounded-md hover:bg-transparent',
+                              isActive
+                                ? 'text-[var(--inverse-foreground)] hover:text-[var(--inverse-foreground)]'
+                                : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]',
+                            )}
+                            aria-label={t('document.agent.moreActions')}
+                            title={t('document.agent.moreActions')}
+                          >
+                            <MoreVertical className="h-4 w-4 translate-x-1" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          className="w-[132px] space-y-0.5 rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                          <DropdownMenuItem
+                            onClick={() => closeThen(() => onEdit(notebook))}
+                            className="group h-7 items-center gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
+                          >
+                            <Pencil className="h-3.5 w-3.5 shrink-0" />
+                            <span>{t('common.edit')}</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => closeThen(() => onDelete(notebook))}
+                            className="group h-7 items-center gap-2 rounded-lg px-2 py-0 text-left hover:bg-transparent hover:text-[var(--destructive)]"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                            <span>{t('dialog.delete')}</span>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                     <div className="mt-auto w-full space-y-1">
                       <span
                         className={cn(
                           'block min-h-5 w-full min-w-0 truncate text-left text-sm font-medium',
-                          isMissing ? 'text-[var(--muted-foreground)]' : 'text-[var(--foreground)]',
+                          isMissing
+                            ? 'text-[var(--muted-foreground)]'
+                            : isActive
+                              ? 'text-[var(--inverse-foreground)]'
+                              : 'text-[var(--foreground)]',
                         )}
                         title={notebook.name}
                       >
                         {notebook.name}
                         {isMissing && ` ${t('status.invalid')}`}
                       </span>
-                      <span className="flex items-center gap-0 text-left text-xs text-[var(--muted-foreground)]">
+                      <span
+                        className={cn(
+                          'flex items-center gap-0 text-left text-xs',
+                          isActive
+                            ? 'text-[var(--inverse-foreground)]'
+                            : 'text-[var(--muted-foreground)]',
+                        )}
+                      >
                         {cloudSyncedNotebookIds?.has(notebook.id) && (
                           <span className="flex h-4 w-3 shrink-0 items-center justify-center" aria-hidden="true">
                             <span
@@ -496,15 +537,6 @@ export function NotebookSelectorPopup({
                   </div>
                 );
             })}
-            <button
-              type="button"
-              onClick={() => closeThen(onCreateNotebook)}
-              className="group relative flex min-h-[124px] items-center justify-center rounded-lg border border-dashed border-[var(--border)] bg-transparent text-[var(--muted-foreground)] transition-colors hover:border-[var(--primary)]/50 hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
-              aria-label={t('status.newNotebook')}
-              title={t('status.newNotebook')}
-            >
-              <Plus className="h-7 w-7" />
-            </button>
           </div>
         </div>
 
@@ -522,7 +554,7 @@ export function NotebookSelectorPopup({
             <NotebookIcon
               icon={sourceNotebook.icon}
               name={sourceNotebook.name}
-              className="h-8 w-8 shrink-0 rounded-md bg-[color-mix(in_oklch,var(--primary)_14%,var(--muted))] text-[11px] font-semibold !text-[var(--primary)]"
+              className="h-8 w-8 shrink-0 rounded-md bg-[color-mix(in_oklch,var(--primary)_14%,var(--muted))] text-[15px] font-semibold !text-[var(--primary)]"
             />
             <div className="mt-auto w-full space-y-1">
               <span className="block truncate text-sm font-medium text-[var(--foreground)]">

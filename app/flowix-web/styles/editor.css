@@ -48,7 +48,56 @@
 }
 
 .memo-title-shell {
+  position: relative;
   width: 100%;
+}
+
+.memo-title-properties-toggle {
+  position: absolute;
+  top: 4px;
+  left: -1.4rem;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: none;
+  transition: opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease;
+}
+
+.memo-title-shell:focus-within .memo-title-properties-toggle,
+.memo-title-properties-toggle:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.memo-title-properties-toggle:hover,
+.memo-title-properties-toggle:focus-visible {
+  background: var(--muted);
+  color: var(--foreground);
+  outline: none;
+}
+
+.memo-title-properties-toggle[data-state='visible'] {
+  color: var(--brand);
+}
+
+.memo-title-properties-toggle[data-state='visible']:hover,
+.memo-title-properties-toggle[data-state='visible']:focus-visible {
+  color: var(--brand);
+}
+
+.memo-title-properties-toggle svg {
+  width: 15px;
+  height: 15px;
 }
 
 .memo-title-editor {
@@ -165,12 +214,12 @@
  *  - 用 1rem 是错的 — 那是根 html 字号 (16px), 跟 --app-font-size (15px) 脱节,
  *    用户在 Preferences 改字号时 p 的下填充 / 空 p 的 min-height 不会跟着缩放。
  *  - 空 p / 非空 p 共享同一行高基线 (27px),
- *    段落下填充为行高的 0.25 倍 (6.75px)。 */
+ *    段落下填充为行高的 0.32 倍 (8.64px)。 */
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
-  /* 0.25 行 box, 作为块间节奏 */
+  /* 0.32 行 box, 作为块间节奏 */
   margin: 0;
-  padding-bottom: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.25);
+  padding-bottom: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.32);
   white-space: pre-wrap;
 }
 

@@ -8,8 +8,9 @@ export function getMemoListQueryKey(
   tagId: string | null,
   colorFilter: ColorFilterValue,
   pluginId?: string | null,
+  customFilterId?: string | null,
 ): string {
-  return getMemoQueryKey(notebookId, filter, sort, tagId, colorFilter, pluginId);
+  return getMemoQueryKey(notebookId, filter, sort, tagId, colorFilter, pluginId, customFilterId);
 }
 
 export function shouldShowMemoListLoading({

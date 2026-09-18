@@ -22,6 +22,8 @@ import {
   type AppLanguage,
 } from '@/lib/i18n';
 import { createLogger } from '@/lib/logger';
+import { isBuiltinPresetKey } from '@features/document/properties/presets';
+import { canonicalizePropertyKey } from '@features/document/properties/property-key';
 
 const logger = createLogger('user-settings');
 
@@ -136,8 +138,13 @@ function sanitizePropertiesConfig(properties: PropertiesConfig | undefined): Pro
     const name = String(field?.name ?? '').trim();
     const type = field?.type;
     if (!key || !name) return;
-    if (!['Text', 'Number', 'Date', 'URL', 'Icon', 'Select', 'MultiSelect', 'List'].includes(type)) return;
-    deduped.set(key, {
+    if (!['Text', 'Boolean', 'Number', 'Date', 'Icon', 'Select', 'MultiSelect', 'List'].includes(type)) return;
+    // Built-in presets own their keys. Filtering them here keeps malformed or
+    // externally-written settings from shadowing the unified runtime catalog.
+    if (isBuiltinPresetKey(key)) return;
+    const comparableKey = canonicalizePropertyKey(key).toLowerCase();
+    if (deduped.has(comparableKey)) return;
+    deduped.set(comparableKey, {
       key,
       name,
       type,

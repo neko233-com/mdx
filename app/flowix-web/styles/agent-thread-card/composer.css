@@ -1080,7 +1080,7 @@
 /* 展开态尺寸集中定义在这里，并放在基础输入规则之后，避免依赖多处
  * 覆盖关系；普通非全屏单行 composer 不带这个 modifier，因此保持原有尺寸。 */
 .markdown-editor .agent-composer--expanded {
-  grid-template-rows: auto minmax(2.4rem, auto) auto;
+  grid-template-rows: auto minmax(2rem, auto) auto;
   max-height: none;
 }
 
@@ -1088,6 +1088,6 @@
   .agent-composer--expanded
   .agent-thread-card__composer-input-row
   .agent-thread-card__composer-input {
-  min-height: 2.4rem;
+  min-height: 2rem;
   max-height: calc(10 * 1.35em);
 }

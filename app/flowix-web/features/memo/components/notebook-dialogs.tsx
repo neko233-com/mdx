@@ -120,7 +120,7 @@ function NotebookIconPicker({
             >
               <NotebookIcon
                 name={notebookName}
-                className="h-[26px] w-[26px] rounded-md bg-[var(--muted)] text-[12px] font-semibold text-[var(--secondary-foreground)]"
+                className="h-[26px] w-[26px] rounded-md bg-[var(--muted)] text-[15px] font-semibold text-[var(--secondary-foreground)]"
               />
             </button>
             {NOTEBOOK_ICON_OPTIONS.map((option) => (

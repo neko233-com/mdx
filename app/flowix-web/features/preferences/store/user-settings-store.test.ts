@@ -11,7 +11,7 @@ vi.mock('@platform/tauri/client', () => ({
 
 // 必须在 mock 之后 import store, 让它拿到 mock 过的 client。
 import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
-import { DEFAULT_USER_SETTINGS } from '@/lib/constants';
+import { DEFAULT_USER_SETTINGS, type PropertyFieldConfig } from '@/lib/constants';
 
 const mockedPreferences = vi.mocked(preferences);
 
@@ -108,5 +108,22 @@ describe('user-settings-store · legacy quickPhrases migration', () => {
     expect(useUserSettingsStore.getState().settings.agents).toEqual({
       enabledByType: {},
     });
+  });
+});
+
+describe('user-settings-store · property preset sanitization', () => {
+  it('filters built-in key collisions, aliases, and removed URL fields', async () => {
+    const fields = [
+      { key: 'name', name: '自定义名称', type: 'Text' },
+      { key: 'priority', name: '优先级', type: 'Number' },
+      { key: 'PRIORITY', name: '重复优先级', type: 'Text' },
+      { key: 'legacy-url', name: '旧链接', type: 'URL' },
+    ] as unknown as PropertyFieldConfig[];
+
+    await useUserSettingsStore.getState().updateSettings({ properties: { fields } });
+
+    expect(useUserSettingsStore.getState().settings.properties.fields).toEqual([
+      { key: 'priority', name: '优先级', type: 'Number', options: undefined },
+    ]);
   });
 });

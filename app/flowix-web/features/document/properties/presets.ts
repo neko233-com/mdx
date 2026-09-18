@@ -7,8 +7,8 @@
  * frontmatter. The storage layer (`properties: Value` in Rust, opaque
  * `Record<string, unknown>` in TypeScript) is unchanged.
  *
- * Adding a new preset:
- *  1. Append an entry to `PRESETS`.
+ * Adding a built-in preset:
+ *  1. Append an entry to `BUILTIN_PRESETS`.
  *  2. Add its label / hint / option i18n keys to `locales.ts` (both
  *     `zh-CN` and `en-US`).
  *  3. If the preset's kind needs a new value, extend `PropertyKind`
@@ -17,20 +17,23 @@
 
 import type { Icon } from '@phosphor-icons/react';
 import {
-  HashIcon,
-  LinkIcon,
+  PaletteIcon,
+  PushPinIcon,
   SmileyIcon,
-  CircleHalfTiltIcon,
   TagIcon,
-  UserCircleIcon,
+  TextAlignLeftIcon,
+  TextTIcon,
 } from '@phosphor-icons/react';
 import type { I18nKey } from '@/lib/i18n';
+import type { PropertyFieldConfig } from '@/lib/constants';
+import { canonicalizePropertyKey } from './property-key';
 
 /** UI-side data types. PascalCase to match the existing `PROPERTY_TYPES` array.
  *  'Tags' 已移除 — 多选统一走 'MultiSelect' (YAML 都是 array, UI 上 chips
  *  也一致), 旧 Tags 行加载时 inferType 直接映射到 MultiSelect。 */
 export type PropertyKind =
   | 'Text'
+  | 'Boolean'
   | 'Number'
   | 'Date'
   | 'URL'
@@ -43,9 +46,9 @@ export type PropertyKind =
  *  column and the Custom popup's type chip group. */
 export const PROPERTY_KINDS: readonly PropertyKind[] = [
   'Text',
+  'Boolean',
   'Number',
   'Date',
-  'URL',
   'Icon',
   'Select',
   'MultiSelect',
@@ -59,22 +62,25 @@ export const PROPERTY_KINDS: readonly PropertyKind[] = [
  * kebab-case — category and key are separate concepts.
  */
 export type PropertyCategory =
-  | 'kind'
-  | 'status'
-  | 'icon'
-  | 'agentRole'
-  | 'refUrl'
+  | 'name'
+  | 'description'
   | 'tags'
-  | 'keywords'
+  | 'color'
+  | 'icon'
+  | 'favorite'
   | 'custom';
 
+export type PropertyPresetSource = 'builtin' | 'custom';
+
+/** Unified runtime definition consumed by every property picker/editor. */
 export interface PropertyPreset {
-  /** Built-in category slot. `custom` is reserved for the free-input path. */
-  category: Exclude<PropertyCategory, 'custom'>;
+  source: PropertyPresetSource;
+  /** Built-in category slot. Custom presets do not require a category. */
+  category: PropertyCategory;
   /** The literal key written to YAML. */
   key: string;
-  /** Mapped display name (i18n key). */
-  labelKey: I18nKey;
+  /** Resolved display name. Built-ins resolve this from i18n at runtime. */
+  label: string;
   /** Default UI kind. User can still override via the type column. */
   kind: PropertyKind;
   /** Option values for `Select` / `MultiSelect`. */
@@ -82,108 +88,131 @@ export interface PropertyPreset {
   /** Optional description / hint (i18n key). */
   hintKey?: I18nKey;
   /** Phosphor icon rendered in the picker item and the trigger button. */
+  icon?: Icon;
+}
+
+interface BuiltinPropertyPreset {
+  source: 'builtin';
+  category: Exclude<PropertyCategory, 'custom'>;
+  key: string;
+  labelKey: I18nKey;
+  kind: PropertyKind;
+  options?: readonly string[];
   icon: Icon;
 }
 
-export const PRESETS: readonly PropertyPreset[] = [
+export const BUILTIN_PRESETS: readonly BuiltinPropertyPreset[] = [
   {
-    category: 'kind',
-    key: 'type',
-    labelKey: 'document.properties.category.kind',
-    kind: 'Select',
-    options: ['note', 'prompt'],
+    source: 'builtin',
+    category: 'name',
+    key: 'name',
+    labelKey: 'document.properties.commonKey.name',
+    kind: 'Text',
+    icon: TextTIcon,
+  },
+  {
+    source: 'builtin',
+    category: 'description',
+    key: 'description',
+    labelKey: 'document.properties.commonKey.description',
+    kind: 'Text',
+    icon: TextAlignLeftIcon,
+  },
+  {
+    source: 'builtin',
+    category: 'tags',
+    key: 'tags',
+    labelKey: 'document.properties.category.tags',
+    kind: 'MultiSelect',
     icon: TagIcon,
   },
   {
-    category: 'status',
-    key: 'status',
-    labelKey: 'document.properties.category.status',
-    kind: 'Select',
-    options: ['todo', 'in-progress', 'done'],
-    icon: CircleHalfTiltIcon,
+    source: 'builtin',
+    category: 'color',
+    key: 'flowix_colors',
+    labelKey: 'document.properties.commonKey.color',
+    kind: 'MultiSelect',
+    icon: PaletteIcon,
   },
   {
+    source: 'builtin',
     category: 'icon',
-    key: 'icon',
+    key: 'flowix_icon',
     labelKey: 'document.properties.category.icon',
     kind: 'Icon',
     icon: SmileyIcon,
   },
   {
-    category: 'agentRole',
-    key: 'agent-role',
-    labelKey: 'document.properties.category.agentRole',
-    kind: 'Text',
-    icon: UserCircleIcon,
-  },
-  {
-    category: 'refUrl',
-    key: 'ref-url',
-    labelKey: 'document.properties.category.refUrl',
-    kind: 'URL',
-    icon: LinkIcon,
-  },
-  {
-    category: 'tags',
-    key: 'tags',
-    labelKey: 'document.properties.category.tags',
-    kind: 'MultiSelect',
-    icon: HashIcon,
-  },
-  {
-    category: 'keywords',
-    key: 'keywords',
-    labelKey: 'document.properties.category.keywords',
-    kind: 'MultiSelect',
-    icon: HashIcon,
+    source: 'builtin',
+    category: 'favorite',
+    key: 'flowix_favorited',
+    labelKey: 'document.action.pin',
+    kind: 'Select',
+    icon: PushPinIcon,
   },
 ];
 
-/** O(1) lookup table built once at module load. */
-const PRESET_BY_KEY: ReadonlyMap<string, PropertyPreset> = new Map(
-  PRESETS.map((preset) => [preset.key, preset])
+function comparablePresetKey(key: string): string {
+  return canonicalizePropertyKey(key).toLowerCase();
+}
+
+const BUILTIN_PRESET_KEY_SET: ReadonlySet<string> = new Set(
+  BUILTIN_PRESETS.map((preset) => comparablePresetKey(preset.key)),
 );
 
-export function resolvePreset(key: string): PropertyPreset | null {
+export function isBuiltinPresetKey(key: string): boolean {
+  return BUILTIN_PRESET_KEY_SET.has(comparablePresetKey(key));
+}
+
+export function getBuiltinPresets(labelResolver: (key: I18nKey) => string): PropertyPreset[] {
+  return BUILTIN_PRESETS.map((preset) => ({
+    ...preset,
+    label: labelResolver(preset.labelKey),
+  }));
+}
+
+export function getCustomPresets(fields: readonly PropertyFieldConfig[]): PropertyPreset[] {
+  const seenKeys = new Set(BUILTIN_PRESET_KEY_SET);
+  return fields.flatMap((field) => {
+    const key = field.key.trim();
+    const comparableKey = comparablePresetKey(key);
+    if (!key || seenKeys.has(comparableKey)) return [];
+    seenKeys.add(comparableKey);
+    return [{
+      source: 'custom' as const,
+      category: 'custom' as const,
+      key,
+      label: field.name,
+      kind: field.type,
+      options: field.options,
+    }];
+  });
+}
+
+export function getAllPresets(
+  fields: readonly PropertyFieldConfig[],
+  labelResolver: (key: I18nKey) => string,
+): PropertyPreset[] {
+  return [...getBuiltinPresets(labelResolver), ...getCustomPresets(fields)];
+}
+
+export function resolvePropertyPreset(
+  key: string,
+  fields: readonly PropertyFieldConfig[] = [],
+  labelResolver?: (key: I18nKey) => string,
+): PropertyPreset | null {
   const trimmed = key.trim();
   if (!trimmed) return null;
-  return PRESET_BY_KEY.get(trimmed) ?? null;
-}
-
-/**
- * Keys that must never be reused as note properties. These collide with
- * the top-level fields on `Memo` / `MemoIndexEntry` (`types.rs:64-87`):
- * `key` is the memo id, the rest are decorations sourced from the memo
- * index, not from frontmatter. Reserved even though the YAML keyspace
- * is technically independent, to keep the door closed for future
- * confusion.
- */
-export const RESERVED_KEYS: readonly string[] = [
-  'flowix_key',
-  'key',
-  'icon',
-  'colors',
-  'tags',
-  'favorited',
-  'todos',
-  'agents',
-  'preview',
-  'thumbnail',
-];
-
-const RESERVED_KEY_SET: ReadonlySet<string> = new Set(RESERVED_KEYS);
-
-export function isReservedKey(key: string): boolean {
-  return RESERVED_KEY_SET.has(key.trim());
-}
-
-/** Returns the picker groups, each prefixed with a category header. */
-export function getPresetGroups(): Array<{
-  category: PropertyCategory;
-  presets: readonly PropertyPreset[];
-}> {
-  return PRESETS.map((preset) => ({
-    category: preset.category,
-    presets: [preset],
-  }));
+  const builtin = BUILTIN_PRESETS.find(
+    (preset) => comparablePresetKey(preset.key) === comparablePresetKey(trimmed),
+  );
+  if (builtin) {
+    return {
+      ...builtin,
+      label: labelResolver?.(builtin.labelKey) ?? builtin.labelKey,
+    };
+  }
+  return getCustomPresets(fields).find(
+    (preset) => comparablePresetKey(preset.key) === comparablePresetKey(trimmed),
+  ) ?? null;
 }

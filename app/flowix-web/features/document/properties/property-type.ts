@@ -1,9 +1,6 @@
 import { canonicalizePropertyKey } from './property-key';
-import {
-  PROPERTY_KINDS,
-  resolvePreset,
-  type PropertyKind,
-} from './presets';
+import type { PropertyFieldConfig } from '@/lib/constants';
+import { resolvePropertyPreset, type PropertyKind } from './presets';
 
 export type PropertyDisplayKind =
   | 'text'
@@ -12,6 +9,7 @@ export type PropertyDisplayKind =
   | 'url'
   | 'boolean'
   | 'array'
+  | 'color'
   | 'list'
   | 'icon';
 
@@ -26,6 +24,7 @@ export const FIXED_PROPERTY_KINDS: Readonly<Record<string, PropertyKind>> = {
   tags: 'MultiSelect',
   flowix_colors: 'MultiSelect',
   flowix_icon: 'Icon',
+  flowix_favorited: 'Select',
 };
 
 export const PROPERTY_URL_RE = /^https?:\/\/\S+$/i;
@@ -42,6 +41,8 @@ function inferValueKind(value: unknown, isFlowSequence: boolean): PropertyKind {
 
 function toDisplayKind(kind: PropertyKind, value: unknown): PropertyDisplayKind {
   switch (kind) {
+    case 'Boolean':
+      return 'boolean';
     case 'Number':
       return 'number';
     case 'Date':
@@ -66,16 +67,19 @@ export function resolvePropertyType(
   key: string,
   value: unknown,
   isFlowSequence = false,
+  customPresets: readonly PropertyFieldConfig[] = [],
 ): ResolvedPropertyType {
   const canonicalKey = canonicalizePropertyKey(key);
   const kind = FIXED_PROPERTY_KINDS[canonicalKey]
-    ?? resolvePreset(canonicalKey)?.kind
+    ?? resolvePropertyPreset(canonicalKey, customPresets)?.kind
     ?? inferValueKind(value, isFlowSequence);
 
   return {
     kind,
-    displayKind: toDisplayKind(kind, value),
+    // The color preset is stored as a MultiSelect, but it has its own
+    // semantic icon. Do not make it look like the tags/array property.
+    displayKind: canonicalKey === 'flowix_colors'
+      ? 'color'
+      : toDisplayKind(kind, value),
   };
 }
-
-export { PROPERTY_KINDS };

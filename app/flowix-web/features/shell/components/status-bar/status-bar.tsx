@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Hash, ListTodo, SlidersHorizontal } from 'lucide-react';
+import { ListTodo, SlidersHorizontal } from 'lucide-react';
 import { PlugIcon } from '@phosphor-icons/react';
 import { Tooltip } from '@shared/ui/tooltip';
 import type { Notebook } from '@features/memo/store/memo-store';
@@ -12,6 +12,7 @@ import { useI18n } from '@/lib/i18n';
 import { useDocumentMetricsStore } from '@features/document/store/document-metrics-store';
 import { useMemoStore } from '@features/memo/store/memo-store';
 import { CloudStatusIcon } from '@shared/icons/cloud-status-icon';
+import { TagSvgIcon } from '@shared/ui/tag-icon';
 import {
   cloud,
   listenToCloudStateChanges,
@@ -211,7 +212,7 @@ export function StatusBar({
             className="h-full flex items-center gap-0.5 px-1.5 py-0 hover:bg-[var(--muted)]"
             aria-label={t('shell.statusBar.noteNav')}
           >
-            <Hash className="w-3.5 h-3.5" />
+            <TagSvgIcon className="w-4 h-4" />
           </button>
         </Tooltip>
         <div className="flex-1" />

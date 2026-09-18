@@ -1,8 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { OverlayScrollbar } from '@shared/ui/overlay-scrollbar';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@shared/ui/context-menu';
 import { NotebookIcon } from '@features/memo/components/notebook-icon';
 import { useMemoStore, type Notebook } from '@features/memo/store/memo-store';
 import { useI18n } from '@/lib/i18n';
@@ -135,12 +141,7 @@ export function NotebookList({
   }, [cloudSyncedNotebookIds, experimental]);
 
   return (
-    <div className="flex min-h-0 max-h-[52px] shrink-0 flex-col">
-      <OverlayScrollbar
-        className="min-h-0 flex-1 overflow-hidden"
-        scrollerClassName="h-full overflow-y-auto px-2"
-      >
-        <div className="space-y-0.5 pb-1">
+    <div className="space-y-0.5 pb-1">
           {!notebooksInitialized ? (
             <div
               className="h-12 w-full animate-pulse rounded-lg bg-[color-mix(in_oklch,var(--foreground)_5%,transparent)]"
@@ -167,8 +168,9 @@ export function NotebookList({
                 cloudSyncStatus?.state === 'syncing' ||
                 cloudSyncStatus?.state === 'finalizing';
               return (
-                <NotebookSelectorPopup
-                  key={notebook.id}
+                <ContextMenu key={notebook.id}>
+                  <ContextMenuTrigger className="w-full">
+                    <NotebookSelectorPopup
                   open={notebookPopupOpen}
                   onOpenChange={setNotebookPopupOpen}
                   notebooks={notebooks}
@@ -196,18 +198,13 @@ export function NotebookList({
                         'ring-1 ring-inset ring-[color-mix(in_oklch,var(--foreground)_7%,transparent)]',
                         isMissing && 'opacity-70',
                       )}
-                      style={{
-                        backgroundColor: 'var(--agent-bg)',
-                        backgroundImage:
-                          'radial-gradient(ellipse 90% 145% at 100% 0%, color-mix(in oklch, var(--primary) 18%, transparent), transparent 58%)',
-                      }}
                       title={notebook.name}
                       aria-pressed={notebookPopupOpen}
                     >
                   <NotebookIcon
                     icon={notebook.icon}
                     name={notebook.name}
-                    className="h-6 w-6 rounded-md bg-[var(--muted)] text-[11px] font-semibold text-[var(--secondary-foreground)]"
+                    className="h-6 w-6 rounded-md bg-[var(--muted)] text-[12px] font-semibold text-[var(--foreground)]"
                     imageClassName="h-[72%] w-[72%]"
                   />
                   <div
@@ -219,7 +216,9 @@ export function NotebookList({
                     )}
                   >
                     <span className="min-w-0 truncate leading-6">
-                      <span className={isMissing ? 'text-[var(--muted-foreground)]' : ''}>
+                      <span
+                        className={isMissing ? 'text-[var(--muted-foreground)]' : ''}
+                      >
                         {notebook.name}
                       </span>
                       {isMissing && (
@@ -262,14 +261,34 @@ export function NotebookList({
                       </div>
                     )}
                     </div>
+                    <span
+                      className="flex h-[26px] shrink-0 items-center text-[var(--foreground)] hover:opacity-90"
+                      aria-hidden="true"
+                    >
+                      <ChevronsUpDown className="h-3 w-3 shrink-0" />
+                    </span>
                     </div>
                   }
-                />
+                    />
+                  </ContextMenuTrigger>
+                  <ContextMenuContent className="w-[132px] space-y-0.5 rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]">
+                    <ContextMenuItem
+                      onClick={() => onEditNotebook(notebook)}
+                      className="h-7 items-center justify-start rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
+                    >
+                      {t('common.edit')}
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      onClick={() => onDeleteNotebook(notebook)}
+                      className="h-7 items-center justify-start rounded-lg px-2 py-0 text-left hover:bg-transparent hover:text-[var(--destructive)]"
+                    >
+                      {t('dialog.delete')}
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               );
             })
           )}
-        </div>
-      </OverlayScrollbar>
     </div>
   );
 }

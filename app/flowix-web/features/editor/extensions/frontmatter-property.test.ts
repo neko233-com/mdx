@@ -28,7 +28,11 @@ describe('frontmatter property helpers', () => {
       displayKind: 'array',
     });
     expect(resolvePropertyType('status', 'todo')).toEqual({
-      kind: 'Select',
+      kind: 'Text',
+      displayKind: 'text',
+    });
+    expect(resolvePropertyType('type', 'custom')).toEqual({
+      kind: 'Text',
       displayKind: 'text',
     });
     expect(resolvePropertyType('ref-url', 'https://example.com')).toEqual({
@@ -332,6 +336,8 @@ describe('frontmatter property helpers', () => {
       ?.classList.contains('frontmatter-property__type-icon--text')).toBe(true);
     expect(host.querySelector('[data-property-key="tags"] .frontmatter-property__type-icon')
       ?.classList.contains('frontmatter-property__type-icon--array')).toBe(true);
+    expect(host.querySelector('[data-property-key="flowix_colors"] .frontmatter-property__type-icon')
+      ?.classList.contains('frontmatter-property__type-icon--color')).toBe(true);
     expect(editor.getMarkdown()).toContain('flowix_colors: [blue]');
     expect(editor.getMarkdown()).toContain('tags: [work]');
     expect(editor.getMarkdown()).toContain('flowix_icon: smile');
@@ -558,9 +564,9 @@ describe('frontmatter property helpers', () => {
       '.frontmatter-property__edit-type-option',
     ) ?? []].map((option) => option.textContent)).toEqual([
       '文本',
+      '是否',
       '数字',
       '日期',
-      '链接',
       '图标',
       '单选',
       '标签',

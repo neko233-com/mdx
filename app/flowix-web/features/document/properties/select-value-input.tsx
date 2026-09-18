@@ -1,7 +1,7 @@
 /**
  * Single-select value input for `Select` property rows. Reads its option
- * list from the row's preset (e.g. `type` → `[note, prompt]`); falls back
- * to a fixed empty list for free-key rows.
+ * list from the row's preset; falls back to a fixed empty list for free-key
+ * rows.
  */
 
 import {
@@ -13,14 +13,6 @@ import {
 } from '@shared/ui/select';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-
-const OPTION_LABEL_KEYS = {
-  note: 'document.properties.option.note',
-  prompt: 'document.properties.option.prompt',
-  todo: 'document.properties.option.todo',
-  'in-progress': 'document.properties.option.inProgress',
-  done: 'document.properties.option.done',
-} as const;
 
 interface SelectValueInputProps {
   value: string;
@@ -36,12 +28,6 @@ export function SelectValueInput({
   onChange,
 }: SelectValueInputProps) {
   const { t } = useI18n();
-  const formatOptionLabel = (option: string) => {
-    const knownKey = OPTION_LABEL_KEYS[option as keyof typeof OPTION_LABEL_KEYS];
-    if (knownKey) return t(knownKey);
-    return option;
-  };
-
   return (
     <Select
       value={value}
@@ -69,9 +55,9 @@ export function SelectValueInput({
             <SelectItem
               key={option}
               value={option}
-              className="h-7 !min-h-7 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)] hover:[&>svg]:text-[var(--primary-foreground)]"
+              className="h-7 !min-h-7 rounded-lg px-2 py-0 text-left hover:bg-[var(--hover-bg)]"
             >
-              {formatOptionLabel(option)}
+              {option}
             </SelectItem>
           ))
         )}

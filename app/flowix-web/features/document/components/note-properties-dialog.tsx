@@ -11,7 +11,7 @@ import {
 import { Input } from '@shared/ui/input';
 import { useI18n } from '@/lib/i18n';
 import { usePropertyFieldPreferences } from '@features/preferences/public/runtime-api';
-import type { PropertyPreset } from '@features/document/properties/presets';
+import { getAllPresets, getCustomPresets, type PropertyPreset } from '@features/document/properties/presets';
 import { SelectValueInput } from '@features/document/properties/select-value-input';
 import { MultiSelectValueInput } from '@features/document/properties/multi-select-value-input';
 import { IconValueInput } from '@features/document/properties/icon-value-input';
@@ -20,7 +20,7 @@ import {
   extractFrontmatter,
   SYSTEM_FRONTMATTER_KEYS,
 } from '@features/document/properties/frontmatter-model';
-import type { PropertyFieldConfig } from '@/lib/constants';
+import type { PropertyFieldConfig, PropertyFieldType } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 
 import {
@@ -57,6 +57,10 @@ export function NotePropertiesDialog({
 }: NotePropertiesDialogProps) {
   const { t } = useI18n();
   const { fields: savedPropertyFields, saveFields } = usePropertyFieldPreferences();
+  const availablePresets = useMemo(
+    () => getAllPresets(savedPropertyFields, (key) => t(key)),
+    [savedPropertyFields, t],
+  );
   const frontmatter = useMemo(() => extractFrontmatter(content), [content]);
   const savedFieldsByKey = useMemo(() => {
     return new Map(savedPropertyFields.map((field) => [field.key, field]));
@@ -114,8 +118,8 @@ export function NotePropertiesDialog({
 
   useEffect(() => {
     if (!open) return;
-    setRows(rowsFromData(frontmatter.data, savedFieldsByKeyRef.current));
-  }, [frontmatter.data, open]);
+    setRows(rowsFromData(frontmatter.data, savedFieldsByKeyRef.current, (key) => t(key)));
+  }, [frontmatter.data, open, t]);
 
   const duplicateKeys = useMemo(() => getDuplicateKeys(rows), [rows]);
   const hasInvalidKey = rows.some((row) => !row.key.trim());
@@ -152,7 +156,7 @@ export function NotePropertiesDialog({
   };
 
   const persistCustomFieldDefinition = (
-    field: { key: string; name: string; type: PropertyType; options?: string[] },
+    field: { key: string; name: string; type: PropertyFieldType; options?: string[] },
     previousKey?: string
   ) => {
     const key = field.key.trim();
@@ -172,11 +176,17 @@ export function NotePropertiesDialog({
   };
 
   // 自定义添加: name 是展示名, key 按固定 kebab-case 规则生成。
-  const addCustomField = async (payload: { name: string; type: PropertyType; options?: string[] }) => {
+  const addCustomField = async (payload: { name: string; type: PropertyFieldType; options?: string[] }) => {
     const name = payload.name.trim();
     if (!name) return;
     const key = await generatePropertyKey(name);
     const options = normalizeFieldOptions(payload.type, payload.options);
+    const preset = getCustomPresets([{
+      key,
+      name,
+      type: payload.type,
+      options,
+    }])[0];
     setRows((current) => [
       ...current,
       {
@@ -184,7 +194,7 @@ export function NotePropertiesDialog({
         key,
         type: payload.type,
         value: '',
-        customLabel: name,
+        preset,
         options,
       },
     ]);
@@ -192,24 +202,7 @@ export function NotePropertiesDialog({
     closePopover();
   };
 
-  const addSavedCustomField = (field: PropertyFieldConfig) => {
-    setRows((current) => [
-      ...current,
-      {
-        id: createRowId(),
-        key: field.key,
-        type: field.type,
-        value: '',
-        customLabel: field.name,
-        options: normalizeFieldOptions(field.type, field.options),
-      },
-    ]);
-    closePopover();
-  };
-
-  // 编辑现有行: 把整行替换成预设 — 重置 key/type/customLabel/options,
-  // preset.options 由 preset 字段在渲染时取。 该路径会清空用户的 customLabel
-  // 和 options, 因为切预设就是切语义, 旧的自定义数据不再适用。
+  // 编辑现有行: 把整行替换成统一预设定义。
   const switchRowToPreset = (id: string, preset: PropertyPreset) => {
     setRows((current) => current.map((row) => {
       if (row.id !== id) return row;
@@ -218,7 +211,6 @@ export function NotePropertiesDialog({
         key: preset.key,
         type: preset.kind as PropertyType,
         preset,
-        customLabel: undefined,
         options: undefined,
       };
     }));
@@ -229,40 +221,30 @@ export function NotePropertiesDialog({
   // 与 addCustomField 区别: 改的是已有行而不是 push 新行; preset 字段清掉。
   const updateRowFromEdit = async (
     id: string,
-    payload: { name: string; type: PropertyType; options?: string[] }
+    payload: { name: string; type: PropertyFieldType; options?: string[] }
   ) => {
     const name = payload.name.trim();
     if (!name) return;
     const key = await generatePropertyKey(name);
     const options = normalizeFieldOptions(payload.type, payload.options);
     const previousKey = rows.find((row) => row.id === id)?.key;
+    const preset = getCustomPresets([{
+      key,
+      name,
+      type: payload.type,
+      options,
+    }])[0];
     setRows((current) => current.map((row) => {
       if (row.id !== id) return row;
       return {
         ...row,
         key,
         type: payload.type,
-        customLabel: name,
+        preset,
         options,
-        preset: undefined,
       };
     }));
     persistCustomFieldDefinition({ key, name, type: payload.type, options }, previousKey);
-    closePopover();
-  };
-
-  const switchRowToSavedCustomField = (id: string, field: PropertyFieldConfig) => {
-    setRows((current) => current.map((row) => {
-      if (row.id !== id) return row;
-      return {
-        ...row,
-        key: field.key,
-        type: field.type,
-        customLabel: field.name,
-        options: normalizeFieldOptions(field.type, field.options),
-        preset: undefined,
-      };
-    }));
     closePopover();
   };
 
@@ -327,9 +309,19 @@ export function NotePropertiesDialog({
                       invalid={keyInvalid}
                       onClick={(e: React.MouseEvent<HTMLButtonElement>) => openEditPopover(row, e)}
                     />
-                    {row.type === 'MultiSelect' ? (
+                    {row.type === 'Boolean' ? (
+                      <input
+                        type="checkbox"
+                        checked={row.value === 'true'}
+                        disabled={isKeyField}
+                        onChange={(event) => updateRow(row.id, { value: String(event.target.checked) })}
+                        className="h-4 w-4 accent-[var(--brand)]"
+                        aria-label={row.key}
+                      />
+                    ) : row.type === 'MultiSelect' ? (
                       <MultiSelectValueInput
                         value={row.value}
+                        options={presetOptions}
                         disabled={isKeyField}
                         onChange={(value) => updateRow(row.id, { value })}
                       />
@@ -410,12 +402,10 @@ export function NotePropertiesDialog({
             <AnchoredPropertyPopover
               popoverState={popoverState}
               rows={rows}
-              savedFields={savedPropertyFields}
+              presets={availablePresets}
               addPresetRow={addPresetRow}
               addCustomField={addCustomField}
-              addSavedCustomField={addSavedCustomField}
               switchRowToPreset={switchRowToPreset}
-              switchRowToSavedCustomField={switchRowToSavedCustomField}
               updateRowFromEdit={updateRowFromEdit}
               onCancel={closePopover}
             />
@@ -444,9 +434,8 @@ export function NotePropertiesDialog({
               {t('document.properties.addFieldPanel.common')}
             </span>
             <CommonPropertyChips
-              savedFields={savedPropertyFields}
+              presets={availablePresets}
               onPickPreset={addPresetRow}
-              onPickSavedField={addSavedCustomField}
               disabled={!!frontmatter.parseError}
             />
           </div>

@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { memoRepository, notebookRepository, type FilterType, type SortType } from '@features/memo/services';
 import { STORAGE_KEYS } from '@/lib/constants';
 import { useTagStore } from '@features/memo/store/tag-store';
+import { memoMatchesCustomFilter, useCustomFilterStore, type CustomFilter } from '@features/memo/store/custom-filter-store';
 
 import type { MemoColor, MemoItem } from '@/types/memo-item';
 
@@ -13,7 +14,7 @@ export type ColorFilterValue = 'any' | 'none' | MemoColor;
 
 // FilterType 增加了中间列专用的 'color' 维度。后端 filter 仍使用 all,
 // 具体颜色通过 color 参数传递。
-export type ExtendedFilterType = FilterType | 'color';
+export type ExtendedFilterType = FilterType | 'color' | 'custom';
 
 /** Which primary surface is shown in the middle column. */
 export type MiddleColumnView = 'notes' | 'conversations';
@@ -27,6 +28,7 @@ interface MemoListPageQuery {
   tagId?: string;
   color?: ColorFilterValue;
   pluginId: string | null;
+  customFilterId: string | null;
 }
 
 // 文档颜色标签 — 跟后端 `MemoColor` 镜像 (`#[serde(rename_all = "lowercase")]`),
@@ -131,16 +133,20 @@ function memoMatchesFilter(memo: MemoItem, filter: FilterType): boolean {
 // 'color' 是前端专用, 在后端没有意义 → 退化成 'all' 拉全量, 由前端 store
 // 在 useMemo 里按 `colorFilter` 二次过滤。其他值原样下发。
 function toBackendFilter(filter: ExtendedFilterType): FilterType {
-  return filter === 'color' ? 'all' : filter;
+  return filter === 'color' || filter === 'custom' ? 'all' : filter;
 }
 
 function upsertSortedMemo(
   current: MemoItem[],
   memo: MemoItem,
   filter: ExtendedFilterType,
-  sort: SortType
+  sort: SortType,
+  customFilter?: CustomFilter,
 ): MemoItem[] {
   const withoutExisting = current.filter((item) => item.id !== memo.id);
+  if (filter === 'custom' && (!customFilter || !memoMatchesCustomFilter(memo, customFilter))) {
+    return withoutExisting;
+  }
   // 'color' 在 memoMatchesFilter 的 default 分支会被放行 (后端没返回任何
   // 数据可过滤, 这里只是 upsert 排序); 实际 UI 端会在 useMemo 里按
   // colorFilter 二次过滤, 新建笔记不挂色会自然落选。
@@ -172,6 +178,7 @@ export interface MemoStore {
   middleColumnView: MiddleColumnView;
   activeFilter: ExtendedFilterType;
   activePluginId: string | null;
+  activeCustomFilterId: string | null;
   activeSort: SortType;
   // 'color' 二级弹窗用的具体颜色值。'any'/'none'/具体颜色 (MEMO_COLORS)。
   // 当 activeFilter !== 'color' 时此值仍然保留, 切回颜色筛选时恢复。
@@ -205,6 +212,7 @@ export interface MemoStore {
   reorderNotebooks: (nextOrderIds: string[]) => Promise<void>;
   setMiddleColumnView: (view: MiddleColumnView) => void;
   setActiveFilter: (filter: ExtendedFilterType) => void;
+  setActiveCustomFilter: (filterId: string | null) => void;
   setActivePluginId: (pluginId: string | null) => void;
   setActiveSort: (sort: SortType) => void;
   setColorFilter: (color: ColorFilterValue) => void;
@@ -247,18 +255,19 @@ function omitUndefined<T extends object>(value: T): Partial<T> {
 }
 
 export function getVisibleCreateFilter(filter: ExtendedFilterType): ExtendedFilterType {
-  return filter === 'agents' || filter === 'todos' || filter === 'color' ? 'all' : filter;
+  return filter === 'agents' || filter === 'todos' || filter === 'color' || filter === 'custom' ? 'all' : filter;
 }
 
 // 只恢复侧边栏能够表达的导航入口。颜色 / 时间等筛选属于中间列的
 // 临时筛选，持久化它们会导致重启后侧边栏没有任何对应的选中项。
 function isSidebarNavigationFilter(
   filter: ExtendedFilterType,
-): filter is 'all' | 'agents' | 'todos' | 'tagged' {
+): filter is 'all' | 'agents' | 'todos' | 'tagged' | 'custom' {
   return filter === 'all'
     || filter === 'agents'
     || filter === 'todos'
-    || filter === 'tagged';
+    || filter === 'tagged'
+    || filter === 'custom';
 }
 
 let loadMemosRequestSeq = 0;
@@ -283,6 +292,7 @@ export const useMemoStore = create<MemoStore>()(
       middleColumnView: 'notes',
       activeFilter: 'all',
       activePluginId: null,
+      activeCustomFilterId: null,
       activeSort: 'createdAt',
       colorFilter: 'any',
       refreshTrigger: 0,
@@ -347,6 +357,7 @@ export const useMemoStore = create<MemoStore>()(
             middleColumnView: 'notes',
             activeFilter: 'all',
             activePluginId: null,
+            activeCustomFilterId: null,
           });
           return;
         }
@@ -376,10 +387,26 @@ export const useMemoStore = create<MemoStore>()(
           middleColumnView: nextView,
           activeFilter: filter,
           activePluginId: null,
+          ...(filter === 'custom' ? {} : { activeCustomFilterId: null }),
         });
         if (shouldClearTag && selectedTagId !== null) {
           useTagStore.getState().setSelectedTagId(null);
         }
+      },
+      setActiveCustomFilter: (filterId) => {
+        if (!filterId) {
+          get().setActiveFilter('all');
+          return;
+        }
+        const filter = useCustomFilterStore.getState().filters.find((item) => item.id === filterId);
+        if (!filter) return;
+        useTagStore.getState().setSelectedTagId(null);
+        set({
+          middleColumnView: 'notes',
+          activeFilter: 'custom',
+          activeCustomFilterId: filterId,
+          activePluginId: null,
+        });
       },
       setActivePluginId: (pluginId) => set({
         activePluginId: pluginId,
@@ -392,7 +419,15 @@ export const useMemoStore = create<MemoStore>()(
         invalidatePendingMemoLoads();
         set((state) => ({
           memos: state.memos.some((item) => item.id === memo.id)
-            ? upsertSortedMemo(state.memos, memo, state.activeFilter, state.activeSort)
+            ? upsertSortedMemo(
+                state.memos,
+                memo,
+                state.activeFilter,
+                state.activeSort,
+                state.activeFilter === 'custom'
+                  ? useCustomFilterStore.getState().filters.find((item) => item.id === state.activeCustomFilterId)
+                  : undefined,
+              )
             : state.memos,
           selectedMemo:
             state.selectedMemo?.id === memo.id
@@ -418,6 +453,7 @@ export const useMemoStore = create<MemoStore>()(
         const notebookId = params?.notebookId || state.selectedNotebook?.id;
         const filter = params?.filter || state.activeFilter;
         const pluginId = state.activePluginId;
+        const customFilterId = filter === 'custom' ? state.activeCustomFilterId : null;
         const sort = params?.sort || state.activeSort;
         const tagId = params?.tagId;
         const color = filter === 'color' ? state.colorFilter : undefined;
@@ -428,25 +464,33 @@ export const useMemoStore = create<MemoStore>()(
           tagId: tagId ?? null,
           color: color ?? null,
           pluginId: pluginId ?? null,
+          customFilterId,
         });
+        const customFilter = customFilterId
+          ? useCustomFilterStore.getState().filters.find((item) => item.id === customFilterId)
+          : null;
         const response = pluginId && notebookId
           ? {
               memos: await memoRepository.listPluginNotes(pluginId, notebookId),
               nextCursor: null,
               hasMore: false,
             }
-          : await memoRepository.list({
-              notebookId,
-              filter: toBackendFilter(filter),
-              sort,
-              tagId,
-              color,
-              limit: 50,
-            });
+          : await memoRepository.list(customFilter
+            ? { notebookId, filter: 'all', sort }
+            : {
+                notebookId,
+                filter: toBackendFilter(filter),
+                sort,
+                tagId,
+                color,
+                limit: 50,
+              });
         if (requestSeq !== loadMemosRequestSeq) {
           return false;
         }
-        const nextMemos = response.memos as MemoItem[];
+        const nextMemos = (response.memos as MemoItem[]).filter((memo) => (
+          customFilter ? memoMatchesCustomFilter(memo, customFilter) : true
+        ));
         const latestState = get();
         // Loading a list only updates the second column. The selected memo is
         // the source of the work-column document and may legitimately be
@@ -467,6 +511,7 @@ export const useMemoStore = create<MemoStore>()(
             tagId,
             color,
             pluginId: pluginId ?? null,
+            customFilterId,
           },
           memoListNextCursor: response.nextCursor ?? null,
           memoListHasMore: response.hasMore ?? Boolean(response.nextCursor),
@@ -493,6 +538,7 @@ export const useMemoStore = create<MemoStore>()(
           || !state.memoListQueryKey
           || !query?.notebookId
           || query.pluginId
+          || query.filter === 'custom'
         ) {
           return false;
         }
@@ -508,6 +554,7 @@ export const useMemoStore = create<MemoStore>()(
             : null,
           color: state.activeFilter === 'color' ? state.colorFilter : null,
           pluginId: state.activePluginId ?? null,
+          customFilterId: state.activeFilter === 'custom' ? state.activeCustomFilterId : null,
         });
         if (currentQueryKey !== state.memoListQueryKey) return false;
 
@@ -588,7 +635,15 @@ export const useMemoStore = create<MemoStore>()(
         const memo = await memoRepository.create(createTag, notebookId);
         invalidatePendingMemoLoads();
         set({
-          memos: upsertSortedMemo(get().memos, memo as MemoItem, createFilter, state.activeSort),
+          memos: upsertSortedMemo(
+            get().memos,
+            memo as MemoItem,
+            createFilter,
+            state.activeSort,
+            state.activeFilter === 'custom'
+              ? useCustomFilterStore.getState().filters.find((item) => item.id === state.activeCustomFilterId)
+              : undefined,
+          ),
         });
         // 新建 memo 可能引入新 tag (body 派生) ── 主动 bump metadata refresh,
         // 让侧栏标签树立即出现新节点 / 更新计数。后端 SelfWriteSuppressor 会
@@ -651,7 +706,15 @@ export const useMemoStore = create<MemoStore>()(
           memos:
             state.activeFilter === 'tagged'
               ? state.memos
-              : upsertSortedMemo(state.memos, memo, state.activeFilter, state.activeSort),
+              : upsertSortedMemo(
+                  state.memos,
+                  memo,
+                  state.activeFilter,
+                  state.activeSort,
+                  state.activeFilter === 'custom'
+                    ? useCustomFilterStore.getState().filters.find((item) => item.id === state.activeCustomFilterId)
+                    : undefined,
+                ),
           selectedMemoId: options?.select ? memo.id : state.selectedMemoId,
           selectedMemo:
             options?.select
@@ -672,7 +735,15 @@ export const useMemoStore = create<MemoStore>()(
         // - 没有: 直接 push 进数组 (罕见, 但 reconcile / external tool create
         //   等场景可能出现, 后端 emit 走 Updated 路径时用 minimal memo 兜底)
         set((state) => {
-          const nextMemos = upsertSortedMemo(state.memos, memo, state.activeFilter, state.activeSort);
+          const nextMemos = upsertSortedMemo(
+            state.memos,
+            memo,
+            state.activeFilter,
+            state.activeSort,
+            state.activeFilter === 'custom'
+              ? useCustomFilterStore.getState().filters.find((item) => item.id === state.activeCustomFilterId)
+              : undefined,
+          );
           // 保留 selectedMemo 的 isOpen 状态
           const nextSelected = state.selectedMemo?.id === memo.id
             ? { ...memo, isOpen: state.selectedMemo.isOpen }
@@ -705,6 +776,9 @@ export const useMemoStore = create<MemoStore>()(
         activeFilter: isSidebarNavigationFilter(state.activeFilter)
           ? state.activeFilter
           : 'all',
+        activeCustomFilterId: state.activeFilter === 'custom'
+          ? state.activeCustomFilterId
+          : null,
       }),
       // Migrate the old persisted shape, which stored full selected entities.
       // Do not rehydrate those stale objects into runtime state.
@@ -726,6 +800,9 @@ export const useMemoStore = create<MemoStore>()(
           selectedMemoId: legacy.selectedMemoId
             ?? legacy.selectedMemo?.id
             ?? null,
+          activeCustomFilterId: legacy.activeFilter === 'custom'
+            ? legacy.activeCustomFilterId ?? null
+            : null,
         };
       },
     }

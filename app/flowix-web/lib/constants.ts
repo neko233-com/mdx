@@ -34,6 +34,7 @@ export const STORAGE_KEYS = {
   SETTINGS: 'flowix-settings',
   TAG: 'flowix-tag',
   MEMO: 'flowix-memo-storage',
+  CUSTOM_FILTER: 'flowix-custom-filter-storage',
   BROWSER_COLUMN: 'flowix-browser-column-storage',
   WORKSPACE_RESTORE: 'flowix-workspace-restore-storage',
 } as const;
@@ -69,9 +70,9 @@ export interface FormatConfig {
 
 export type PropertyFieldType =
   | 'Text'
+  | 'Boolean'
   | 'Number'
   | 'Date'
-  | 'URL'
   | 'Icon'
   | 'Select'
   | 'MultiSelect'

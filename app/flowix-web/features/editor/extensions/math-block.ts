@@ -39,8 +39,33 @@ function tKey(key: I18nKey, params?: Record<string, string | number>): string {
   return translate(getCurrentAppLanguage(), key, params);
 }
 
-function normalizeLatex(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
+export function normalizeLatex(value: unknown): string {
+  if (typeof value !== 'string') return '';
+
+  let normalized = value.trim();
+
+  // The math-block input stores the formula body, while users commonly paste
+  // a complete display-math snippet from Markdown/MathJax. Accept both forms
+  // at the boundary and keep the node attribute canonical.
+  let unwrapped = true;
+  while (unwrapped) {
+    unwrapped = false;
+
+    const bracketed = /^\\\[\s*([\s\S]*?)\s*\\\]$/.exec(normalized);
+    if (bracketed) {
+      normalized = bracketed[1].trim();
+      unwrapped = true;
+      continue;
+    }
+
+    const dollarWrapped = /^\$\$\s*([\s\S]*?)\s*\$\$$/.exec(normalized);
+    if (dollarWrapped) {
+      normalized = dollarWrapped[1].trim();
+      unwrapped = true;
+    }
+  }
+
+  return normalized;
 }
 
 function renderKatex(target: HTMLElement, latex: string) {
