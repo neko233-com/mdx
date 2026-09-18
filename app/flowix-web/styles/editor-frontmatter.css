@@ -594,6 +594,10 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   cursor: text;
 }
 
+.frontmatter-property__edit-tag-chip--plain {
+  padding-inline: var(--document-tag-padding-inline);
+}
+
 .frontmatter-property__edit-tag-chip[data-keyboard-selected='true'] {
   outline: 1px solid var(--brand);
   outline-offset: 1px;

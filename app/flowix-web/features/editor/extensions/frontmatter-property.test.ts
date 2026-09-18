@@ -1049,10 +1049,10 @@ describe('frontmatter property helpers', () => {
     if (tagInput) {
       tagInput.value = 'alpha';
       tagInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      expect(popover?.querySelector('.frontmatter-property__edit-tag-chip')?.textContent)
-        .toContain('alpha');
-      expect(popover?.querySelector('.frontmatter-property__edit-tag-chip')?.textContent)
-        .not.toContain('#');
+      const chip = popover?.querySelector('.frontmatter-property__edit-tag-chip');
+      expect(chip?.textContent).toContain('alpha');
+      expect(chip?.textContent).not.toContain('#');
+      expect(chip?.classList.contains('frontmatter-property__edit-tag-chip--plain')).toBe(true);
       tagInput.dispatchEvent(new KeyboardEvent('keydown', {
         key: 'Enter',
         bubbles: true,
@@ -1165,6 +1165,8 @@ describe('frontmatter property helpers', () => {
         .toContain('gammaLongTag');
       expect(chips[chips.length - 1]?.textContent)
         .toContain('#');
+      expect(chips[chips.length - 1]?.classList.contains('frontmatter-property__edit-tag-chip--plain'))
+        .toBe(false);
       input.dispatchEvent(new KeyboardEvent('keydown', {
         key: 'Enter',
         bubbles: true,

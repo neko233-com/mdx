@@ -1400,7 +1400,10 @@ export class FrontmatterPropertyNodeView implements NodeView {
         const renderTags = () => {
           chips.replaceChildren();
           tags.forEach((tag, index) => {
-            const chip = createElement('span', 'frontmatter-property__edit-tag-chip');
+            const chip = createElement(
+              'span',
+              `frontmatter-property__edit-tag-chip${isNoteTags ? '' : ' frontmatter-property__edit-tag-chip--plain'}`,
+            );
             if (activeTagIndex === index) chip.dataset.keyboardSelected = 'true';
             if (isNoteTags) {
               chip.append(
