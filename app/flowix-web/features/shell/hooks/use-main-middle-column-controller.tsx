@@ -7,8 +7,10 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useMemoListHoverPreview } from '@features/memo/public/shell-api';
-import type { NoteNavigationDrawerPhase } from '@features/memo/components/note-navigation-drawer';
+import {
+  useMemoListHoverPreview,
+  type NoteNavigationDrawerPhase,
+} from '@features/memo/public/shell-api';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('main-middle-column-controller');

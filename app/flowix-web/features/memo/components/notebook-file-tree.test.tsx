@@ -106,6 +106,7 @@ describe('NotebookFileTree pointer dragging', () => {
     document.body.append(host);
     captured = false;
     capturedElement = null;
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(320);
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(204);
     HTMLElement.prototype.setPointerCapture = vi.fn(function (this: HTMLElement) {
       captured = true;

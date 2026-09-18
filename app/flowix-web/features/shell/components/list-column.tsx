@@ -5,8 +5,8 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import type { Notebook } from '@features/memo/store/memo-store';
 import { MemoListTitlebarMac } from '@features/memo/components/memo-list-titlebar-mac';
 import { MemoListTitlebarWin } from '@features/memo/components/memo-list-titlebar-win';
+import type { NoteNavigationDrawerPhase } from '@features/memo/public/shell-api';
 import { cn } from '@/lib/utils';
-import type { NoteNavigationDrawerPhase } from '@features/memo/components/note-navigation-drawer';
 
 type ListColumnPreviewPhase = 'open' | 'closing';
 

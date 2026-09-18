@@ -184,7 +184,10 @@ export function useMarkdownFileDrop({
         ? dropHost
         : undefined;
       const requestId = ++dropRequestRef.current;
-      void Promise.resolve(onDropPathsRef.current(markdownOnly, destination)).catch((error) => {
+      const dropResult = destination === undefined
+        ? onDropPathsRef.current(markdownOnly)
+        : onDropPathsRef.current(markdownOnly, destination);
+      void Promise.resolve(dropResult).catch((error) => {
         if (dropRequestRef.current !== requestId || disposed) return;
         onDropErrorRef.current?.(error);
       });
