@@ -1390,11 +1390,20 @@ export class FrontmatterPropertyNodeView implements NodeView {
           'frontmatter-property__edit-input frontmatter-property__edit-tags-input',
         );
         let tags = value.split(',').map((item) => item.trim()).filter(Boolean);
+        const isNoteTags = canonicalizePropertyKey(property.key) === 'tags';
 
         const renderTags = () => {
           chips.replaceChildren();
           tags.forEach((tag, index) => {
-            const chip = createElement('span', 'frontmatter-property__edit-tag-chip', tag);
+            const chip = createElement('span', 'frontmatter-property__edit-tag-chip');
+            if (isNoteTags) {
+              chip.append(
+                createElement('span', 'tag-node-prefix', '#'),
+                createElement('span', 'tag-node-content', tag),
+              );
+            } else {
+              chip.textContent = tag;
+            }
             const remove = createElement('button', 'frontmatter-property__edit-tag-remove', '×');
             remove.type = 'button';
             remove.setAttribute(
@@ -1681,8 +1690,15 @@ export class FrontmatterPropertyNodeView implements NodeView {
         const chip = createElement(
           'span',
           `${isNoteTags ? 'tag-node ' : ''}frontmatter-property__value-chip${itemDisplayKind === 'text' ? '' : ' frontmatter-property__value-chip--typed'}`,
-          isNoteTags ? `#${displayValue}` : displayValue,
         );
+        if (isNoteTags) {
+          chip.append(
+            createElement('span', 'tag-node-prefix', '#'),
+            createElement('span', 'tag-node-content', displayValue),
+          );
+        } else {
+          chip.textContent = displayValue;
+        }
         chip.title = formatFrontmatterPropertyValue(item, Number.POSITIVE_INFINITY);
         chips.append(chip);
       });

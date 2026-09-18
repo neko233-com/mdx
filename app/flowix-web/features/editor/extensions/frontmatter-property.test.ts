@@ -1163,7 +1163,7 @@ describe('frontmatter property helpers', () => {
       expect(chips[chips.length - 1]?.textContent)
         .toContain('gammaLongTag');
       expect(chips[chips.length - 1]?.textContent)
-        .not.toContain('#');
+        .toContain('#');
       input.dispatchEvent(new KeyboardEvent('keydown', {
         key: 'Enter',
         bubbles: true,

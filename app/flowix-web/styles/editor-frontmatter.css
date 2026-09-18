@@ -577,13 +577,33 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   display: inline-flex;
   max-width: 100%;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0;
   border-radius: 8px;
-  background: var(--document-tag-bg);
+  background: color-mix(in oklch, var(--document-tag-bg) 75%, transparent);
   color: var(--document-tag-foreground, var(--primary-foreground));
-  padding: 2px 6px;
-  font-size: 79.2%;
+  padding: 0;
+  font-size: 92%;
   line-height: 1.2;
+  cursor: text;
+}
+
+.frontmatter-property__edit-tag-chip:hover {
+  cursor: text;
+}
+
+.frontmatter-property__edit-tag-chip .tag-node-prefix {
+  display: inline;
+  font-family: 'Flowix Tag Icon', var(--app-font-family, var(--font-sans));
+  font-size: inherit;
+  font-weight: 400;
+  color: var(--brand);
+  padding: 2px 0 2px 6px;
+  padding-inline-end: var(--document-tag-hash-gap, 0.09em);
+}
+
+.frontmatter-property__edit-tag-chip .tag-node-content {
+  display: inline;
+  padding: 2px 6px 2px 0;
 }
 
 .frontmatter-property__edit-tag-remove {
@@ -596,6 +616,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   background: transparent;
   color: inherit;
   padding: 0;
+  margin-left: 0.25rem;
   line-height: 1;
   cursor: pointer;
 }
@@ -1039,6 +1060,18 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.markdown-editor .frontmatter-property__value-chip.tag-node {
+  background: color-mix(in oklch, var(--document-tag-bg) 75%, transparent);
+  color: var(--document-tag-foreground, var(--primary-foreground));
+  font-size: 92%;
+  padding: 0;
+  cursor: text;
+}
+
+.markdown-editor .frontmatter-property__value-chip.tag-node:hover {
+  cursor: text;
 }
 
 .markdown-editor .frontmatter-property__value-chip--typed {
