@@ -674,12 +674,12 @@
    * run, so the caret is painted above the glyph instead of behind a layer. */
   display: inline;
   font-family: 'Flowix Tag Icon', var(--app-font-family, var(--font-sans));
-  font-size: 1.08em;
+  font-size: inherit;
   font-weight: 400;
-  color: var(--document-tag-foreground, var(--primary-foreground));
+  color: var(--brand);
   caret-color: currentColor;
   padding: 2px 0 2px 6px;
-  padding-inline-end: var(--document-tag-hash-gap, 0.18em);
+  padding-inline-end: var(--document-tag-hash-gap, 0.09em);
   border-radius: 8px 0 0 8px;
 }
 
@@ -693,11 +693,7 @@
 }
 
 .markdown-editor .tag-node:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):hover {
-  /* hover = 底色与 brand 强调色轻混, 往 indigo 偏一档 */
-  background: var(
-    --document-tag-hover-bg,
-    color-mix(in oklch, var(--document-tag-bg) 70%, var(--brand) 30%)
-  );
+  cursor: text;
 }
 
 @keyframes editor-block-input-popup-in {
