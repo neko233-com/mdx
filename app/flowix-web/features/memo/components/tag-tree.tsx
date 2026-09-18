@@ -48,7 +48,7 @@ import {
 } from '@features/memo/components/tag-reorder';
 import { markTagsCollapsedByAncestor } from '@features/memo/components/tag-collapse';
 import { agent, system } from '@platform/tauri/client';
-import { TagIcon } from '@shared/ui/tag-icon';
+import { TagSvgIcon } from '@shared/ui/tag-icon';
 
 interface TagTreeProps {
   selectedNotebook: Notebook | null;
@@ -793,7 +793,7 @@ export function TagTree({
                     }
                   }}
                 >
-                  <TagIcon />
+                  <TagSvgIcon className="h-3.5 w-3.5" />
                   {hasChildren && (
                     <span
                       aria-hidden
@@ -1066,7 +1066,7 @@ export function TagTree({
             height: dragGhost.rect.height,
           }}
         >
-          <TagIcon className="shrink-0 text-[var(--primary)]" />
+          <TagSvgIcon className="h-3.5 w-3.5 shrink-0 text-[var(--primary)]" />
           <span className="min-w-0 flex-1 truncate">
             {tagOptions.find((tag) => tag.id === dragGhost.id)?.name ?? ''}
           </span>

@@ -56,7 +56,7 @@ import {
 import { ShortcutKbd } from '@shared/ui/shortcut-kbd';
 import { useI18n } from '@/lib/i18n';
 import { createLogger } from '@/lib/logger';
-import { TagIcon } from '@shared/ui/tag-icon';
+import { TagSvgIcon } from '@shared/ui/tag-icon';
 
 const logger = createLogger('global-search');
 
@@ -638,7 +638,7 @@ function StaticGroups({ onClose }: StaticGroupsProps) {
               value={tag.id}
               onSelect={() => handleTagSelect(tag.id)}
             >
-              <TagIcon className="shrink-0 text-[var(--muted-foreground)]" />
+              <TagSvgIcon className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
               <span>{tag.name}</span>
             </CommandItem>
           ))

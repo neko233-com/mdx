@@ -15,7 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@shared/ui/dropdown-menu';
 import { OverlayScrollbar } from '@shared/ui/overlay-scrollbar';
-import { TagIcon } from '@shared/ui/tag-icon';
+import { TagIcon, TagSvgIcon } from '@shared/ui/tag-icon';
 
 const MEMO_NAVIGATION_MENU_CLASS =
   'w-[220px] space-y-0.5 rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]';
@@ -167,7 +167,7 @@ export function MemoNavigationSubmenu({
                   >
                     {itemKind === 'tag' ? (
                       <span className="mention-note-title mention-tag-title">
-                        <TagIcon className="mention-tag-icon" />
+                        <TagSvgIcon className="mention-tag-icon" />
                         <TagMentionName name={item.label} />
                       </span>
                     ) : (
@@ -339,8 +339,8 @@ export function MemoNavigationDropdown({
         </DropdownMenuItem>
         <MemoNavigationSubmenu
           label={t('memo.navigation.tags')}
-          icon={<TagIcon className="text-base" />}
-          itemIcon={<TagIcon className="text-base text-[var(--muted-foreground)]" />}
+          icon={<TagSvgIcon className="h-4 w-4 shrink-0" />}
+          itemIcon={<TagSvgIcon className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />}
           itemKind="tag"
           valueAdornment={activeFilter === 'tagged' && selectedTagName ? (
             <span className="inline-flex max-w-[100px] items-center truncate text-xs text-[var(--muted-foreground)]">

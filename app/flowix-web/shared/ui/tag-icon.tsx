@@ -24,3 +24,24 @@ export function TagIcon({ className, prefix = false, ...props }: TagIconProps) {
     </span>
   );
 }
+
+export type TagSvgIconProps = ComponentPropsWithoutRef<'svg'>;
+
+/** Standalone tag icon for fixed-size UI icon slots. */
+export function TagSvgIcon({ className, ...props }: TagSvgIconProps) {
+  return (
+    <svg
+      {...props}
+      aria-hidden="true"
+      className={cn('flowix-tag-svg-icon', className)}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M8 5v14M16 5v14M5 8h14M5 16h14" />
+    </svg>
+  );
+}

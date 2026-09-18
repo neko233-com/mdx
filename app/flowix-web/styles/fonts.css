@@ -24,6 +24,11 @@
 	margin-inline-end: var(--document-tag-hash-gap, 0.09em);
 }
 
+.flowix-tag-svg-icon {
+	display: block;
+	flex: 0 0 auto;
+}
+
 @font-face { font-family: 'Inter'; font-style: normal; font-display: swap; font-weight: 300; src: url('@fontsource/inter/files/inter-latin-300-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Inter'; font-style: normal; font-display: swap; font-weight: 400; src: url('@fontsource/inter/files/inter-latin-400-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Inter'; font-style: normal; font-display: swap; font-weight: 500; src: url('@fontsource/inter/files/inter-latin-500-normal.woff2') format('woff2'); }

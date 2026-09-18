@@ -548,9 +548,9 @@
 }
 
 .mention-tag-icon {
-	display: inline-block;
-	font-size: 0.875rem;
-	line-height: 1;
+	display: block;
+	width: 0.875rem;
+	height: 0.875rem;
 	flex: 0 0 auto;
 	color: var(--muted-foreground);
 }
