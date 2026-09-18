@@ -1852,10 +1852,12 @@ export class FrontmatterPropertyNodeView implements NodeView {
     addIcon.append(createPropertySvgIcon('add'));
     add.append(
       addIcon,
-      createElement('span', '', this.t('document.action.properties')),
+      createElement('span', 'frontmatter-property__add-property-label', this.t('document.properties.addField')),
     );
     add.addEventListener('click', () => this.addEmptyProperty());
-    container.append(add);
+    const addRow = createElement('div', 'frontmatter-property__add-property-row');
+    addRow.append(add);
+    container.append(addRow);
   }
 
   private repairMalformedFrontmatter() {

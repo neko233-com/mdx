@@ -226,7 +226,7 @@ function CommandDialog({
             <button
               type="button"
               onClick={() => onOpenChange(false)}
-              className="absolute top-3 right-3 z-10 p-1 rounded-md text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+              className="absolute top-3 right-3 z-10 p-1 rounded-md text-[var(--muted-foreground)] hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
               aria-label={t('common.close')}
             >
               <X className="w-4 h-4" />
@@ -333,7 +333,7 @@ const CommandItem = React.forwardRef<
     className={cn(
       'relative flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-2 text-sm outline-none',
       'text-[var(--foreground)]',
-      'data-[selected=true]:bg-[var(--muted)]',
+      'data-[selected=true]:bg-[var(--hover-bg)]',
       'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50',
       '[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
       className,

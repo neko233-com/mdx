@@ -61,7 +61,7 @@ export class ComposerFolderController {
     this.input = options.input;
     this.composer = options.composer;
     this.listFolders = options.listFolders;
-    this.groupLabel = options.groupLabel ?? "引用本地资料";
+    this.groupLabel = options.groupLabel ?? "引用仓库";
     this.listNotes = options.listNotes ?? (async () => []);
     this.noteGroupLabel = options.noteGroupLabel ?? "笔记";
     this.noteEmptyLabel = options.noteEmptyLabel ?? "暂无笔记";

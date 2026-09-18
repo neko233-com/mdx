@@ -107,7 +107,7 @@ describe("ComposerFolderController", () => {
 
     expect(document.querySelector(".agent-composer-slash-menu")).not.toBeNull();
     expect(document.querySelector(".agent-thread-card__codex-settings-title")?.textContent)
-      .toBe("引用本地资料");
+      .toBe("引用仓库");
     expect([...document.querySelectorAll(".agent-thread-card__codex-settings-title")]
       .map((item) => item.textContent)).toContain("笔记");
     expect(document.querySelectorAll(".agent-composer-slash-menu__item")).toHaveLength(1);

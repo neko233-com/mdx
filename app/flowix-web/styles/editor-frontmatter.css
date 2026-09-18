@@ -4,7 +4,7 @@
 
 .markdown-editor .frontmatter-property {
   --frontmatter-row-gap: 0.35rem;
-  --frontmatter-padding-block: 0.125rem;
+  --frontmatter-padding-block: 3px;
   --frontmatter-icon-size: 20px;
   --frontmatter-row-padding:
     var(--frontmatter-padding-block) 0.4rem
@@ -20,7 +20,7 @@
   display: block;
   width: 100%;
   color: var(--muted-foreground);
-  font-size: 90%;
+  font-size: var(--app-font-size, 15px);
   line-height: 1.25rem;
 }
 
@@ -92,14 +92,14 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 }
 
 .markdown-editor .frontmatter-property__type-icon .frontmatter-property__svg-icon {
-  width: 1rem;
-  height: 1rem;
-  flex: 0 0 1rem;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
 }
 
 .markdown-editor .frontmatter-property__type-icon--number .frontmatter-property__svg-icon {
-  width: 1.1rem;
-  flex-basis: 1.1rem;
+  width: 18px;
+  flex-basis: 18px;
 }
 
 .markdown-editor .frontmatter-property__heading-label {
@@ -110,7 +110,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   display: grid;
   width: 100%;
   color: var(--frontmatter-list-foreground);
-  padding-bottom: 0.55rem;
+  padding-bottom: 0.24rem;
   grid-template-columns: var(--frontmatter-icon-size) fit-content(9rem) minmax(0, 1fr);
   align-items: start;
   justify-items: stretch;
@@ -236,6 +236,25 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   color: var(--foreground);
 }
 
+.markdown-editor .frontmatter-property__add-property-label {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  white-space: nowrap;
+  transition: max-width 180ms ease, opacity 140ms ease;
+}
+
+.markdown-editor .frontmatter-property:hover .frontmatter-property__add-property-label,
+.markdown-editor .frontmatter-property__add-property:focus-visible .frontmatter-property__add-property-label {
+  max-width: 8rem;
+  opacity: 1;
+}
+
+.markdown-editor .frontmatter-property__add-property-row {
+  width: 100%;
+}
+
 .markdown-editor .frontmatter-property__add-property-icon {
   display: inline-flex;
   width: var(--frontmatter-icon-size);
@@ -248,9 +267,9 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 }
 
 .markdown-editor .frontmatter-property__add-property-icon .frontmatter-property__svg-icon {
-  width: 1rem;
-  height: 1rem;
-  flex: 0 0 1rem;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
 }
 
 .frontmatter-property__edit-popover {
@@ -266,7 +285,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   font-family: var(--app-font-family, var(--font-sans));
   font-size: var(--app-font-size, 15px);
   line-height: var(--app-line-height, 1.8);
-  padding: 0.3rem 0.6rem;
+  padding: 0.5rem 0.6rem;
 }
 
 .frontmatter-property__item-menu {
@@ -403,7 +422,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   color: var(--foreground);
   caret-color: var(--brand);
   font: inherit;
-  font-size: 90%;
+  font-size: var(--app-font-size, 15px);
   line-height: 1.5;
   padding: 0;
 }
@@ -472,7 +491,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   color: var(--document-foreground);
   padding: 0.25rem 0.4rem;
   font: inherit;
-  font-size: 90%;
+  font-size: var(--app-font-size, 15px);
   line-height: 1.25;
   text-align: left;
   white-space: nowrap;
@@ -740,7 +759,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 
 .frontmatter-property__edit-type-row {
   position: relative;
-  display: inline-flex;
+  display: flex;
   width: fit-content;
   max-width: 100%;
   align-items: center;
@@ -762,7 +781,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   outline: none;
   background: transparent;
   color: var(--muted-foreground);
-  padding: 0.15rem 0;
+  padding: 0;
   font: inherit;
   font-size: 0.75rem;
   line-height: 1.2;
@@ -1012,12 +1031,11 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   background: var(--document-tag-bg);
   color: var(--document-tag-foreground, var(--primary-foreground));
   padding: 2px 6px;
-  font-size: 88%;
   line-height: 1.2;
 }
 
 .markdown-editor .frontmatter-property__value-chip {
-  max-width: 8rem;
+  max-width: 16rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

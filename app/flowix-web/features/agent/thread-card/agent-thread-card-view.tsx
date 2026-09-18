@@ -1240,6 +1240,10 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
       "agent-thread-card--fullscreen",
       this.isFullscreen,
     );
+    this.composer.classList.toggle(
+      "agent-composer--expanded",
+      this.isFullscreen,
+    );
     if (this.isFullscreen) {
       this.dom.classList.remove("ProseMirror-selectednode");
       this.dom.setAttribute("role", "dialog");

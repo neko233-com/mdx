@@ -825,7 +825,7 @@ const zhCN = {
     "agent.mode.cordis.description": "标准模式+插件实验/设计",
     "agent.reasoning.title": "推理",
     "agent.files.title": "文件",
-    "agent.files.referenceLocal": "引用本地资料",
+    "agent.files.referenceLocal": "引用仓库",
     "agent.files.projectNotes": "笔记",
     "agent.menu.skills": "技能",
     "agent.menu.instructions": "指令",

@@ -282,7 +282,7 @@ function SelectItem({ children, value, className }: SelectItemProps) {
 			type="button"
 			onClick={handleClick}
 			className={cn(
-				"flex min-h-8 items-center w-full gap-2 rounded-md px-2.5 py-1.5 text-sm text-[var(--foreground)] hover:bg-[var(--muted)] cursor-pointer outline-none",
+				"flex min-h-8 items-center w-full gap-2 rounded-md px-2.5 py-1.5 text-sm text-[var(--foreground)] hover:bg-[var(--hover-bg)] cursor-pointer outline-none",
 				className
 			)}
 		>

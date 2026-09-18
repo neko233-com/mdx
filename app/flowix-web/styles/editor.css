@@ -657,7 +657,7 @@
   display: inline;
   color: var(--document-tag-foreground, var(--primary-foreground));
   font-weight: 400;
-  font-size: 88%;
+  font-size: 92%;
   cursor: pointer;
   background: var(--document-tag-bg);
   border-radius: 8px;

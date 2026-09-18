@@ -116,7 +116,7 @@ export function DialogContent({ children, className, showOverlay = true, showClo
 					{showCloseButton && (
 						<button
 							onClick={() => onOpenChange(false)}
-							className="absolute top-4 right-4 p-1 rounded-md hover:bg-[var(--muted)]"
+							className="absolute top-4 right-4 p-1 rounded-md hover:bg-[var(--hover-bg)]"
 						>
 							<X className="w-4 h-4" />
 						</button>
@@ -138,7 +138,7 @@ export function DialogClose({ children }: DialogCloseProps) {
 	return (
 		<button
 			onClick={() => context?.onOpenChange(false)}
-			className="absolute top-4 right-4 p-1 rounded-md hover:bg-[var(--muted)]"
+			className="absolute top-4 right-4 p-1 rounded-md hover:bg-[var(--hover-bg)]"
 		>
 			{children || <X className="w-4 h-4" />}
 		</button>

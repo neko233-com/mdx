@@ -67,6 +67,7 @@
 	/* muted / accent: L=0.945 + chroma 0.004 ── ΔL vs bg = 0.040, 在上次
 	 * ΔL=0.060 的基础上弱化 1/3, 保留可见层次但降低压迫感。 */
 	--muted: oklch(0.945 0.004 var(--neutral-hue));
+	--hover-bg: var(--muted);
 	--muted-foreground: oklch(0.62 0.008 var(--neutral-hue));
 	--accent: oklch(0.95 0.004 var(--neutral-hue));
 

@@ -2657,6 +2657,7 @@ describe("AgentThreadCard NodeView streaming", () => {
     const input = getComposerInput(host);
     const row = input.parentElement;
     expect(row?.classList.contains("agent-thread-card__composer-input-row")).toBe(true);
+    expect(input.closest(".agent-thread-card__composer")?.classList.contains("agent-composer--expanded")).toBe(true);
 
     input.blur();
     row?.dispatchEvent(
@@ -2669,6 +2670,12 @@ describe("AgentThreadCard NodeView streaming", () => {
 
     expect(document.activeElement).toBe(input);
     expect(getComposerEditor(input).view.hasFocus()).toBe(true);
+
+    host
+      .querySelector<HTMLButtonElement>(".agent-thread-card__fullscreen")
+      ?.click();
+    await flushAnimationFrame();
+    expect(input.closest(".agent-thread-card__composer")?.classList.contains("agent-composer--expanded")).toBe(false);
   });
 
   it("does not refocus the editor when clicking non-interactive card content", async () => {

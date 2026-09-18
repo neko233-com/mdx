@@ -65,6 +65,14 @@
 .markdown-editor .agent-thread-card__message-content > *:last-child {
   margin-bottom: 0;
 }
+.markdown-editor .agent-thread-card__message-content > p:last-child {
+  padding-bottom: 0;
+}
+.markdown-editor
+  .agent-thread-card__message-content
+  > :is(ul, ol, blockquote):last-child {
+  padding-bottom: 0;
+}
 
 .markdown-editor .agent-thread-card__message-content p {
   margin: 0;

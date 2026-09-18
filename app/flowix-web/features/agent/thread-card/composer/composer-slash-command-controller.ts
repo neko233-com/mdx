@@ -48,6 +48,10 @@ export interface ComposerSlashSkill {
   modelInvocable?: boolean;
 }
 
+type ComposerSlashMenuItem =
+  | { kind: "command"; value: ComposerSlashCommand }
+  | { kind: "skill"; value: ComposerSlashSkill };
+
 export { formatCodexSkillDisplayName } from "@features/agent/thread-card/composer/composer-skill-token";
 
 export interface ComposerSlashCommandControllerOptions {
@@ -87,11 +91,10 @@ export class ComposerSlashCommandController {
   private readonly focusInput: () => void;
   private readonly inputRow: HTMLDivElement;
   private menu: HTMLDivElement | null = null;
-  private filtered: readonly ComposerSlashCommand[] = [];
+  private filtered: readonly ComposerSlashMenuItem[] = [];
   private skills: readonly ComposerSlashSkill[] = [];
-  private menuMode: "commands" | "skills" = "commands";
-  private skillsLoading = false;
-  private skillsRequestGeneration = 0;
+  private skillsStatus: "idle" | "loading" | "ready" | "error" = "idle";
+  private skillsPromise: Promise<readonly ComposerSlashSkill[]> | null = null;
   private activeIndex = 0;
   private isKeyboardNavigation = true;
   private dismissedValue: string | null = null;
@@ -165,31 +168,44 @@ export class ComposerSlashCommandController {
       return;
     }
 
-    // Skill selection is a second-level menu. Keep it open while the editor
-    // is temporarily empty; otherwise the editor update caused by clearing
-    // `/skill` would immediately tear down the submenu.
-    if (this.menuMode === "skills") return;
-
     const { selection, doc } = this.editor.state;
     const value = this.editor.getMarkdown().trim();
     const cursorAtEnd = selection.empty && selection.from === doc.content.size - 1;
-    const match = cursorAtEnd ? /^\/([a-z]*)$/i.exec(value) : null;
+    const match = cursorAtEnd ? /^\/([a-z0-9._-]*)$/i.exec(value) : null;
     if (!match || value === this.dismissedValue) {
       this.closeMenu();
       return;
     }
 
     const query = match[1].toLowerCase();
-    this.filtered = this.commands
+    const commands: readonly ComposerSlashMenuItem[] = this.commands
       .filter((command) => !command.agentType || command.agentType === this.agentType)
-      .filter((command) => command.name.toLowerCase().includes(query));
-    if (this.filtered.length === 0) {
+      // Skills are now direct candidates in this list; the old `/skill`
+      // submenu entry would only duplicate that behavior.
+      .filter((command) => command.execution !== "dsh-skill" && command.execution !== "codex-skill")
+      .map((command) => ({ kind: "command" as const, value: command }));
+    const skills: readonly ComposerSlashMenuItem[] = this.skillsStatus === "ready"
+      ? this.skills.map((skill) => ({ kind: "skill" as const, value: skill }))
+      : [];
+    this.filtered = [...commands, ...skills].filter((item) => {
+      const value = item.kind === "command" ? item.value.name : item.value.name;
+      const label = item.kind === "skill"
+        ? `${item.value.displayName ?? ""} ${item.value.description} ${item.value.shortDescription ?? ""}`
+        : item.value.description;
+      return `${value} ${label}`.toLowerCase().includes(query);
+    });
+    if (
+      this.filtered.length === 0 &&
+      this.skillsStatus !== "idle" &&
+      this.skillsStatus !== "loading"
+    ) {
       this.closeMenu();
       return;
     }
     this.activeIndex = 0;
     this.isKeyboardNavigation = true;
     this.openMenu();
+    void this.ensureSkillsLoaded();
   }
 
   private readonly handleEditorUpdate = (): void => {
@@ -245,7 +261,7 @@ export class ComposerSlashCommandController {
         event.preventDefault();
         event.stopImmediatePropagation();
         const direction = event.key === "ArrowDown" ? 1 : -1;
-        const count = this.menuMode === "commands" ? this.filtered.length : this.skills.length;
+        const count = this.filtered.length;
         if (count === 0) return;
         this.activeIndex = (this.activeIndex + direction + count) % count;
         this.isKeyboardNavigation = true;
@@ -255,20 +271,15 @@ export class ComposerSlashCommandController {
       if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
         event.stopImmediatePropagation();
-        if (this.menuMode === "commands") {
-          const command = this.filtered[this.activeIndex];
-          if (command) this.select(command);
-        } else {
-          const skill = this.skills[this.activeIndex];
-          if (skill) this.selectSkill(skill);
-        }
+        const item = this.filtered[this.activeIndex];
+        if (item?.kind === "command") this.select(item.value);
+        if (item?.kind === "skill") this.selectSkill(item.value);
         return;
       }
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopImmediatePropagation();
         this.dismissedValue = this.editor.getMarkdown().trim();
-        this.menuMode = "commands";
         this.closeMenu();
         return;
       }
@@ -312,30 +323,47 @@ export class ComposerSlashCommandController {
     menu.classList.toggle("is-keyboard-navigation", this.isKeyboardNavigation);
     menu.replaceChildren();
 
-    if (this.menuMode === "skills") {
-      this.renderSkillsMenu(menu);
-      return;
-    }
-
-    this.filtered.forEach((command, index) => {
+    this.filtered.forEach((candidate, index) => {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "agent-composer-slash-menu__item";
       item.classList.toggle("agent-composer-slash-menu__item--active", index === this.activeIndex);
+      if (candidate.kind === "skill") item.classList.add("agent-composer-slash-menu__item--skill");
       item.setAttribute("role", "option");
       item.setAttribute("aria-selected", String(index === this.activeIndex));
       const name = document.createElement("span");
       name.className = "agent-composer-slash-menu__name";
-      name.textContent = `/${command.name}`;
+      name.textContent = candidate.kind === "command"
+        ? `/${candidate.value.name}`
+        : this.agentType === "codex"
+          ? displayNameForComposerSkill(candidate.value.name, candidate.value.displayName)
+          : candidate.value.displayName || `/${candidate.value.name}`;
       const description = document.createElement("span");
       description.className = "agent-composer-slash-menu__description";
-      description.textContent = command.description;
+      description.textContent = candidate.kind === "command"
+        ? candidate.value.description
+        : candidate.value.shortDescription || candidate.value.description || candidate.value.whenToUse || "";
       item.append(name, description);
       item.addEventListener("mousemove", (event) => this.handleItemMouseMove(event, index));
       item.addEventListener("pointerdown", (event) => event.preventDefault());
-      item.addEventListener("click", () => this.select(command));
+      item.addEventListener("click", () => {
+        if (candidate.kind === "command") this.select(candidate.value);
+        else this.selectSkill(candidate.value);
+      });
       menu.append(item);
     });
+
+    if (this.skillsStatus === "loading") {
+      const loading = document.createElement("div");
+      loading.className = "agent-composer-slash-menu__empty";
+      loading.textContent = "正在加载 Skill…";
+      menu.append(loading);
+    } else if (this.skillsStatus === "error") {
+      const error = document.createElement("div");
+      error.className = "agent-composer-slash-menu__empty";
+      error.textContent = "Skill 加载失败，请稍后重试";
+      menu.append(error);
+    }
     const activeItem = menu.children[this.activeIndex] as HTMLElement | undefined;
     activeItem?.scrollIntoView?.({ block: "nearest" });
   }
@@ -367,13 +395,7 @@ export class ComposerSlashCommandController {
   }
 
   private select(command: ComposerSlashCommand): void {
-    if (command.execution === "dsh-skill" || command.execution === "codex-skill") {
-      void this.openSkills();
-      return;
-    }
-
     this.closeMenu();
-    this.menuMode = "commands";
     if (command.name === "model" && command.execution === "host-action") {
       this.clearInput();
       this.onModelSelect?.();
@@ -402,92 +424,32 @@ export class ComposerSlashCommandController {
     this.onCommandChange();
   }
 
-  private async openSkills(): Promise<void> {
-    this.menuMode = "skills";
-    this.skills = [];
-    this.activeIndex = 0;
-    this.isKeyboardNavigation = true;
-    this.skillsLoading = true;
-    const generation = ++this.skillsRequestGeneration;
-    this.editor.commands.setContent("", { contentType: "markdown", emitUpdate: false });
-    this.openMenu();
-    this.focusInput();
-
+  private async ensureSkillsLoaded(): Promise<void> {
+    if (!this.agentType || this.skillsStatus === "ready" || this.skillsStatus === "loading" || this.skillsStatus === "error") return;
+    const listSkills = this.agentType === "codex" ? this.listCodexSkills : this.listDshSkills;
+    if (!listSkills) {
+      this.skillsStatus = "ready";
+      return;
+    }
+    this.skillsStatus = "loading";
+    this.renderMenuItems();
+    this.skillsPromise = Promise.resolve().then(() => listSkills());
     try {
-      const listSkills = this.agentType === "codex" ? this.listCodexSkills : this.listDshSkills;
-      const skills = await listSkills?.() ?? [];
-      if (this.disposed || generation !== this.skillsRequestGeneration) return;
+      const skills = await this.skillsPromise;
+      if (this.disposed) return;
       this.skills = skills;
+      this.skillsStatus = "ready";
     } catch (error) {
-      if (this.disposed || generation !== this.skillsRequestGeneration) return;
-      this.skills = [];
+      if (this.disposed) return;
+      this.skillsStatus = "error";
       console.warn(`Failed to load ${this.agentType} skills`, error);
-    } finally {
-      if (this.disposed || generation !== this.skillsRequestGeneration) return;
-      this.skillsLoading = false;
-      this.activeIndex = 0;
-      this.renderMenuItems();
-      this.updateMenuPosition();
     }
-  }
-
-  private renderSkillsMenu(menu: HTMLDivElement): void {
-    const back = document.createElement("button");
-    back.type = "button";
-    back.className = "agent-composer-slash-menu__item agent-composer-slash-menu__item--back";
-    back.textContent = "‹ 返回命令";
-    back.addEventListener("pointerdown", (event) => event.preventDefault());
-    back.addEventListener("click", () => {
-      this.menuMode = "commands";
-      this.editor.commands.setContent("/", { contentType: "markdown", emitUpdate: false });
-      this.editor.commands.focus("end");
-      this.refresh();
-    });
-    menu.append(back);
-
-    if (this.skillsLoading) {
-      const loading = document.createElement("div");
-      loading.className = "agent-composer-slash-menu__empty";
-      loading.textContent = "正在加载 Skill…";
-      menu.append(loading);
-      return;
-    }
-    if (this.skills.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "agent-composer-slash-menu__empty";
-      empty.textContent = "没有可用 Skill";
-      menu.append(empty);
-      return;
-    }
-
-    this.skills.forEach((skill, index) => {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "agent-composer-slash-menu__item agent-composer-slash-menu__item--skill";
-      item.classList.toggle("agent-composer-slash-menu__item--active", index === this.activeIndex);
-      item.setAttribute("role", "option");
-      item.setAttribute("aria-selected", String(index === this.activeIndex));
-      const name = document.createElement("span");
-      name.className = "agent-composer-slash-menu__name";
-      name.textContent = this.agentType === "codex"
-        ? displayNameForComposerSkill(skill.name, skill.displayName)
-        : skill.displayName || `/${skill.name}`;
-      const description = document.createElement("span");
-      description.className = "agent-composer-slash-menu__description";
-      description.textContent = skill.shortDescription || skill.description || skill.whenToUse || "";
-      item.append(name, description);
-      item.addEventListener("mousemove", (event) => this.handleItemMouseMove(event, index));
-      item.addEventListener("pointerdown", (event) => event.preventDefault());
-      item.addEventListener("click", () => this.selectSkill(skill));
-      menu.append(item);
-    });
-    const activeItem = menu.children[this.activeIndex + 1] as HTMLElement | undefined;
-    activeItem?.scrollIntoView?.({ block: "nearest" });
+    this.activeIndex = Math.min(this.activeIndex, Math.max(0, this.filtered.length - 1));
+    this.refresh();
   }
 
   private selectSkill(skill: ComposerSlashSkill): void {
     this.closeMenu();
-    this.menuMode = "commands";
     if (this.agentType === "codex") {
       insertComposerSkillToken(this.editor, skill.name, skill.displayName);
     } else {
@@ -506,8 +468,5 @@ export class ComposerSlashCommandController {
   private closeMenu(): void {
     this.menu?.remove();
     this.menu = null;
-    this.skillsRequestGeneration += 1;
-    this.skillsLoading = false;
-    this.menuMode = "commands";
   }
 }

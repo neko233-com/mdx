@@ -47,6 +47,7 @@
 	 * 改 0.36 + chroma 0.010 与 rock 一致, 读作中性墨. */
 	--secondary-foreground: oklch(0.36 0.010 var(--neutral-hue));
 	--muted: oklch(0.948 0.006 var(--neutral-hue));
+	--hover-bg: var(--muted);
 	/* muted-foreground: 原 0.613 + chroma 0.018 — 偏色相. 降到 0.009
 	 * 与 rock 一致. */
 	--muted-foreground: oklch(0.62 0.009 var(--neutral-hue));
