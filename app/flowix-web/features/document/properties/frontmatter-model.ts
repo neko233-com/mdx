@@ -234,6 +234,10 @@ function parseList(value: string): string[] {
   return lines;
 }
 
+export function normalizeTagInput(value: string): string {
+  return value.trim().replace(/^#+/, '').trim();
+}
+
 function normalizeDocumentTags(value: unknown): string[] {
   if (!Array.isArray(value)) {
     throw new FrontmatterPropertyError('invalid-tag', 'Tags must be a list');
@@ -244,7 +248,7 @@ function normalizeDocumentTags(value: unknown): string[] {
     if (typeof item !== 'string') {
       throw new FrontmatterPropertyError('invalid-tag', 'Every tag must be text');
     }
-    const tag = item.trim();
+    const tag = normalizeTagInput(item);
     if (!isValidTagPath(tag)) {
       throw new FrontmatterPropertyError(
         'invalid-tag',

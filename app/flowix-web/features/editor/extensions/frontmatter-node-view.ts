@@ -11,6 +11,7 @@ import {
   formatFrontmatterPropertyValue,
   isFrontmatterPropertyFlowSequence,
   moveVisibleFrontmatterProperty,
+  normalizeTagInput,
   parseVisibleFrontmatter,
   reorderVisibleFrontmatterProperty,
   suggestFrontmatterRepair,
@@ -1389,8 +1390,11 @@ export class FrontmatterPropertyNodeView implements NodeView {
           'input',
           'frontmatter-property__edit-input frontmatter-property__edit-tags-input',
         );
-        let tags = value.split(',').map((item) => item.trim()).filter(Boolean);
         const isNoteTags = canonicalizePropertyKey(property.key) === 'tags';
+        const normalizeInput = (item: string) => (
+          isNoteTags ? normalizeTagInput(item) : item.trim()
+        );
+        let tags = value.split(',').map(normalizeInput).filter(Boolean);
         let activeTagIndex: number | null = null;
 
         const renderTags = () => {
@@ -1460,7 +1464,7 @@ export class FrontmatterPropertyNodeView implements NodeView {
             handleKeyDown(event);
             return;
           }
-          const draft = input.value.trim();
+          const draft = normalizeInput(input.value);
           if (!draft) return;
           event.preventDefault();
           if (!tags.includes(draft)) tags = [...tags, draft];
@@ -1473,7 +1477,7 @@ export class FrontmatterPropertyNodeView implements NodeView {
         return {
           dom: tagControl,
           focusTarget: input,
-          getValue: () => [...tags, input.value.trim()].filter(Boolean).join(', '),
+          getValue: () => [...tags, normalizeInput(input.value)].filter(Boolean).join(', '),
           storageKind: 'MultiSelect',
         };
       }

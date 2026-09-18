@@ -233,7 +233,7 @@ describe('frontmatter property helpers', () => {
       'flowix_key: ra61em97',
       null,
       'tags',
-      'work/path, work/path, 中文',
+      '#work/path, work/path, 中文',
       'MultiSelect',
     );
     expect(parseVisibleFrontmatter(next).userData.tags).toEqual(['work/path', '中文']);
@@ -1158,7 +1158,7 @@ describe('frontmatter property helpers', () => {
     expect(input).not.toBeNull();
     expect(popover?.querySelector('.frontmatter-property__edit-tag-remove')).toBeNull();
     if (input) {
-      input.value = 'gammaLongTag';
+      input.value = '#gammaLongTag';
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       const chips = popover?.querySelectorAll('.frontmatter-property__edit-tag-chip') ?? [];
       expect(chips[chips.length - 1]?.textContent)
