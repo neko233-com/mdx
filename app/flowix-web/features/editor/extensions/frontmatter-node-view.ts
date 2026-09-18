@@ -1391,11 +1391,13 @@ export class FrontmatterPropertyNodeView implements NodeView {
         );
         let tags = value.split(',').map((item) => item.trim()).filter(Boolean);
         const isNoteTags = canonicalizePropertyKey(property.key) === 'tags';
+        let activeTagIndex: number | null = null;
 
         const renderTags = () => {
           chips.replaceChildren();
           tags.forEach((tag, index) => {
             const chip = createElement('span', 'frontmatter-property__edit-tag-chip');
+            if (activeTagIndex === index) chip.dataset.keyboardSelected = 'true';
             if (isNoteTags) {
               chip.append(
                 createElement('span', 'tag-node-prefix', '#'),
@@ -1412,11 +1414,38 @@ export class FrontmatterPropertyNodeView implements NodeView {
         input.spellcheck = false;
         input.setAttribute('aria-label', this.t('document.properties.tagInputPlaceholder'));
         input.setAttribute('data-property-key', property.key);
+        input.addEventListener('input', () => {
+          activeTagIndex = null;
+          renderTags();
+        });
         input.addEventListener('keydown', (event) => {
-          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') return;
+          if (event.key === 'ArrowLeft' && input.value.length === 0) {
+            event.preventDefault();
+            if (tags.length === 0) return;
+            activeTagIndex = activeTagIndex === null
+              ? tags.length - 1
+              : Math.max(0, activeTagIndex - 1);
+            renderTags();
+            return;
+          }
+          if (event.key === 'ArrowRight' && activeTagIndex !== null) {
+            event.preventDefault();
+            activeTagIndex += 1;
+            if (activeTagIndex >= tags.length) {
+              activeTagIndex = null;
+              input.focus();
+              input.setSelectionRange(input.value.length, input.value.length);
+            }
+            renderTags();
+            return;
+          }
           if (event.key === 'Backspace' && input.value.length === 0 && tags.length > 0) {
             event.preventDefault();
-            tags = tags.slice(0, -1);
+            const indexToRemove = activeTagIndex ?? tags.length - 1;
+            tags = tags.filter((_, index) => index !== indexToRemove);
+            activeTagIndex = tags.length === 0
+              ? null
+              : Math.min(indexToRemove, tags.length - 1);
             renderTags();
             return;
           }
@@ -1436,6 +1465,7 @@ export class FrontmatterPropertyNodeView implements NodeView {
           event.preventDefault();
           if (!tags.includes(draft)) tags = [...tags, draft];
           input.value = '';
+          activeTagIndex = null;
           renderTags();
         });
         renderTags();

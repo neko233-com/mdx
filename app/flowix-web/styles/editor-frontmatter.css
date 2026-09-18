@@ -591,6 +591,11 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   cursor: text;
 }
 
+.frontmatter-property__edit-tag-chip[data-keyboard-selected='true'] {
+  outline: 1px solid var(--brand);
+  outline-offset: 1px;
+}
+
 .frontmatter-property__edit-tag-chip .tag-node-prefix {
   display: inline;
   font-family: 'Flowix Tag Icon', var(--app-font-family, var(--font-sans));

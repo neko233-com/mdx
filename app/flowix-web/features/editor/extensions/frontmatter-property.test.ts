@@ -1183,6 +1183,11 @@ describe('frontmatter property helpers', () => {
     const reopenedInput = reopenedPopover?.querySelector<HTMLInputElement>('.frontmatter-property__edit-tags-input');
     if (reopenedInput) {
       reopenedInput.value = '';
+      reopenedInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      reopenedInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      expect(reopenedPopover?.querySelector<HTMLElement>("[data-keyboard-selected='true']")?.textContent)
+        .toContain('beta');
+      reopenedInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
       reopenedInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
       reopenedInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, ctrlKey: true }));
     }
