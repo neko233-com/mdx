@@ -223,6 +223,29 @@ interface ActivePropertyEdit {
   control: PropertyEditControl;
 }
 
+function convertPropertyEditValue(
+  value: string,
+  fromKind: PropertyEditKind | undefined,
+  toKind: PropertyEditKind,
+): string {
+  if (fromKind === toKind) return value;
+  if (fromKind === 'List' && toKind === 'MultiSelect') {
+    return value
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join(', ');
+  }
+  if (fromKind === 'MultiSelect' && toKind === 'List') {
+    return value
+      .split(/[\r\n,]/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join('\n');
+  }
+  return value;
+}
+
 type PropertyPointerDrag = {
   pointerId: number;
   startX: number;
@@ -1421,11 +1444,18 @@ export class FrontmatterPropertyNodeView implements NodeView {
         input.spellcheck = false;
         input.setAttribute('aria-label', this.t('document.properties.tagInputPlaceholder'));
         input.setAttribute('data-property-key', property.key);
+        input.addEventListener('compositionstart', () => {
+          locallyComposing = true;
+        });
+        input.addEventListener('compositionend', () => {
+          locallyComposing = false;
+        });
         input.addEventListener('input', () => {
           activeTagIndex = null;
           renderTags();
         });
         input.addEventListener('keydown', (event) => {
+          if (isImeKeyboardEvent(event, locallyComposing)) return;
           if (event.key === 'ArrowLeft' && input.value.length === 0) {
             event.preventDefault();
             if (tags.length === 0) return;
@@ -1596,7 +1626,11 @@ export class FrontmatterPropertyNodeView implements NodeView {
         option.addEventListener('click', () => {
           const activeEdit = this.activePropertyEdit;
           if (activeEdit?.popover !== popover || activeEdit.target !== 'value') return;
-          const nextValue = activeEdit.control.getValue();
+          const nextValue = convertPropertyEditValue(
+            activeEdit.control.getValue(),
+            activeEdit.kind,
+            kind,
+          );
           const nextControl = createControl(kind, nextValue);
           activeEdit.kind = kind;
           activeEdit.control.destroy?.();

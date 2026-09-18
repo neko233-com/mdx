@@ -2,14 +2,8 @@
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from '@tiptap/markdown';
-import type { I18nKey } from '@/lib/i18n';
 
 import Frontmatter from './frontmatter';
-import {
-  createFrontmatterValueControl,
-  createFrontmatterValueDisplay,
-  inferFrontmatterPropertyKind,
-} from './frontmatter-inline-value';
 import {
   FrontmatterPropertyError,
   extractFrontmatter,
@@ -467,84 +461,6 @@ describe('frontmatter property helpers', () => {
     expect(next).toContain('status: done');
     expect(next).not.toContain('keywords:');
     expect(next).toContain('# Body');
-  });
-
-  it('renders and edits typed inline property values', () => {
-    const t = (key: I18nKey) => String(key);
-
-    const icon = createFrontmatterValueDisplay({
-      value: 'avocado',
-      text: 'avocado',
-      kind: 'Icon',
-      t,
-    });
-    const iconImage = icon.querySelector<HTMLImageElement>('.frontmatter-property__value-icon');
-    expect(iconImage).not.toBeNull();
-    expect(iconImage?.title).toBe('Avocado');
-
-    const tags = createFrontmatterValueDisplay({
-      value: ['推广', '归类'],
-      text: '[ 推广, 归类 ]',
-      kind: 'MultiSelect',
-      t,
-    });
-    expect(tags.querySelectorAll('.frontmatter-property__value-chip')).toHaveLength(2);
-    expect(tags.textContent).toBe('推广归类');
-
-    const list = createFrontmatterValueDisplay({
-      value: ['JavaScript', 'TypeScript', 'Rust'],
-      text: '[ JavaScript, TypeScript, Rust ]',
-      kind: 'List',
-      t,
-    });
-    expect(list.querySelectorAll('.frontmatter-property__value-list-item')).toHaveLength(3);
-    expect(list.textContent).toBe('JavaScriptTypeScriptRust');
-
-    expect(inferFrontmatterPropertyKind(42)).toBe('Number');
-    expect(inferFrontmatterPropertyKind('2026-07-21')).toBe('Date');
-    expect(inferFrontmatterPropertyKind('https://example.com')).toBe('URL');
-
-    const changed: string[] = [];
-    const date = createFrontmatterValueControl({
-      value: '2026-07-21',
-      kind: 'Date',
-      t,
-      onChange: (value) => changed.push(value),
-      onKeyDown: () => undefined,
-    });
-    expect((date.dom as HTMLInputElement).type).toBe('date');
-
-    const iconPicker = createFrontmatterValueControl({
-      value: 'avocado',
-      kind: 'Icon',
-      t,
-      onChange: (value) => changed.push(value),
-      onKeyDown: () => undefined,
-    });
-    iconPicker.dom.querySelector<HTMLButtonElement>('.frontmatter-property__value-trigger')?.click();
-    const nextIcon = iconPicker.dom.querySelectorAll<HTMLButtonElement>(
-      '.frontmatter-property__icon-option',
-    )[1];
-    nextIcon?.click();
-    expect(changed[changed.length - 1]).toBe(nextIcon?.dataset.value);
-
-    const tagPicker = createFrontmatterValueControl({
-      value: 'existing',
-      kind: 'MultiSelect',
-      options: ['existing', 'work/path'],
-      t,
-      onChange: (value) => changed.push(value),
-      onKeyDown: () => undefined,
-    });
-    document.body.append(tagPicker.dom);
-    tagPicker.focus();
-    const suggestedTag = tagPicker.dom.querySelector<HTMLButtonElement>(
-      '.frontmatter-property__value-option[data-value="work/path"]',
-    );
-    expect(suggestedTag).not.toBeNull();
-    suggestedTag?.click();
-    expect(changed[changed.length - 1]).toBe('existing, work/path');
-    tagPicker.dom.remove();
   });
 
   it('renders every visible frontmatter property while preserving YAML properties', async () => {
@@ -1158,6 +1074,24 @@ describe('frontmatter property helpers', () => {
     expect(input).not.toBeNull();
     expect(popover?.querySelector('.frontmatter-property__edit-tag-remove')).toBeNull();
     if (input) {
+      input.value = '#候选';
+      input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }));
+      expect(popover?.querySelectorAll('.frontmatter-property__edit-tag-chip')).toHaveLength(2);
+      input.dispatchEvent(new CompositionEvent('compositionend', {
+        bubbles: true,
+        data: '候选',
+      }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      expect(popover?.querySelectorAll('.frontmatter-property__edit-tag-chip')).toHaveLength(3);
+      input.value = '';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+
       input.value = '#gammaLongTag';
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       const chips = popover?.querySelectorAll('.frontmatter-property__edit-tag-chip') ?? [];
@@ -1195,6 +1129,61 @@ describe('frontmatter property helpers', () => {
     }
     yamlContent = String(editor.state.doc.firstChild?.attrs.yamlContent ?? '');
     expect(parseVisibleFrontmatter(yamlContent).userData.tags).toEqual(['alpha', 'beta']);
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('converts list values when switching to the multi-select editor', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Markdown, Frontmatter],
+      content: '---\nflowix_key: 8c7dxu0l\nlabels:\n  - alpha\n  - beta\n---\nBody',
+      contentType: 'markdown',
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    host.querySelector<HTMLElement>(
+      '[data-property-key="labels"] .frontmatter-property__display-value',
+    )?.click();
+    const popover = document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
+    popover?.querySelector<HTMLButtonElement>('.frontmatter-property__edit-type-trigger')?.click();
+    popover?.querySelector<HTMLButtonElement>(
+      '.frontmatter-property__edit-type-option[data-value="MultiSelect"]',
+    )?.click();
+
+    const chips = popover?.querySelectorAll('.frontmatter-property__edit-tag-chip') ?? [];
+    expect([...chips].map((chip) => chip.textContent)).toEqual(['alpha', 'beta']);
+    const input = popover?.querySelector<HTMLInputElement>('.frontmatter-property__edit-tags-input');
+    input?.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      ctrlKey: true,
+    }));
+    expect(parseVisibleFrontmatter(
+      String(editor.state.doc.firstChild?.attrs.yamlContent ?? ''),
+    ).userData.labels).toEqual(['alpha', 'beta']);
+
+    host.querySelector<HTMLElement>(
+      '[data-property-key="labels"] .frontmatter-property__display-value',
+    )?.click();
+    const reopenedPopover = document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
+    reopenedPopover?.querySelector<HTMLButtonElement>('.frontmatter-property__edit-type-trigger')?.click();
+    reopenedPopover?.querySelector<HTMLButtonElement>(
+      '.frontmatter-property__edit-type-option[data-value="List"]',
+    )?.click();
+    const listInput = reopenedPopover?.querySelector<HTMLTextAreaElement>('.frontmatter-property__edit-list-input');
+    expect(listInput?.value).toBe('alpha\nbeta');
+    listInput?.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      ctrlKey: true,
+    }));
+    expect(parseVisibleFrontmatter(
+      String(editor.state.doc.firstChild?.attrs.yamlContent ?? ''),
+    ).userData.labels).toEqual(['alpha', 'beta']);
 
     editor.destroy();
     host.remove();
