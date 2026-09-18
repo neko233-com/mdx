@@ -581,7 +581,8 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   color: var(--document-tag-foreground, var(--primary-foreground));
   font-size: var(--document-tag-font-size);
   line-height: var(--document-tag-line-height);
-  padding: var(--document-tag-padding-block) var(--document-tag-padding-inline);
+  padding-block: var(--document-tag-padding-block);
+  padding-inline: 0;
   cursor: text;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
@@ -1068,7 +1069,8 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   color: var(--document-tag-foreground, var(--primary-foreground));
   font-size: var(--document-tag-font-size);
   line-height: var(--document-tag-line-height);
-  padding: var(--document-tag-padding-block) var(--document-tag-padding-inline);
+  padding-block: var(--document-tag-padding-block);
+  padding-inline: 0;
   cursor: pointer;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
