@@ -669,32 +669,18 @@
 }
 
 .markdown-editor .tag-node-prefix:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
-  /* This span contains only the live `#` character. Keep the tag's outer
-   * padding on the left and put the configurable inner gap after the icon.
-   * The real hash remains in the text node and is only visually covered. */
+  /* The text node still contains the real `#`; this one-glyph font maps that
+   * character to the property tag icon while keeping it in the native text
+   * run, so the caret is painted above the glyph instead of behind a layer. */
   display: inline;
-  position: relative;
-  color: transparent;
-  caret-color: var(--document-tag-foreground, var(--primary-foreground));
+  font-family: 'Flowix Tag Icon', var(--app-font-family, var(--font-sans));
+  font-size: inherit;
+  font-weight: 400;
+  color: var(--document-tag-foreground, var(--primary-foreground));
+  caret-color: currentColor;
   padding: 2px 0 2px 6px;
   padding-inline-end: var(--document-tag-hash-gap, 0.18em);
   border-radius: 8px 0 0 8px;
-}
-
-.markdown-editor .tag-node-prefix:where(:not(.agent-thread-card__message, .agent-thread-card__message *))::before {
-  /* The exact four-line SVG used by the tags property item. It is a mask so
-   * the icon follows the same foreground color as the editable tag text. */
-  content: '';
-  position: absolute;
-  inset-inline-start: 6px;
-  top: 50%;
-  width: 0.82em;
-  height: 0.82em;
-  transform: translateY(-50%);
-  background-color: var(--document-tag-foreground, var(--primary-foreground));
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 5v14M16 5v14M5 8h14M5 16h14'%3E%3C/path%3E%3C/svg%3E") center / contain no-repeat;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 5v14M16 5v14M5 8h14M5 16h14'%3E%3C/path%3E%3C/svg%3E") center / contain no-repeat;
-  pointer-events: none;
 }
 
 .markdown-editor .tag-node-content:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {

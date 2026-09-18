@@ -1,6 +1,14 @@
 /* Flowix runs in modern WebViews, so only the used Latin weights and woff2
  * assets are bundled. CJK and less common scripts intentionally use the
  * platform font stack. */
+@font-face {
+	font-family: 'Flowix Tag Icon';
+	font-style: normal;
+	font-display: swap;
+	font-weight: 400;
+	src: url('../assets/fonts/FlowixTagIcon.woff2') format('woff2');
+}
+
 @font-face { font-family: 'Inter'; font-style: normal; font-display: swap; font-weight: 300; src: url('@fontsource/inter/files/inter-latin-300-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Inter'; font-style: normal; font-display: swap; font-weight: 400; src: url('@fontsource/inter/files/inter-latin-400-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Inter'; font-style: normal; font-display: swap; font-weight: 500; src: url('@fontsource/inter/files/inter-latin-500-normal.woff2') format('woff2'); }
