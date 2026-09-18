@@ -574,17 +574,17 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 }
 
 .frontmatter-property__edit-tag-chip {
-  display: inline-flex;
+  display: inline;
   max-width: 100%;
-  align-items: center;
-  gap: 0;
   border-radius: 8px;
-  background: color-mix(in oklch, var(--document-tag-bg) 75%, transparent);
+  background: var(--document-tag-background);
   color: var(--document-tag-foreground, var(--primary-foreground));
-  padding: 0;
-  font-size: 92%;
-  line-height: 1.2;
+  font-size: var(--document-tag-font-size);
+  line-height: var(--document-tag-line-height);
+  padding: var(--document-tag-padding-block) var(--document-tag-padding-inline);
   cursor: text;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .frontmatter-property__edit-tag-chip:hover {
@@ -602,14 +602,14 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   font-size: inherit;
   font-weight: 400;
   color: var(--brand);
-  padding: 2px 0 2px 6px;
+  padding: var(--document-tag-padding-block) 0 var(--document-tag-padding-block) var(--document-tag-padding-inline);
   padding-inline-end: var(--document-tag-hash-gap, 0.09em);
 }
 
 .frontmatter-property__edit-tag-chip .tag-node-content {
   display: inline;
   font-family: var(--code-font-family);
-  padding: 2px 6px 2px 0;
+  padding: var(--document-tag-padding-block) var(--document-tag-padding-inline) var(--document-tag-padding-block) 0;
 }
 
 .frontmatter-property__edit-tags-input {
@@ -927,6 +927,10 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   overflow: hidden;
 }
 
+.markdown-editor .frontmatter-property__display-value:has(.frontmatter-property__value-chips--tags) {
+  align-items: baseline;
+}
+
 .markdown-editor .frontmatter-property__value-checkbox {
   width: 14px;
   height: 14px;
@@ -999,6 +1003,11 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   overflow: hidden;
 }
 
+.markdown-editor .frontmatter-property__value-chips--tags {
+  align-items: baseline;
+  line-height: var(--document-tag-line-height);
+}
+
 .markdown-editor .frontmatter-property__value-color-dots {
   display: inline-flex;
   min-width: 0;
@@ -1054,11 +1063,15 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 }
 
 .markdown-editor .frontmatter-property__value-chip.tag-node {
-  background: color-mix(in oklch, var(--document-tag-bg) 75%, transparent);
+  display: inline;
+  background: var(--document-tag-background);
   color: var(--document-tag-foreground, var(--primary-foreground));
-  font-size: 92%;
-  padding: 0;
-  cursor: text;
+  font-size: var(--document-tag-font-size);
+  line-height: var(--document-tag-line-height);
+  padding: var(--document-tag-padding-block) var(--document-tag-padding-inline);
+  cursor: pointer;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .markdown-editor .frontmatter-property__value-chip.tag-node:hover {
@@ -1067,6 +1080,10 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 
 .markdown-editor .frontmatter-property__value-chip--typed {
   background: color-mix(in oklch, var(--muted) 82%, var(--document-tag-bg));
+}
+
+.markdown-editor .frontmatter-property__value-chip.tag-node.frontmatter-property__value-chip--typed {
+  background: var(--document-tag-background);
 }
 
 .markdown-editor .frontmatter-property__editor {

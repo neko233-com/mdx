@@ -1,6 +1,14 @@
 /* Tiptap Editor — Markdown Styles */
 /* 代码块高亮由 shiki 内联样式负责（codeblock-shiki 扩展），无 .hljs 类消费，不再引入 highlight.js CSS 主题 */
 
+:root {
+  --document-tag-font-size: 92%;
+  --document-tag-line-height: 1.2;
+  --document-tag-padding-block: 2px;
+  --document-tag-padding-inline: 6px;
+  --document-tag-background: color-mix(in oklch, var(--document-tag-bg) 75%, transparent);
+}
+
 .markdown-editor {
   display: block;
   height: 100%;
@@ -657,12 +665,12 @@
   display: inline;
   color: var(--document-tag-foreground, var(--primary-foreground));
   font-weight: 400;
-  font-size: 92%;
+  font-size: var(--document-tag-font-size);
   cursor: pointer;
-  background: color-mix(in oklch, var(--document-tag-bg) 75%, transparent);
+  background: var(--document-tag-background);
   border-radius: 8px;
-  line-height: 1.2;
-  padding: 2px 6px;
+  line-height: var(--document-tag-line-height);
+  padding: var(--document-tag-padding-block) var(--document-tag-padding-inline);
   caret-color: currentColor;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
@@ -678,7 +686,7 @@
   font-weight: 400;
   color: var(--brand);
   caret-color: currentColor;
-  padding: 2px 0 2px 6px;
+  padding: var(--document-tag-padding-block) 0 var(--document-tag-padding-block) var(--document-tag-padding-inline);
   padding-inline-end: var(--document-tag-hash-gap, 0.09em);
   border-radius: 8px 0 0 8px;
 }
@@ -689,7 +697,7 @@
    * the gap after `#`. */
   display: inline;
   font-family: var(--code-font-family);
-  padding: 2px 6px 2px 0;
+  padding: var(--document-tag-padding-block) var(--document-tag-padding-inline) var(--document-tag-padding-block) 0;
   border-radius: 0 8px 8px 0;
 }
 

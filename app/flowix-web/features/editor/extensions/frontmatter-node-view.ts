@@ -1707,8 +1707,11 @@ export class FrontmatterPropertyNodeView implements NodeView {
         return valueContainer;
       }
 
-      const chips = createElement('div', 'frontmatter-property__value-chips');
       const isNoteTags = canonicalizePropertyKey(property.key) === 'tags';
+      const chips = createElement(
+        'div',
+        `frontmatter-property__value-chips${isNoteTags ? ' frontmatter-property__value-chips--tags' : ''}`,
+      );
       values.forEach((item) => {
         const displayValue = formatFrontmatterPropertyValue(item, 32);
         const itemDisplayKind = resolvePropertyType('', item).displayKind;
