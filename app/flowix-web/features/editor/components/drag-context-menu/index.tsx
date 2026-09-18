@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import type { Editor } from '@tiptap/core'
 import {
   activateAgentThreadCard,
@@ -158,14 +159,15 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
     }
   }, [showMenu, editor, closeMenu])
 
-  // Click outside the handle dismisses the menu + drops the pin.
+  // Click outside both the handle and the portalled menu dismisses the menu
+  // and drops the pin.
   useEffect(() => {
     if (!showMenu) return
 
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        closeMenu()
-      }
+      const target = e.target as Node
+      if (containerRef.current?.contains(target) || menuRef.current?.contains(target)) return
+      closeMenu()
     }
 
     document.addEventListener('mousedown', handleClickOutside)
@@ -303,51 +305,53 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
   }
 
   return (
-    <div
-      ref={containerRef}
-      role="button"
-      aria-haspopup="menu"
-      aria-expanded={showMenu}
-      tabIndex={state.visible ? 0 : -1}
-      className={`drag-context-menu-handle${showMenu ? ' active' : ''}`}
-      style={{
-        position: 'absolute',
-        left: `${state.x}px`,
-        top: `${state.y}px`,
-        width: `${HANDLE_SIZE}px`,
-        height: `${HANDLE_SIZE}px`,
-        display: state.visible ? 'flex' : 'none',
-        alignItems: 'center',
-        justifyContent: 'center',
-        pointerEvents: 'auto',
-        zIndex: 1,
-        background: showMenu ? 'var(--brand)' : (isHovered ? 'var(--muted)' : 'transparent'),
-        color: showMenu ? 'var(--primary-foreground)' : 'var(--brand)',
-        borderRadius: '4px',
-        cursor: isDragging ? 'grabbing' : 'grab',
-        touchAction: 'none',
-        boxShadow: 'none',
-      }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onMouseDown={(e) => {
-        ignoreBlur.current = true
-        window.setTimeout(() => {
-          ignoreBlur.current = false
-        }, 0)
-        if (showMenu) {
-          e.preventDefault()
-        }
-      }}
-      onKeyDown={onHandleKeyDown}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
-      onLostPointerCapture={onLostPointerCapture}
-    >
-      {renderDragIcon(state.blockInfo)}
-      {showMenu && (
+    <>
+      <div
+        ref={containerRef}
+        role="button"
+        aria-haspopup="menu"
+        aria-expanded={showMenu}
+        tabIndex={state.visible ? 0 : -1}
+        className={`drag-context-menu-handle${showMenu ? ' active' : ''}`}
+        style={{
+          position: 'absolute',
+          left: `${state.x}px`,
+          top: `${state.y}px`,
+          width: `${HANDLE_SIZE}px`,
+          height: `${HANDLE_SIZE}px`,
+          display: state.visible ? 'flex' : 'none',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'auto',
+          zIndex: 1,
+          background: showMenu ? 'var(--brand)' : (isHovered ? 'var(--muted)' : 'transparent'),
+          color: showMenu ? 'var(--primary-foreground)' : 'var(--brand)',
+          borderRadius: '4px',
+          cursor: isDragging ? 'grabbing' : 'grab',
+          touchAction: 'none',
+          boxShadow: 'none',
+        }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        onMouseDown={(e) => {
+          ignoreBlur.current = true
+          window.setTimeout(() => {
+            ignoreBlur.current = false
+          }, 0)
+          if (showMenu) {
+            e.preventDefault()
+          }
+        }}
+        onKeyDown={onHandleKeyDown}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onLostPointerCapture={onLostPointerCapture}
+      >
+        {renderDragIcon(state.blockInfo)}
+      </div>
+      {showMenu && typeof document !== 'undefined' && createPortal(
         <BlockActionMenu
           actions={menuActions}
           selectedIndex={selectedIndex}
@@ -358,9 +362,10 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
           style={getMenuStyle(menuPosition)}
           onHover={handleMenuHover}
           onKeyDown={handleMenuKeyDown}
-        />
+        />,
+        document.body,
       )}
-    </div>
+    </>
   )
 }
 

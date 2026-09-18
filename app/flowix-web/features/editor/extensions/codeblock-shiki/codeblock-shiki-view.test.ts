@@ -59,7 +59,8 @@ describe('CodeBlockShikiView DOM contract', () => {
     expect(pre?.querySelector('.code-block-mermaid-preview')).toBeNull()
 
     expect(nodeView.dom.querySelector(':scope > .code-block-header')).not.toBeNull()
-    expect(nodeView.dom.querySelector(':scope > .code-block-language-dropdown')).not.toBeNull()
+    expect(nodeView.dom.querySelector(':scope > .code-block-language-dropdown')).toBeNull()
+    expect(document.body.querySelector('.code-block-language-dropdown')).not.toBeNull()
     expect(nodeView.dom.querySelector(':scope > .code-block-mermaid-preview')).not.toBeNull()
 
     nodeView.destroy()
@@ -71,6 +72,24 @@ describe('CodeBlockShikiView DOM contract', () => {
     expect(nodeView.dom.firstElementChild).toBe(nodeView.dom.querySelector(':scope > pre.code-block-editor'))
 
     nodeView.destroy()
+  })
+
+  it('renders the language dropdown through the document body', () => {
+    const nodeView = createPlainTextView()
+    const languageButton = nodeView.dom.querySelector<HTMLButtonElement>('.code-block-language-selector')
+    const dropdown = document.body.querySelector<HTMLElement>('.code-block-language-dropdown')
+
+    expect(dropdown).not.toBeNull()
+    expect(dropdown?.parentElement).toBe(document.body)
+
+    languageButton?.click()
+    expect(dropdown?.style.display).toBe('block')
+
+    languageButton?.click()
+    expect(dropdown?.style.display).toBe('none')
+
+    nodeView.destroy()
+    expect(document.body.contains(dropdown)).toBe(false)
   })
 
   it.each([

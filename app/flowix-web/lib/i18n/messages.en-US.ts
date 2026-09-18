@@ -1310,6 +1310,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "editor.search.replaceAll": "Replace all",
     "editor.bubble.askAI": "Ask AI",
     "editor.slash.ariaLabel": "Slash commands",
+    "editor.headingOutline.ariaLabel": "Document heading navigation",
     "editor.slash.label.quote": "Quote",
     "editor.slash.label.codeBlock": "Code block",
     "editor.slash.label.table": "Table",

@@ -511,8 +511,6 @@ export function MainLayout({
       hidden: isMemoListHidden,
       noteNavigationVisible,
       onToggle: handleToggleMemoList,
-      onPreviewTriggerEnter: handleMemoListPreviewTriggerEnter,
-      onPreviewTriggerLeave: handleMemoListPreviewTriggerLeave,
     },
     navigation: {
       canNavigateBack,
@@ -661,12 +659,12 @@ export function MainLayout({
                 onClick={handleToggleMemoList}
                 aria-label={t('document.titlebar.showSidebar')}
                 title={t('document.titlebar.showSidebarTooltip')}
-                className="group absolute left-0 top-1/2 z-[60] flex h-14 w-5 -translate-y-1/2 items-center justify-center text-[var(--muted-foreground)] opacity-55 transition-[color,opacity] duration-150 hover:text-[var(--foreground)] hover:opacity-75 focus-visible:outline-none focus-visible:text-[var(--brand)] focus-visible:opacity-100"
+                className="group absolute bottom-0 left-0 top-0 z-[60] flex w-4 items-center justify-center text-[var(--muted-foreground)] opacity-30 transition-[color,opacity] duration-150 hover:text-[var(--foreground)] hover:opacity-50 focus-visible:outline-none focus-visible:text-[var(--brand)] focus-visible:opacity-100"
               >
-                <span className="flex flex-col items-center gap-[6px]" aria-hidden="true">
-                  <span className="h-0.5 w-1.5 rounded-full bg-current transition-[width] group-hover:w-2" />
-                  <span className="h-0.5 w-1.5 rounded-full bg-current transition-[width] group-hover:w-2" />
-                  <span className="h-0.5 w-1.5 rounded-full bg-current transition-[width] group-hover:w-2" />
+                <span className="flex translate-x-0 flex-col items-center gap-[6px]" aria-hidden="true">
+                  <span className="h-1 w-1 rounded-full bg-current" />
+                  <span className="h-1 w-1 rounded-full bg-current" />
+                  <span className="h-1 w-1 rounded-full bg-current" />
                 </span>
               </button>
             )}
@@ -678,8 +676,6 @@ export function MainLayout({
                 isMiddleColumnCollapsed={isMemoListHidden}
                 isSidebarVisible={noteNavigationPhase !== 'closed'}
                 onExpandSidebar={handleToggleMemoList}
-                onSidebarPreviewEnter={handleMemoListPreviewTriggerEnter}
-                onSidebarPreviewLeave={handleMemoListPreviewTriggerLeave}
                 canNavigateBack={canNavigateBack}
                 canNavigateForward={canNavigateForward}
                 onNavigateBack={handleNavigateBack}

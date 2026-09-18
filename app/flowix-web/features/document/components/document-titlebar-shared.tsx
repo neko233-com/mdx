@@ -77,8 +77,6 @@ export interface DocumentTitlebarProps {
     hidden: boolean;
     noteNavigationVisible: boolean;
     onToggle: () => void;
-    onPreviewTriggerEnter?: () => void;
-    onPreviewTriggerLeave?: () => void;
   };
   navigation: {
     canNavigateBack: boolean;

@@ -16,6 +16,7 @@ import { AttachmentLink } from '@features/editor/extensions/attachment-link';
 import { TableBubbleMenu } from '@features/editor/extensions/table/table-bubble-menu';
 import { EditorToolbar } from '@features/editor/components/editor-toolbar';
 import { SelectionBubbleMenu } from '@features/editor/components/selection-bubble-menu';
+import { HeadingOutlineNavigation } from '@features/editor/components/heading-outline-navigation';
 import { DragContextMenu } from '@features/editor/components/drag-context-menu';
 import { attachLinkHoverTooltip } from '@features/editor/components/link-hover-tooltip';
 import { Tag } from '@features/editor/extensions/tag';
@@ -1145,6 +1146,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         onClose={() => onSearchPanelOpenChangeRef.current?.(false)}
       />
       <div ref={elementRef} className="editor-content">
+        {editorInstance && <HeadingOutlineNavigation editor={editorInstance} />}
         {header}
         <div ref={editorMountRef} className="editor-document-body" />
         {editorInstance && <DragContextMenu editor={editorInstance} />}

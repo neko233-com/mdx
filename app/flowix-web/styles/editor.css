@@ -28,6 +28,79 @@
   scrollbar-gutter: stable;
 }
 
+.heading-outline-navigation-anchor {
+  position: sticky;
+  top: 72px;
+  z-index: 20;
+  width: 100%;
+  height: 0;
+  pointer-events: none;
+}
+
+.heading-outline-navigation {
+  position: absolute;
+  top: 0;
+  right: 16px;
+  display: flex;
+  max-height: calc(100vh - 104px);
+  flex-direction: column;
+  align-items: flex-end;
+  overflow-y: auto;
+  padding: 4px 2px;
+  opacity: 0.92;
+  pointer-events: auto;
+  scrollbar-width: none;
+}
+
+.heading-outline-navigation::-webkit-scrollbar {
+  display: none;
+}
+
+.heading-outline-navigation__item {
+  position: relative;
+  width: 32px;
+  height: 17px;
+  flex: 0 0 17px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.heading-outline-navigation__item::before {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--border);
+  content: '';
+  transform: translateY(-50%);
+  transition: background-color 120ms ease;
+}
+
+.heading-outline-navigation__item[data-level='1']::before {
+  width: 16px;
+}
+
+.heading-outline-navigation__item[data-level='2']::before {
+  width: 12.5px;
+}
+
+.heading-outline-navigation__item[data-level='3']::before {
+  width: 10px;
+}
+
+.heading-outline-navigation__item[data-level='4']::before {
+  width: 8px;
+}
+
+.heading-outline-navigation__item:hover::before,
+.heading-outline-navigation__item.is-active::before {
+  background: var(--foreground);
+}
+
 .memo-document-header {
   width: 100%;
   max-width: var(--app-document-width, 680px);
@@ -214,12 +287,12 @@
  *  - 用 1rem 是错的 — 那是根 html 字号 (16px), 跟 --app-font-size (15px) 脱节,
  *    用户在 Preferences 改字号时 p 的下填充 / 空 p 的 min-height 不会跟着缩放。
  *  - 空 p / 非空 p 共享同一行高基线 (27px),
- *    段落下填充为行高的 0.32 倍 (8.64px)。 */
+ *    段落下填充为行高的 0.25 倍 (6.75px)。 */
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
-  /* 0.32 行 box, 作为块间节奏 */
+  /* 0.25 行 box, 作为块间节奏 */
   margin: 0;
-  padding-bottom: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.32);
+  padding-bottom: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.25);
   white-space: pre-wrap;
 }
 
@@ -315,29 +388,20 @@
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) ul:where(:not(.agent-thread-card__message, .agent-thread-card__message *)),
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) ol:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   margin: 0;
-  padding: 0 0 calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.32) 1.5rem;
+  padding-top: 0;
+  padding-right: 0;
+  padding-left: 1.5rem;
+}
+
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > ul:where(:not(.agent-thread-card__message, .agent-thread-card__message *)),
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > ol:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
+  padding-bottom: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.25);
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) li:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   margin: 0;
   padding: 0;
   line-height: var(--app-line-height, 1.8);
-}
-
-/* 单 item 列表: 收掉 ul/ol + li 的多余 padding, 与单行 <p> 等高。
- *  多 item 列表不受影响, 仍保留原本的项间/段间节奏。
- *  仅作用于 .tiptap 直接子列表 — 嵌套在 <li> 内的二级及更深列表维持
- *  正常的 0.5rem / 0.25rem 节奏, 不被压缩。 */
-.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > ul:has(> li:only-child),
-.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > ol:has(> li:only-child) {
-  margin: 0;
-  padding-top: 0;
-  padding-bottom: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.32);
-}
-
-.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > ul > li:only-child,
-.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) > ol > li:only-child {
-  margin: 0;
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) table td p:where(:not(.agent-thread-card__message, .agent-thread-card__message *)),

@@ -233,8 +233,6 @@ export function AgentConversationTitlebar({
   isMiddleColumnCollapsed,
   isSidebarVisible,
   onExpandSidebar,
-  onSidebarPreviewEnter,
-  onSidebarPreviewLeave,
   canNavigateBack,
   canNavigateForward,
   onNavigateBack,
@@ -245,8 +243,6 @@ export function AgentConversationTitlebar({
   isMiddleColumnCollapsed: boolean;
   isSidebarVisible: boolean;
   onExpandSidebar: () => void;
-  onSidebarPreviewEnter?: () => void;
-  onSidebarPreviewLeave?: () => void;
   canNavigateBack: boolean;
   canNavigateForward: boolean;
   onNavigateBack: () => void;
@@ -271,8 +267,6 @@ export function AgentConversationTitlebar({
             <button
               type="button"
               onClick={onExpandSidebar}
-              onMouseEnter={onSidebarPreviewEnter}
-              onMouseLeave={onSidebarPreviewLeave}
               aria-label={t('document.titlebar.showSidebar')}
               title={t('document.titlebar.showSidebarTooltip')}
               className={`flex h-5 w-5 shrink-0 items-center justify-center text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)] [-webkit-app-region:no-drag] ${

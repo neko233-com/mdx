@@ -41,6 +41,8 @@ export function BlockActionMenu({
       role="menu"
       aria-label="Block actions"
       tabIndex={-1}
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
       onKeyDown={onKeyDown}
       className="fixed z-[150] rounded-xl border border-[var(--border-popup)] bg-[var(--card)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]"
       style={{ ...style, outline: 'none' }}
@@ -59,10 +61,7 @@ export function BlockActionMenu({
                 type="button"
                 role="menuitem"
                 onMouseMove={(event) => handleItemMouseMove(event, index)}
-                onMouseDown={(event) => {
-                  event.preventDefault()
-                  action.onSelect()
-                }}
+                onClick={action.onSelect}
                 className={`group relative flex h-7 min-h-7 w-full items-center justify-start gap-3 rounded-lg px-2 py-0 text-left text-sm text-[var(--foreground)] transition-colors${mouseHoverEnabled ? ' hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]' : ''}${index === selectedIndex ? ' bg-[var(--brand)] text-[var(--primary-foreground)]' : ''}`}
                 style={{ outline: 'none', boxShadow: 'none' }}
               >

@@ -703,12 +703,9 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   /* Match the editor tag prefix exactly; the chip already shares the
    * document tag font-size token, so an extra scale here makes the # glyph
    * drift from the inline tag in both size and baseline. */
-  font-size: inherit;
   font-weight: 400;
   color: var(--brand);
   caret-color: currentColor;
-  line-height: var(--document-tag-line-height);
-  vertical-align: baseline;
   padding: var(--document-tag-padding-block) 0 var(--document-tag-padding-block) var(--document-tag-padding-inline);
   padding-inline-end: var(--document-tag-hash-gap, 0.09em);
 }
@@ -720,8 +717,11 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   border-radius: 0 8px 8px 0;
 }
 
+.frontmatter-property__edit-tag-chip .tag-node-prefix,
 .markdown-editor .frontmatter-property__value-chip.tag-node .tag-node-prefix {
-  font-size: inherit;
+  /* Match the editor prefix: the editor's overlapping decoration leaves `#`
+   * at the surrounding text size while the tag name remains at 92%. */
+  font-size: var(--app-font-size, 15px);
   line-height: var(--document-tag-line-height);
   vertical-align: baseline;
 }

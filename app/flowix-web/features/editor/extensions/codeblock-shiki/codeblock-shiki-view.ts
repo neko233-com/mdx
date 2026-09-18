@@ -86,6 +86,7 @@ class CodeBlockShikiView implements NodeView {
   getPosFn: () => number | null | undefined
   private isDropdownOpen: boolean = false
   private boundOutsideClickHandler: ((e: Event) => void) | null = null
+  private boundRepositionDropdown: (() => void) | null = null
 
   private header: HTMLElement | null = null
   private languageBtn: HTMLButtonElement | null = null
@@ -258,11 +259,11 @@ class CodeBlockShikiView implements NodeView {
     this.dom.appendChild(this.header)
 
     this.dropdown = this.createLanguageDropdownShell()
-    // 下拉面板整体也设 contenteditable=false ── dropdown 不在 header 内
-    // (它在 dom 内, 与 header / codePre 平级), 单独标记避免选区渗
-    // 进 search input / 列表项。
+    // 下拉面板整体也设 contenteditable=false ── dropdown 通过 Portal
+    // 挂到 document.body, 与编辑器 DOM 解耦, 单独标记避免选区渗入
+    // search input / 列表项。
     this.dropdown.contentEditable = 'false'
-    this.dom.appendChild(this.dropdown)
+    document.body.appendChild(this.dropdown)
 
     // Mermaid preview surface
     // 同时挂 .code-block-mermaid-preview (容器几何: padding / border-radius /
@@ -424,10 +425,71 @@ class CodeBlockShikiView implements NodeView {
   private ensureDropdown(): HTMLElement {
     if (!this.dropdown) {
       this.dropdown = this.createLanguageDropdownShell()
-      this.dom.insertBefore(this.dropdown, this.codePre)
+      this.dropdown.contentEditable = 'false'
+      document.body.appendChild(this.dropdown)
     }
 
     return this.dropdown
+  }
+
+  private updateDropdownPosition(): void {
+    if (!this.languageBtn || !this.dropdown || !this.isDropdownOpen) return
+
+    const triggerRect = this.languageBtn.getBoundingClientRect()
+    const viewportPadding = 8
+    const menuGap = 6
+    const menuWidth = Math.min(
+      Math.max(this.dropdown.offsetWidth, 220),
+      Math.max(0, window.innerWidth - viewportPadding * 2),
+    )
+    const naturalHeight = Math.min(this.dropdown.offsetHeight || 248, 248)
+    const spaceBelow = window.innerHeight - triggerRect.bottom - viewportPadding
+    const spaceAbove = triggerRect.top - viewportPadding
+    const placeAbove = spaceBelow < naturalHeight + menuGap && spaceAbove > spaceBelow
+    const availableHeight = Math.max(
+      0,
+      (placeAbove ? spaceAbove : spaceBelow) - menuGap,
+    )
+    const maxHeight = Math.min(248, availableHeight)
+
+    this.dropdown.style.maxHeight = `${maxHeight}px`
+
+    const top = placeAbove
+      ? Math.max(viewportPadding, triggerRect.top - maxHeight - menuGap)
+      : Math.min(
+        triggerRect.bottom + menuGap,
+        Math.max(viewportPadding, window.innerHeight - maxHeight - viewportPadding),
+      )
+    const left = Math.min(
+      Math.max(triggerRect.left, viewportPadding),
+      Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding),
+    )
+
+    this.dropdown.style.top = `${top}px`
+    this.dropdown.style.left = `${left}px`
+  }
+
+  private attachDropdownViewportListeners(): void {
+    if (this.boundRepositionDropdown) return
+
+    const reposition = () => {
+      if (this.isDropdownOpen) this.updateDropdownPosition()
+    }
+    this.boundRepositionDropdown = reposition
+    window.addEventListener('resize', reposition)
+    window.addEventListener('scroll', reposition, true)
+    window.visualViewport?.addEventListener('resize', reposition)
+    window.visualViewport?.addEventListener('scroll', reposition)
+  }
+
+  private detachDropdownViewportListeners(): void {
+    if (!this.boundRepositionDropdown) return
+
+    window.removeEventListener('resize', this.boundRepositionDropdown)
+    window.removeEventListener('scroll', this.boundRepositionDropdown, true)
+    window.visualViewport?.removeEventListener('resize', this.boundRepositionDropdown)
+    window.visualViewport?.removeEventListener('scroll', this.boundRepositionDropdown)
+    this.boundRepositionDropdown = null
   }
 
   private toggleDropdown() {
@@ -441,16 +503,23 @@ class CodeBlockShikiView implements NodeView {
       this.isDropdownOpen = true
       this.attachOutsideClickHandler()
       this.populateLanguageDropdown(dropdown)
-      requestAnimationFrame(() => this.dropdownSearchInput?.focus())
+      this.attachDropdownViewportListeners()
+      this.updateDropdownPosition()
+      requestAnimationFrame(() => {
+        if (!this.isDropdownOpen) return
+        this.updateDropdownPosition()
+        this.dropdownSearchInput?.focus()
+      })
     }
   }
 
   private closeDropdown() {
     if (this.dropdown) {
       this.dropdown.style.display = 'none'
-      this.isDropdownOpen = false
     }
+    this.isDropdownOpen = false
     this.detachOutsideClickHandler()
+    this.detachDropdownViewportListeners()
   }
 
   private attachOutsideClickHandler() {
@@ -1096,7 +1165,9 @@ private unmountFullscreenOverlay(): void {
 
   destroy() {
     this.setFullscreen(false)
-    this.detachOutsideClickHandler()
+    this.closeDropdown()
+    this.dropdown?.remove()
+    this.dropdown = null
     if (this.boundThemeChangeHandler) {
       window.removeEventListener('app-theme-changed', this.boundThemeChangeHandler)
       this.boundThemeChangeHandler = null

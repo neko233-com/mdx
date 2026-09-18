@@ -32,8 +32,6 @@ export function DocumentTitlebarMac({
     hidden: isSidebarHidden,
     noteNavigationVisible,
     onToggle: onToggleSidebar,
-    onPreviewTriggerEnter,
-    onPreviewTriggerLeave,
   },
   navigation: {
     canNavigateBack,
@@ -88,8 +86,6 @@ export function DocumentTitlebarMac({
             <button
               type="button"
               onClick={onToggleSidebar}
-              onMouseEnter={onPreviewTriggerEnter}
-              onMouseLeave={onPreviewTriggerLeave}
               aria-label={t("document.titlebar.showSidebar")}
               title={t("document.titlebar.showSidebarTooltip")}
               className="w-5 h-5 flex items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--foreground)] rounded-xl transition-colors"

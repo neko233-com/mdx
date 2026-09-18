@@ -29,8 +29,6 @@ export function DocumentTitlebarWin({
   sidebar: {
     hidden: isSidebarHidden,
     onToggle: onToggleSidebar,
-    onPreviewTriggerEnter,
-    onPreviewTriggerLeave,
   },
   navigation: {
     canNavigateBack,
@@ -85,8 +83,6 @@ export function DocumentTitlebarWin({
             <button
               type="button"
               onClick={onToggleSidebar}
-              onMouseEnter={onPreviewTriggerEnter}
-              onMouseLeave={onPreviewTriggerLeave}
               aria-label={t("document.titlebar.showSidebar")}
               title={t("document.titlebar.showSidebarTooltip")}
               className="w-5 h-5 flex items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--foreground)] rounded-lg transition-[opacity,transform,color] duration-[400ms] animate-in fade-in zoom-in-95"
