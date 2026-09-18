@@ -92,7 +92,7 @@
 	 * 视觉上"tag 像被框出的彩色字", 与"被高亮的正文"两种语义混在一起.
 	 * 改中性后, tag 文字永远跟正文同步 (--document-tag-foreground =
 	 * var(--foreground)), chip 的浅灰单独承担 tag 视觉信号. */
-	--document-tag-bg: oklch(0.90 0 0);
+	--document-tag-bg: oklch(0.95 0 0);
 	--document-tag-foreground: var(--foreground);
 	--document-tag-hover-bg: oklch(0.86 0 0);
 

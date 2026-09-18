@@ -78,7 +78,7 @@
 	 * chroma 0.05 是 light (0.024) 的 2x ── 暗底上 chroma 损失明显, 适度
 	 * 提一档维持 brand 染色识别度。文本 chroma 0.08 比 bg 略高, 给"浅紫
 	 * 文字"留一抹 brand 色, 不至于在 0.88 L 上读作纯白。 */
-	--document-tag-bg: oklch(0.40 0.05 var(--brand-hue));
+	--document-tag-bg: oklch(0.50 0.05 var(--brand-hue));
 	/* 标签文字: 直接接 --foreground, 与正文同色 ── 让 tag 读作"被高亮背景
 	 * 托住的普通文字", 而非"一段彩色字"。原色 (0.88 0.08 brand) 是
 	 * 浅黄字, 与 chip 同色系, 但与正文 (0.930 0.005 neutral) 拉开
