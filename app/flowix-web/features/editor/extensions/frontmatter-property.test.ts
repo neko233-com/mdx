@@ -544,6 +544,24 @@ describe('frontmatter property helpers', () => {
     expect(suggestedTag).not.toBeNull();
     suggestedTag?.click();
     expect(changed[changed.length - 1]).toBe('existing, work/path');
+    expect(tagPicker.dom.querySelector('.frontmatter-property__multi-remove')).toBeNull();
+
+    const input = tagPicker.dom.querySelector<HTMLInputElement>('.frontmatter-property__multi-input');
+    expect(input).not.toBeNull();
+    if (input) {
+      input.value = '#newTag';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      expect(changed[changed.length - 1]).toBe('existing, work/path, newTag');
+
+      input.value = '';
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      expect(tagPicker.dom.querySelector<HTMLElement>("[data-keyboard-selected='true']")?.textContent)
+        .toBe('work/path');
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+      expect(changed[changed.length - 1]).toBe('existing, work/path');
+    }
     tagPicker.dom.remove();
   });
 

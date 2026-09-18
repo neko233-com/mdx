@@ -1006,7 +1006,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 }
 
 .markdown-editor .frontmatter-property__value-chips,
-.markdown-editor .frontmatter-property__multi-chips {
+.frontmatter-property__multi-chips {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -1055,7 +1055,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 }
 
 .markdown-editor .frontmatter-property__value-chip,
-.markdown-editor .frontmatter-property__multi-chip {
+.frontmatter-property__multi-chip {
   display: inline;
   min-width: 0;
   height: auto;
@@ -1072,7 +1072,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 }
 
 .markdown-editor .frontmatter-property__value-chip:hover,
-.markdown-editor .frontmatter-property__multi-chip:hover {
+.frontmatter-property__multi-chip:hover {
   cursor: text;
 }
 
@@ -1350,7 +1350,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   object-fit: contain;
 }
 
-.markdown-editor .frontmatter-property__multi-control {
+.frontmatter-property__multi-control {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -1359,23 +1359,28 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   box-shadow: inset 0 -1px transparent;
 }
 
-.markdown-editor .frontmatter-property__multi-control:focus-within {
+.frontmatter-property__multi-control:focus-within {
   box-shadow: inset 0 -1px color-mix(in oklch, var(--brand) 55%, transparent);
 }
 
-.markdown-editor .frontmatter-property__multi-chip {
+.frontmatter-property__multi-chip {
   flex: none;
   gap: 0.15rem;
 }
 
-.markdown-editor .frontmatter-property__multi-chip-label {
+.frontmatter-property__multi-chip[data-keyboard-selected='true'] {
+  outline: 1px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.frontmatter-property__multi-chip-label {
   max-width: 5rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.markdown-editor .frontmatter-property__multi-remove {
+.frontmatter-property__multi-remove {
   margin: 0;
   border: 0;
   background: transparent;
@@ -1386,7 +1391,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   padding: 0;
 }
 
-.markdown-editor .frontmatter-property__multi-input {
+.frontmatter-property__multi-input {
   width: 3rem;
   min-width: 2rem;
   flex: 1;

@@ -5,6 +5,7 @@ import {
   getPropertyIconOption,
 } from '@features/document/properties/property-icons';
 import type { PropertyKind } from '@features/document/properties/presets';
+import { normalizeTagInput } from '@features/document/properties/frontmatter-model';
 
 type Translate = (key: I18nKey) => string;
 
@@ -345,7 +346,8 @@ function createIconControl(config: ValueControlOptions): FrontmatterValueControl
 }
 
 function createMultiSelectControl(config: ValueControlOptions): FrontmatterValueControl {
-  let tags = toTags(config.value);
+  let tags = toTags(config.value).map(normalizeTagInput).filter(Boolean);
+  let activeTagIndex: number | null = null;
   const picker = createElement(
     'div',
     'frontmatter-property__value-picker frontmatter-property__multi-picker',
@@ -363,9 +365,10 @@ function createMultiSelectControl(config: ValueControlOptions): FrontmatterValue
   menu.setAttribute('role', 'listbox');
 
   const add = (value: string) => {
-    const next = value.trim().replace(/,$/, '').trim();
+    const next = normalizeTagInput(value.replace(/,$/, ''));
     if (next && !tags.includes(next)) tags = [...tags, next];
     input.value = '';
+    activeTagIndex = null;
     config.onChange(tags.join(', '));
     render();
     renderSuggestions();
@@ -374,8 +377,10 @@ function createMultiSelectControl(config: ValueControlOptions): FrontmatterValue
     add(input.value);
     menu.hidden = true;
   };
-  const remove = (tag: string) => {
-    tags = tags.filter((item) => item !== tag);
+  const removeAt = (index: number) => {
+    if (index < 0 || index >= tags.length) return;
+    tags = tags.filter((_, itemIndex) => itemIndex !== index);
+    activeTagIndex = tags.length === 0 ? null : Math.min(index, tags.length - 1);
     config.onChange(tags.join(', '));
     render();
     renderSuggestions();
@@ -383,16 +388,12 @@ function createMultiSelectControl(config: ValueControlOptions): FrontmatterValue
   };
   const render = () => {
     chips.replaceChildren();
-    tags.forEach((tag) => {
+    tags.forEach((tag, index) => {
       const chip = createElement('span', 'frontmatter-property__multi-chip');
+      if (activeTagIndex === index) chip.dataset.keyboardSelected = 'true';
       chip.append(
         createElement('span', 'frontmatter-property__multi-chip-label', tag),
       );
-      const removeButton = createElement('button', 'frontmatter-property__multi-remove', '×');
-      removeButton.type = 'button';
-      removeButton.tabIndex = -1;
-      removeButton.addEventListener('click', () => remove(tag));
-      chip.append(removeButton);
       chips.append(chip);
     });
   };
@@ -422,6 +423,26 @@ function createMultiSelectControl(config: ValueControlOptions): FrontmatterValue
     menu.hidden = choices.length === 0;
   };
   input.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowLeft' && input.value.length === 0) {
+      event.preventDefault();
+      if (tags.length === 0) return;
+      activeTagIndex = activeTagIndex === null
+        ? tags.length - 1
+        : Math.max(0, activeTagIndex - 1);
+      render();
+      return;
+    }
+    if (event.key === 'ArrowRight' && activeTagIndex !== null) {
+      event.preventDefault();
+      activeTagIndex += 1;
+      if (activeTagIndex >= tags.length) {
+        activeTagIndex = null;
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+      render();
+      return;
+    }
     if (event.key === 'Enter' || event.key === ',') {
       event.preventDefault();
       commit();
@@ -433,13 +454,24 @@ function createMultiSelectControl(config: ValueControlOptions): FrontmatterValue
       return;
     }
     if (event.key === 'Backspace' && !input.value && tags.length > 0) {
-      remove(tags[tags.length - 1]);
+      event.preventDefault();
+      removeAt(activeTagIndex ?? tags.length - 1);
       return;
+    }
+    if (input.value.length > 0 && activeTagIndex !== null) {
+      activeTagIndex = null;
+      render();
     }
     config.onKeyDown(event);
   });
   input.addEventListener('focus', renderSuggestions);
-  input.addEventListener('input', renderSuggestions);
+  input.addEventListener('input', () => {
+    if (activeTagIndex !== null) {
+      activeTagIndex = null;
+      render();
+    }
+    renderSuggestions();
+  });
   input.addEventListener('blur', commit);
   render();
   control.append(chips, input);
