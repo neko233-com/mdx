@@ -670,11 +670,31 @@
 
 .markdown-editor .tag-node-prefix:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   /* This span contains only the live `#` character. Keep the tag's outer
-   * padding on the left and put the configurable inner gap after the hash. */
+   * padding on the left and put the configurable inner gap after the icon.
+   * The real hash remains in the text node and is only visually covered. */
   display: inline;
+  position: relative;
+  color: transparent;
+  caret-color: var(--document-tag-foreground, var(--primary-foreground));
   padding: 2px 0 2px 6px;
   padding-inline-end: var(--document-tag-hash-gap, 0.18em);
   border-radius: 8px 0 0 8px;
+}
+
+.markdown-editor .tag-node-prefix:where(:not(.agent-thread-card__message, .agent-thread-card__message *))::before {
+  /* Phosphor TagIcon (regular weight), used as a mask so the icon follows
+   * the same foreground color as the editable tag text. */
+  content: '';
+  position: absolute;
+  inset-inline-start: 6px;
+  top: 50%;
+  width: 0.82em;
+  height: 0.82em;
+  transform: translateY(-50%);
+  background-color: var(--document-tag-foreground, var(--primary-foreground));
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M243.31 136 144 36.69A15.86 15.86 0 0 0 132.69 32H40a8 8 0 0 0-8 8v92.69A15.86 15.86 0 0 0 36.69 144L136 243.31a16 16 0 0 0 22.63 0l84.68-84.68a16 16 0 0 0 0-22.63Zm-96 96L48 132.69V48h84.69L232 147.31ZM96 84a12 12 0 1 1-12-12 12 12 0 0 1 12 12Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M243.31 136 144 36.69A15.86 15.86 0 0 0 132.69 32H40a8 8 0 0 0-8 8v92.69A15.86 15.86 0 0 0 36.69 144L136 243.31a16 16 0 0 0 22.63 0l84.68-84.68a16 16 0 0 0 0-22.63Zm-96 96L48 132.69V48h84.69L232 147.31ZM96 84a12 12 0 1 1-12-12 12 12 0 0 1 12 12Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  pointer-events: none;
 }
 
 .markdown-editor .tag-node-content:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
