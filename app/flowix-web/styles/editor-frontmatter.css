@@ -608,6 +608,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 
 .frontmatter-property__edit-tag-chip .tag-node-content {
   display: inline;
+  font-family: var(--code-font-family);
   padding: 2px 6px 2px 0;
 }
 

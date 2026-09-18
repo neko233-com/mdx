@@ -688,6 +688,7 @@
    * pill. Keep only the content's right outer padding so it does not double
    * the gap after `#`. */
   display: inline;
+  font-family: var(--code-font-family);
   padding: 2px 6px 2px 0;
   border-radius: 0 8px 8px 0;
 }
