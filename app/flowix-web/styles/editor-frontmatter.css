@@ -600,10 +600,14 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 .frontmatter-property__edit-tag-chip .tag-node-prefix {
   display: inline;
   font-family: 'Flowix Tag Icon', var(--app-font-family, var(--font-sans));
-  font-size: 1.08em;
+  /* Match the editor tag prefix exactly; the chip already shares the
+   * document tag font-size token, so an extra scale here makes the # glyph
+   * drift from the inline tag in both size and baseline. */
+  font-size: inherit;
   font-weight: 400;
   color: var(--brand);
   line-height: var(--document-tag-line-height);
+  vertical-align: baseline;
   padding: var(--document-tag-padding-block) 0 var(--document-tag-padding-block) var(--document-tag-padding-inline);
   padding-inline-end: var(--document-tag-hash-gap, 0.09em);
 }
@@ -615,8 +619,9 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 }
 
 .markdown-editor .frontmatter-property__value-chip.tag-node .tag-node-prefix {
-  font-size: 1.08em;
+  font-size: inherit;
   line-height: var(--document-tag-line-height);
+  vertical-align: baseline;
 }
 
 .frontmatter-property__edit-tags-input {
