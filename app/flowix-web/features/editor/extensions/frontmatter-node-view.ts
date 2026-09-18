@@ -1404,18 +1404,6 @@ export class FrontmatterPropertyNodeView implements NodeView {
             } else {
               chip.textContent = tag;
             }
-            const remove = createElement('button', 'frontmatter-property__edit-tag-remove', '×');
-            remove.type = 'button';
-            remove.setAttribute(
-              'aria-label',
-              this.t('document.properties.deleteTag', { tag }),
-            );
-            remove.addEventListener('click', () => {
-              tags = tags.filter((_, tagIndex) => tagIndex !== index);
-              renderTags();
-              input.focus();
-            });
-            chip.append(remove);
             chips.append(chip);
           });
         };
@@ -1425,6 +1413,13 @@ export class FrontmatterPropertyNodeView implements NodeView {
         input.setAttribute('aria-label', this.t('document.properties.tagInputPlaceholder'));
         input.setAttribute('data-property-key', property.key);
         input.addEventListener('keydown', (event) => {
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') return;
+          if (event.key === 'Backspace' && input.value.length === 0 && tags.length > 0) {
+            event.preventDefault();
+            tags = tags.slice(0, -1);
+            renderTags();
+            return;
+          }
           if (
             event.key !== 'Enter'
             && event.key !== ','

@@ -606,21 +606,6 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   padding: 2px 6px 2px 0;
 }
 
-.frontmatter-property__edit-tag-remove {
-  display: inline-flex;
-  width: 1rem;
-  height: 1rem;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  padding: 0;
-  margin-left: 0.25rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
 .frontmatter-property__edit-tags-input {
   width: auto;
   min-width: 6rem;

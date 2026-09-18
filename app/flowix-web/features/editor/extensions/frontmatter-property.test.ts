@@ -1156,6 +1156,7 @@ describe('frontmatter property helpers', () => {
       .toBe('标签（预设属性不可修改）');
     const input = popover?.querySelector<HTMLInputElement>('.frontmatter-property__edit-tags-input');
     expect(input).not.toBeNull();
+    expect(popover?.querySelector('.frontmatter-property__edit-tag-remove')).toBeNull();
     if (input) {
       input.value = 'gammaLongTag';
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
@@ -1179,11 +1180,14 @@ describe('frontmatter property helpers', () => {
       '[data-property-key="tags"] .frontmatter-property__display-value',
     )?.click();
     const reopenedPopover = document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
-    reopenedPopover?.querySelectorAll<HTMLButtonElement>('.frontmatter-property__edit-tag-remove')[1]?.click();
-    reopenedPopover?.querySelector<HTMLInputElement>('.frontmatter-property__edit-tags-input')
-      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, ctrlKey: true }));
+    const reopenedInput = reopenedPopover?.querySelector<HTMLInputElement>('.frontmatter-property__edit-tags-input');
+    if (reopenedInput) {
+      reopenedInput.value = '';
+      reopenedInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+      reopenedInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, ctrlKey: true }));
+    }
     yamlContent = String(editor.state.doc.firstChild?.attrs.yamlContent ?? '');
-    expect(parseVisibleFrontmatter(yamlContent).userData.tags).toEqual(['alpha', 'gammaLongTag']);
+    expect(parseVisibleFrontmatter(yamlContent).userData.tags).toEqual(['alpha', 'beta']);
 
     editor.destroy();
     host.remove();
