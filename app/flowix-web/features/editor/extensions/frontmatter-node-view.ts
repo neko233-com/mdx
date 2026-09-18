@@ -1712,9 +1712,12 @@ export class FrontmatterPropertyNodeView implements NodeView {
       }
 
       const isNoteTags = canonicalizePropertyKey(property.key) === 'tags';
+      const isTagValues = values.every(
+        (item) => resolvePropertyType('', item).displayKind === 'text',
+      );
       const chips = createElement(
         'div',
-        `frontmatter-property__value-chips${isNoteTags ? ' frontmatter-property__value-chips--tags' : ''}`,
+        `frontmatter-property__value-chips${isTagValues ? ' frontmatter-property__value-chips--tag-values' : ''}`,
       );
       values.forEach((item) => {
         const displayValue = formatFrontmatterPropertyValue(item, 32);

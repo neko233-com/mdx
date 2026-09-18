@@ -600,9 +600,10 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 .frontmatter-property__edit-tag-chip .tag-node-prefix {
   display: inline;
   font-family: 'Flowix Tag Icon', var(--app-font-family, var(--font-sans));
-  font-size: inherit;
+  font-size: 1.08em;
   font-weight: 400;
   color: var(--brand);
+  line-height: var(--document-tag-line-height);
   padding: var(--document-tag-padding-block) 0 var(--document-tag-padding-block) var(--document-tag-padding-inline);
   padding-inline-end: var(--document-tag-hash-gap, 0.09em);
 }
@@ -611,6 +612,11 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   display: inline;
   font-family: var(--code-font-family);
   padding: var(--document-tag-padding-block) var(--document-tag-padding-inline) var(--document-tag-padding-block) 0;
+}
+
+.markdown-editor .frontmatter-property__value-chip.tag-node .tag-node-prefix {
+  font-size: 1.08em;
+  line-height: var(--document-tag-line-height);
 }
 
 .frontmatter-property__edit-tags-input {
@@ -928,7 +934,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   overflow: hidden;
 }
 
-.markdown-editor .frontmatter-property__display-value:has(.frontmatter-property__value-chips--tags) {
+.markdown-editor .frontmatter-property__display-value:has(.frontmatter-property__value-chips--tag-values) {
   align-items: baseline;
 }
 
@@ -1004,7 +1010,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   overflow: hidden;
 }
 
-.markdown-editor .frontmatter-property__value-chips--tags {
+.markdown-editor .frontmatter-property__value-chips--tag-values {
   align-items: baseline;
   line-height: var(--document-tag-line-height);
 }
@@ -1050,10 +1056,19 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   height: auto;
   align-items: center;
   border-radius: 8px;
-  background: var(--document-tag-bg);
+  background: var(--document-tag-background);
   color: var(--document-tag-foreground, var(--primary-foreground));
-  padding: 2px 6px;
-  line-height: 1.2;
+  font-size: var(--document-tag-font-size);
+  line-height: var(--document-tag-line-height);
+  padding: var(--document-tag-padding-block) var(--document-tag-padding-inline);
+  cursor: pointer;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.markdown-editor .frontmatter-property__value-chip:hover,
+.markdown-editor .frontmatter-property__multi-chip:hover {
+  cursor: text;
 }
 
 .markdown-editor .frontmatter-property__value-chip {
