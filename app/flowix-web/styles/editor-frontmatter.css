@@ -579,11 +579,13 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   border-radius: 8px;
   background: var(--document-tag-background);
   color: var(--document-tag-foreground, var(--primary-foreground));
+  font-weight: 400;
   font-size: var(--document-tag-font-size);
   line-height: var(--document-tag-line-height);
   padding-block: var(--document-tag-padding-block);
   padding-inline: 0;
   cursor: text;
+  caret-color: currentColor;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
@@ -606,6 +608,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   font-size: inherit;
   font-weight: 400;
   color: var(--brand);
+  caret-color: currentColor;
   line-height: var(--document-tag-line-height);
   vertical-align: baseline;
   padding: var(--document-tag-padding-block) 0 var(--document-tag-padding-block) var(--document-tag-padding-inline);
@@ -616,6 +619,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   display: inline;
   font-family: var(--code-font-family);
   padding: var(--document-tag-padding-block) var(--document-tag-padding-inline) var(--document-tag-padding-block) 0;
+  border-radius: 0 8px 8px 0;
 }
 
 .markdown-editor .frontmatter-property__value-chip.tag-node .tag-node-prefix {
@@ -1006,7 +1010,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 }
 
 .markdown-editor .frontmatter-property__value-chips,
-.frontmatter-property__multi-chips {
+.markdown-editor .frontmatter-property__multi-chips {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -1055,7 +1059,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 }
 
 .markdown-editor .frontmatter-property__value-chip,
-.frontmatter-property__multi-chip {
+.markdown-editor .frontmatter-property__multi-chip {
   display: inline;
   min-width: 0;
   height: auto;
@@ -1072,7 +1076,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 }
 
 .markdown-editor .frontmatter-property__value-chip:hover,
-.frontmatter-property__multi-chip:hover {
+.markdown-editor .frontmatter-property__multi-chip:hover {
   cursor: text;
 }
 
@@ -1350,7 +1354,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   object-fit: contain;
 }
 
-.frontmatter-property__multi-control {
+.markdown-editor .frontmatter-property__multi-control {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -1359,28 +1363,23 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   box-shadow: inset 0 -1px transparent;
 }
 
-.frontmatter-property__multi-control:focus-within {
+.markdown-editor .frontmatter-property__multi-control:focus-within {
   box-shadow: inset 0 -1px color-mix(in oklch, var(--brand) 55%, transparent);
 }
 
-.frontmatter-property__multi-chip {
+.markdown-editor .frontmatter-property__multi-chip {
   flex: none;
   gap: 0.15rem;
 }
 
-.frontmatter-property__multi-chip[data-keyboard-selected='true'] {
-  outline: 1px solid var(--brand);
-  outline-offset: 1px;
-}
-
-.frontmatter-property__multi-chip-label {
+.markdown-editor .frontmatter-property__multi-chip-label {
   max-width: 5rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.frontmatter-property__multi-remove {
+.markdown-editor .frontmatter-property__multi-remove {
   margin: 0;
   border: 0;
   background: transparent;
@@ -1391,7 +1390,7 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   padding: 0;
 }
 
-.frontmatter-property__multi-input {
+.markdown-editor .frontmatter-property__multi-input {
   width: 3rem;
   min-width: 2rem;
   flex: 1;
