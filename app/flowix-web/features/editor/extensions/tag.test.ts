@@ -14,7 +14,9 @@ describe('tag decorations', () => {
       content: '<p>#Long-Term-Task #project_one/phase-2</p>',
     });
 
-    expect([...host.querySelectorAll('.tag-node')].map((node) => node.textContent)).toEqual([
+    expect([...host.querySelectorAll('.tag-node-prefix')].map((node) => (
+      `${node.textContent}${node.nextElementSibling?.textContent ?? ''}`
+    ))).toEqual([
       '#Long-Term-Task',
       '#project_one/phase-2',
     ]);
@@ -33,6 +35,26 @@ describe('tag decorations', () => {
     });
 
     expect(host.querySelectorAll('.tag-node')).toHaveLength(0);
+
+    editor.destroy();
+    host.remove();
+  });
+
+  it('splits each editable tag into live prefix and content fragments', () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const editor = new Editor({
+      element: host,
+      extensions: [StarterKit, Tag],
+      content: '<p>#first #second</p>',
+    });
+
+    const prefixes = [...host.querySelectorAll('.tag-node-prefix')];
+    expect(prefixes.map((node) => node.textContent)).toEqual(['#', '#']);
+    expect(prefixes.every((node) => (
+      node.nextElementSibling?.classList.contains('tag-node-content') &&
+      !node.closest('[contenteditable="false"]')
+    ))).toBe(true);
 
     editor.destroy();
     host.remove();

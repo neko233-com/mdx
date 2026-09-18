@@ -668,6 +668,24 @@
   box-decoration-break: clone;
 }
 
+.markdown-editor .tag-node-prefix:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
+  /* This span contains only the live `#` character. Keep the tag's outer
+   * padding on the left and put the configurable inner gap after the hash. */
+  display: inline;
+  padding: 2px 0 2px 6px;
+  padding-inline-end: var(--document-tag-hash-gap, 0.18em);
+  border-radius: 8px 0 0 8px;
+}
+
+.markdown-editor .tag-node-content:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
+  /* The prefix and content are adjacent editable fragments of one visual
+   * pill. Keep only the content's right outer padding so it does not double
+   * the gap after `#`. */
+  display: inline;
+  padding: 2px 6px 2px 0;
+  border-radius: 0 8px 8px 0;
+}
+
 .markdown-editor .tag-node:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):hover {
   /* hover = 底色与 brand 强调色轻混, 往 indigo 偏一档 */
   background: var(

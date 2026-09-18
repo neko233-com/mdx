@@ -61,6 +61,17 @@ export const Tag = Mark.create({
               const toPM = charToPM[toChar - 1] + 1
               if (fromPM < 0 || toPM <= 0) continue
               decorations.push(Decoration.inline(fromPM, toPM, { class: 'tag-node' }))
+              // Split the live range at `#` so its following gap can be
+              // styled without inserting a real space or making the text an
+              // atom. ProseMirror resolves the overlap into adjacent inline
+              // spans; both fragments still contain live text, so the caret
+              // and IME can enter every position in `#tagname`.
+              decorations.push(Decoration.inline(fromPM, fromPM + 1, {
+                class: 'tag-node-prefix',
+              }))
+              decorations.push(Decoration.inline(fromPM + 1, toPM, {
+                class: 'tag-node-content',
+              }))
             }
             return DecorationSet.create(state.doc, decorations)
           },
