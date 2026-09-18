@@ -355,7 +355,7 @@
  *   border: 1px solid color-mix(in oklch, var(--border) 90%, transparent)
  *   border-radius: 0.4rem
  *   padding: 0 0.3rem
- *   color:   var(--brand)
+ *   color:   var(--text-hint)
  *   font-family: inherit; font-size: 0.84rem
  *
  * 选择器用 :not(pre) > code ── 让 inline code 规则只命中"pre 之外
@@ -454,9 +454,10 @@
   padding: 0 0.3rem;
   border: 1px solid color-mix(in oklch, var(--border) 90%, transparent);
   border-radius: 0.4rem;
-  color: var(--brand);
+  color: var(--text-hint);
   font-family: inherit;
   font-size: calc(var(--app-font-size, 15px) * 0.9); /* was 0.84rem ≈ 13.44px */
+  font-weight: 400;
 }
 
 /* fenced code 块 ── 严格对齐 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) pre / pre code

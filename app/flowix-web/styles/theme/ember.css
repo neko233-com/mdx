@@ -43,6 +43,7 @@
 	--primary: oklch(0.58 var(--brand-chroma) var(--brand-hue));
 	--primary-foreground: oklch(1 0 0);
 	--brand: oklch(0.58 var(--brand-chroma) var(--brand-hue));
+	--text-hint: #0F8C25;
 
 	/* 背景: L=0.985 + chroma 0.005 ── "近白暖纸", 比 v1 (0.972) 抬 0.013,
 	 * 比 mist (0.996 纯灰) 略沉一档, 留一丝日光暖意 (chroma 0.005 几乎不

@@ -12,6 +12,7 @@
 	--primary: oklch(0.657 var(--brand-chroma) var(--brand-hue));
 	--primary-foreground: oklch(1 0 0);
 	--brand: oklch(0.657 var(--brand-chroma) var(--brand-hue));
+	--text-hint: #0F8C25;
 
 	/* Warm near-white surfaces, aligned to ember's shallow layer contrast. */
 	--background: oklch(0.988 0.006 var(--neutral-hue));

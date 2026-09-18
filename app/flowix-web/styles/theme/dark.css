@@ -17,6 +17,7 @@
 	--primary: oklch(0.816 var(--brand-chroma) var(--brand-hue));
 	--primary-foreground: oklch(0.173 0.009 var(--neutral-hue));
 	--brand: oklch(0.816 var(--brand-chroma) var(--brand-hue));
+	--text-hint: #0F8C25;
 
 	--background: oklch(0.173 0.009 var(--neutral-hue));
 	--foreground: oklch(0.82 0.005 var(--neutral-hue));

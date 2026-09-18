@@ -15,6 +15,7 @@ export const AGENT_THREAD_CARD_MESSAGE_CODE_BLOCK_CLASS =
   "agent-thread-card__message-code-block";
 
 const AGENT_SHIKI_THEME_DATASET = "agentShikiTheme";
+const AGENT_THEME_CHANGE_EVENT = "app-theme-changed";
 
 function getAgentCodeBlockLanguage(code: Element): {
   language: string;
@@ -85,9 +86,9 @@ function appendAgentShikiTokens(
   code.replaceChildren(fragment);
 }
 
-/** Highlight completed Agent message code blocks once with the shared Shiki instance. */
+/** Highlight completed Agent code blocks and refresh them when the app theme changes. */
 export async function highlightAgentThreadCardCodeBlocks(
-  container: HTMLElement,
+  container: ParentNode,
 ): Promise<void> {
   const codeBlocks = Array.from(
     container.querySelectorAll<HTMLElement>(
@@ -128,6 +129,9 @@ export async function highlightAgentThreadCardCodeBlocks(
       }
     }
 
+    // Theme may have changed while the language grammar was loading. Let the
+    // theme-change pass handle this block with the newer theme instead.
+    if (readAgentShikiTheme() !== theme) return;
     if (!code.isConnected || code.textContent !== source) return;
 
     try {
@@ -138,6 +142,12 @@ export async function highlightAgentThreadCardCodeBlocks(
       // Unsupported or malformed languages remain as the original plain code.
     }
   }));
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener(AGENT_THEME_CHANGE_EVENT, () => {
+    void highlightAgentThreadCardCodeBlocks(document);
+  });
 }
 
 export function escapeAgentThreadCardAttr(
