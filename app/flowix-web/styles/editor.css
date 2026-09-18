@@ -4,6 +4,7 @@
 :root {
   --document-tag-font-size: 92%;
   --document-tag-line-height: 1.2;
+  --document-tag-prefix-line-height: 1;
   --document-tag-padding-block: 2px;
   --document-tag-padding-inline: 6px;
   --document-tag-background: color-mix(in oklch, var(--document-tag-bg) 75%, transparent);
@@ -88,12 +89,9 @@
   width: 12.5px;
 }
 
-.heading-outline-navigation__item[data-level='3']::before {
-  width: 10px;
-}
-
+.heading-outline-navigation__item[data-level='3']::before,
 .heading-outline-navigation__item[data-level='4']::before {
-  width: 8px;
+  width: 10px;
 }
 
 .heading-outline-navigation__item:hover::before,
@@ -789,29 +787,38 @@
   box-decoration-break: clone;
 }
 
-.markdown-editor .tag-node-prefix:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
+.markdown-editor .tag-node-prefix:where(:not(.agent-thread-card__message, .agent-thread-card__message *)),
+.frontmatter-property__edit-tag-chip .tag-node-prefix {
   /* The text node still contains the real `#`; this one-glyph font maps that
    * character to the property tag icon while keeping it in the native text
    * run, so the caret is painted above the glyph instead of behind a layer. */
   display: inline;
   font-family: 'Flowix Tag Icon', var(--app-font-family, var(--font-sans));
   font-size: inherit;
+  line-height: var(--document-tag-prefix-line-height);
   font-weight: 400;
   color: var(--brand);
   caret-color: currentColor;
+  background: var(--document-tag-background);
   padding: var(--document-tag-padding-block) 0 var(--document-tag-padding-block) var(--document-tag-padding-inline);
   padding-inline-end: var(--document-tag-hash-gap, 0.09em);
   border-radius: 8px 0 0 8px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
-.markdown-editor .tag-node-content:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
+.markdown-editor .tag-node-content:where(:not(.agent-thread-card__message, .agent-thread-card__message *)),
+.frontmatter-property__edit-tag-chip .tag-node-content {
   /* The prefix and content are adjacent editable fragments of one visual
    * pill. Keep only the content's right outer padding so it does not double
    * the gap after `#`. */
   display: inline;
   font-family: var(--code-font-family);
+  background: var(--document-tag-background);
   padding: var(--document-tag-padding-block) var(--document-tag-padding-inline) var(--document-tag-padding-block) 0;
   border-radius: 0 8px 8px 0;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .markdown-editor .tag-node:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):hover {

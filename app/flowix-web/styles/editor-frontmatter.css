@@ -668,7 +668,9 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 }
 
 .frontmatter-property__edit-tag-chip {
-  display: inline;
+  display: inline-flex;
+  align-items: baseline;
+  vertical-align: baseline;
   max-width: 100%;
   border-radius: 8px;
   background: var(--document-tag-background);
@@ -676,7 +678,6 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   font-weight: 400;
   font-size: var(--document-tag-font-size);
   line-height: var(--document-tag-line-height);
-  padding-block: var(--document-tag-padding-block);
   padding-inline: 0;
   cursor: text;
   caret-color: currentColor;
@@ -689,41 +690,20 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
 }
 
 .frontmatter-property__edit-tag-chip--plain {
-  padding-inline: var(--document-tag-padding-inline);
+  /* Plain multi-select values have no prefix/content fragments, so the
+   * outer chip owns the complete visual padding just like the preview chip. */
+  padding: var(--document-tag-padding-block) var(--document-tag-padding-inline);
 }
 
 .frontmatter-property__edit-tag-chip[data-keyboard-selected='true'] {
-  outline: 1px solid var(--brand);
-  outline-offset: 1px;
-}
-
-.frontmatter-property__edit-tag-chip .tag-node-prefix {
-  display: inline;
-  font-family: 'Flowix Tag Icon', var(--app-font-family, var(--font-sans));
-  /* Match the editor tag prefix exactly; the chip already shares the
-   * document tag font-size token, so an extra scale here makes the # glyph
-   * drift from the inline tag in both size and baseline. */
-  font-weight: 400;
-  color: var(--brand);
-  caret-color: currentColor;
-  padding: var(--document-tag-padding-block) 0 var(--document-tag-padding-block) var(--document-tag-padding-inline);
-  padding-inline-end: var(--document-tag-hash-gap, 0.09em);
-}
-
-.frontmatter-property__edit-tag-chip .tag-node-content {
-  display: inline;
-  font-family: var(--code-font-family);
-  padding: var(--document-tag-padding-block) var(--document-tag-padding-inline) var(--document-tag-padding-block) 0;
-  border-radius: 0 8px 8px 0;
+  box-shadow: 0 0 0 1px var(--brand);
 }
 
 .frontmatter-property__edit-tag-chip .tag-node-prefix,
 .markdown-editor .frontmatter-property__value-chip.tag-node .tag-node-prefix {
-  /* Match the editor prefix: the editor's overlapping decoration leaves `#`
-   * at the surrounding text size while the tag name remains at 92%. */
+  /* Property chips wrap the prefix in a 92% outer chip, so restore the
+   * editor's surrounding text size for the # glyph itself. */
   font-size: var(--app-font-size, 15px);
-  line-height: var(--document-tag-line-height);
-  vertical-align: baseline;
 }
 
 .frontmatter-property__edit-tags-input {
@@ -1196,7 +1176,6 @@ html.frontmatter-property--dragging .markdown-editor .frontmatter-property__disp
   color: var(--document-tag-foreground, var(--primary-foreground));
   font-size: var(--document-tag-font-size);
   line-height: var(--document-tag-line-height);
-  padding-block: var(--document-tag-padding-block);
   padding-inline: 0;
   cursor: pointer;
   -webkit-box-decoration-break: clone;

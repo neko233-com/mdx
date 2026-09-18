@@ -4,6 +4,7 @@ import { useI18n } from '@/lib/i18n'
 
 const HEADING_SELECTOR = 'h1, h2, h3, h4'
 const NON_DOCUMENT_HEADING_SELECTOR = '.agent-thread-card, .frontmatter-property-node'
+const MAX_OUTLINE_ITEMS = 30
 const REVEAL_DELAY_MS = 450
 const SCROLL_OFFSET_PX = 16
 
@@ -21,6 +22,22 @@ export function extractHeadings(editorRoot: HTMLElement): HeadingItem[] {
       level: Number(element.tagName.slice(1)) as HeadingItem['level'],
       text: element.textContent?.trim() ?? '',
     }))
+}
+
+/**
+ * Keep the compact outline usable for long documents by dropping the least
+ * important heading levels first. This only changes the navigation; the
+ * document headings themselves remain untouched.
+ */
+export function filterHeadingsForOutline(headings: HeadingItem[]): HeadingItem[] {
+  if (headings.length <= MAX_OUTLINE_ITEMS) return headings
+
+  const withoutH4 = headings.filter((heading) => heading.level !== 4)
+  if (withoutH4.length <= MAX_OUTLINE_ITEMS) return withoutH4
+
+  // H1/H2 are always retained. If those alone exceed the limit, showing more
+  // than 30 items is preferable to hiding structural headings.
+  return withoutH4.filter((heading) => heading.level !== 3)
 }
 
 function readHeadings(editor: Editor): HeadingItem[] {
@@ -52,7 +69,7 @@ export function HeadingOutlineNavigation({ editor }: { editor: Editor }) {
   const headingsRef = useRef<HeadingItem[]>([])
 
   const refreshHeadings = useCallback(() => {
-    const nextHeadings = readHeadings(editor)
+    const nextHeadings = filterHeadingsForOutline(readHeadings(editor))
     headingsRef.current = nextHeadings
     setHeadings(nextHeadings)
   }, [editor])
