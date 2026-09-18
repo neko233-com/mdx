@@ -5,6 +5,7 @@ import { OverlayScrollbar } from '@shared/ui/overlay-scrollbar';
 import type { MentionTagItem } from '@features/editor/extensions/tag-mention/tag-mention-data';
 import { TagMentionName } from '@features/editor/extensions/tag-mention/tag-mention-label';
 import { useI18n } from '@/lib/i18n';
+import { TagIcon } from '@shared/ui/tag-icon';
 
 export interface TagMentionDropdownProps {
   items: MentionTagItem[];
@@ -93,7 +94,7 @@ export function TagMentionDropdown({
                 }}
               >
                 <span className="mention-note-title mention-tag-title">
-                  <span className="mention-tag-icon" aria-hidden="true" />
+                  <TagIcon className="mention-tag-icon" />
                   <TagMentionName name={item.name} />
                 </span>
               </button>

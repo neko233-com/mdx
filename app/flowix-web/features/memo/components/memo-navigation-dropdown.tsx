@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Check, ChevronDown, ChevronRight, Hash, Layers, ListTodo, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Layers, ListTodo, X } from 'lucide-react';
 
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@shared/ui/dropdown-menu';
 import { OverlayScrollbar } from '@shared/ui/overlay-scrollbar';
+import { TagIcon } from '@shared/ui/tag-icon';
 
 const MEMO_NAVIGATION_MENU_CLASS =
   'w-[220px] space-y-0.5 rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]';
@@ -166,7 +167,7 @@ export function MemoNavigationSubmenu({
                   >
                     {itemKind === 'tag' ? (
                       <span className="mention-note-title mention-tag-title">
-                        <span className="mention-tag-icon" aria-hidden="true" />
+                        <TagIcon className="mention-tag-icon" />
                         <TagMentionName name={item.label} />
                       </span>
                     ) : (
@@ -338,12 +339,13 @@ export function MemoNavigationDropdown({
         </DropdownMenuItem>
         <MemoNavigationSubmenu
           label={t('memo.navigation.tags')}
-          icon={<Hash className="h-4 w-4 shrink-0" aria-hidden="true" />}
-          itemIcon={<Hash className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" aria-hidden="true" />}
+          icon={<TagIcon className="text-base" />}
+          itemIcon={<TagIcon className="text-base text-[var(--muted-foreground)]" />}
           itemKind="tag"
           valueAdornment={activeFilter === 'tagged' && selectedTagName ? (
-            <span className="max-w-[100px] truncate text-xs text-[var(--muted-foreground)]">
-              #{selectedTagName}
+            <span className="inline-flex max-w-[100px] items-center truncate text-xs text-[var(--muted-foreground)]">
+              <TagIcon prefix />
+              <span className="truncate">{selectedTagName}</span>
             </span>
           ) : undefined}
           open={openSubmenu === 'tags'}

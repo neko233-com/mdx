@@ -26,6 +26,7 @@ import {
 } from '@shared/ui/context-menu';
 import { MemoCardActions } from '@features/memo/components/memo-card-actions';
 import { assetUrl, decodeStorageKey } from '@features/editor/extensions/attachment-link/utils';
+import { TagIcon } from '@shared/ui/tag-icon';
 
 interface MemoCardProps {
   memo: MemoItem;
@@ -331,7 +332,10 @@ function DetailedMemoCardBody({
                     title={`#${tagLabel}`}
                     className="inline-flex min-w-0 max-w-full items-center rounded-[6px] border border-[var(--border)] px-1 py-0 text-xs text-[var(--muted-foreground)]"
                   >
-                    <span className="min-w-0 truncate">#{tagLabel}</span>
+                    <span className="min-w-0 truncate">
+                      <TagIcon prefix />
+                      {tagLabel}
+                    </span>
                   </span>
                 );
               })}

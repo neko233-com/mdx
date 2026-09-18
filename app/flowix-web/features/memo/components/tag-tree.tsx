@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { HashIcon, PlusIcon } from '@phosphor-icons/react';
+import { PlusIcon } from '@phosphor-icons/react';
 import { SquareMinus } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -48,6 +48,7 @@ import {
 } from '@features/memo/components/tag-reorder';
 import { markTagsCollapsedByAncestor } from '@features/memo/components/tag-collapse';
 import { agent, system } from '@platform/tauri/client';
+import { TagIcon } from '@shared/ui/tag-icon';
 
 interface TagTreeProps {
   selectedNotebook: Notebook | null;
@@ -792,10 +793,7 @@ export function TagTree({
                     }
                   }}
                 >
-                  <HashIcon
-                    className="h-3.5 w-3.5"
-                    weight="bold"
-                  />
+                  <TagIcon />
                   {hasChildren && (
                     <span
                       aria-hidden
@@ -1068,10 +1066,7 @@ export function TagTree({
             height: dragGhost.rect.height,
           }}
         >
-          <HashIcon
-            className="h-3.5 w-3.5 shrink-0 text-[var(--primary)]"
-            weight="bold"
-          />
+          <TagIcon className="shrink-0 text-[var(--primary)]" />
           <span className="min-w-0 flex-1 truncate">
             {tagOptions.find((tag) => tag.id === dragGhost.id)?.name ?? ''}
           </span>
