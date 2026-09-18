@@ -549,15 +549,10 @@
 
 .mention-tag-icon {
 	display: block;
-	width: 0.875rem;
-	height: 0.875rem;
-	flex: 0 0 auto;
-	color: var(--muted-foreground);
-}
-
-.memo-navigation-submenu-item .mention-tag-icon {
 	width: 16px;
 	height: 16px;
+	flex: 0 0 auto;
+	color: var(--muted-foreground);
 }
 
 .mention-tag-name {
