@@ -16,23 +16,42 @@ const SHIKI_LANGUAGE_DEFINITIONS: readonly ShikiLanguageDefinition[] = [
   { id: 'typescript', label: 'TypeScript', aliases: ['ts'], load: async () => (await import('@shikijs/langs/typescript')).default },
   { id: 'tsx', label: 'TSX', load: async () => (await import('@shikijs/langs/tsx')).default },
   { id: 'jsx', label: 'JSX', load: async () => (await import('@shikijs/langs/jsx')).default },
+  { id: 'vue', label: 'Vue', load: async () => (await import('@shikijs/langs/vue')).default },
+  { id: 'svelte', label: 'Svelte', load: async () => (await import('@shikijs/langs/svelte')).default },
+  { id: 'astro', label: 'Astro', load: async () => (await import('@shikijs/langs/astro')).default },
+  { id: 'mdx', label: 'MDX', load: async () => (await import('@shikijs/langs/mdx')).default },
   { id: 'python', label: 'Python', aliases: ['py'], load: async () => (await import('@shikijs/langs/python')).default },
   { id: 'rust', label: 'Rust', aliases: ['rs'], load: async () => (await import('@shikijs/langs/rust')).default },
   { id: 'go', label: 'Go', load: async () => (await import('@shikijs/langs/go')).default },
   { id: 'java', label: 'Java', load: async () => (await import('@shikijs/langs/java')).default },
   { id: 'kotlin', label: 'Kotlin', aliases: ['kt', 'kts'], load: async () => (await import('@shikijs/langs/kotlin')).default },
+  { id: 'dart', label: 'Dart', load: async () => (await import('@shikijs/langs/dart')).default },
+  { id: 'scala', label: 'Scala', load: async () => (await import('@shikijs/langs/scala')).default },
+  { id: 'elixir', label: 'Elixir', load: async () => (await import('@shikijs/langs/elixir')).default },
+  { id: 'haskell', label: 'Haskell', aliases: ['hs'], load: async () => (await import('@shikijs/langs/haskell')).default },
+  { id: 'r', label: 'R', load: async () => (await import('@shikijs/langs/r')).default },
+  { id: 'matlab', label: 'MATLAB', load: async () => (await import('@shikijs/langs/matlab')).default },
+  { id: 'perl', label: 'Perl', load: async () => (await import('@shikijs/langs/perl')).default },
   { id: 'swift', label: 'Swift', load: async () => (await import('@shikijs/langs/swift')).default },
   { id: 'c', label: 'C', load: async () => (await import('@shikijs/langs/c')).default },
   { id: 'cpp', label: 'C++', aliases: ['c++'], load: async () => (await import('@shikijs/langs/cpp')).default },
   { id: 'csharp', label: 'C#', aliases: ['cs', 'c#'], load: async () => (await import('@shikijs/langs/csharp')).default },
+  { id: 'objective-c', label: 'Objective-C', aliases: ['objc'], load: async () => (await import('@shikijs/langs/objective-c')).default },
   { id: 'php', label: 'PHP', load: async () => (await import('@shikijs/langs/php')).default },
   { id: 'ruby', label: 'Ruby', aliases: ['rb'], load: async () => (await import('@shikijs/langs/ruby')).default },
   { id: 'lua', label: 'Lua', load: async () => (await import('@shikijs/langs/lua')).default },
   { id: 'shellscript', label: 'Shell Script', aliases: ['shell', 'bash', 'sh', 'zsh'], load: async () => (await import('@shikijs/langs/shellscript')).default },
   { id: 'sql', label: 'SQL', load: async () => (await import('@shikijs/langs/sql')).default },
   { id: 'json', label: 'JSON', aliases: ['jsonc', 'json5'], load: async () => (await import('@shikijs/langs/json')).default },
+  { id: 'csv', label: 'CSV', load: async () => (await import('@shikijs/langs/csv')).default },
   { id: 'yaml', label: 'YAML', aliases: ['yml'], load: async () => (await import('@shikijs/langs/yaml')).default },
   { id: 'toml', label: 'TOML', load: async () => (await import('@shikijs/langs/toml')).default },
+  { id: 'dotenv', label: '.env', aliases: ['env'], load: async () => (await import('@shikijs/langs/dotenv')).default },
+  { id: 'hcl', label: 'HCL', load: async () => (await import('@shikijs/langs/hcl')).default },
+  { id: 'terraform', label: 'Terraform', aliases: ['tf', 'tfvars'], load: async () => (await import('@shikijs/langs/terraform')).default },
+  { id: 'nix', label: 'Nix', load: async () => (await import('@shikijs/langs/nix')).default },
+  { id: 'cmake', label: 'CMake', load: async () => (await import('@shikijs/langs/cmake')).default },
+  { id: 'nginx', label: 'Nginx', load: async () => (await import('@shikijs/langs/nginx')).default },
   { id: 'xml', label: 'XML', load: async () => (await import('@shikijs/langs/xml')).default },
   { id: 'html', label: 'HTML', load: async () => (await import('@shikijs/langs/html')).default },
   { id: 'css', label: 'CSS', load: async () => (await import('@shikijs/langs/css')).default },
@@ -41,6 +60,9 @@ const SHIKI_LANGUAGE_DEFINITIONS: readonly ShikiLanguageDefinition[] = [
   { id: 'docker', label: 'Dockerfile', aliases: ['dockerfile'], load: async () => (await import('@shikijs/langs/docker')).default },
   { id: 'diff', label: 'Diff', load: async () => (await import('@shikijs/langs/diff')).default },
   { id: 'graphql', label: 'GraphQL', aliases: ['gql'], load: async () => (await import('@shikijs/langs/graphql')).default },
+  { id: 'protobuf', label: 'Protocol Buffers', aliases: ['proto'], load: async () => (await import('@shikijs/langs/protobuf')).default },
+  { id: 'http', label: 'HTTP', load: async () => (await import('@shikijs/langs/http')).default },
+  { id: 'regex', label: 'Regular Expression', aliases: ['regexp'], load: async () => (await import('@shikijs/langs/regex')).default },
   { id: 'ini', label: 'INI', aliases: ['properties'], load: async () => (await import('@shikijs/langs/ini')).default },
   { id: 'make', label: 'Makefile', aliases: ['makefile'], load: async () => (await import('@shikijs/langs/make')).default },
   { id: 'powershell', label: 'PowerShell', aliases: ['ps', 'ps1'], load: async () => (await import('@shikijs/langs/powershell')).default },
@@ -53,8 +75,16 @@ export interface ShikiLanguageOption {
   label: string
 }
 
+// Mermaid uses a lightweight standalone token adapter in shiki-decorations.
+// Shiki's bundled Mermaid grammar targets Markdown embedding and does not
+// produce useful tokens for a standalone Mermaid code block, so it should not
+// be loaded as a regular grammar.
+const SPECIAL_LANGUAGE_OPTIONS: readonly ShikiLanguageOption[] = [
+  { id: 'mermaid', label: 'Mermaid' },
+]
+
 export const SHIKI_LANGUAGE_OPTIONS: readonly ShikiLanguageOption[] =
-  SHIKI_LANGUAGE_DEFINITIONS.map(({ id, label }) => ({ id, label }))
+  [...SPECIAL_LANGUAGE_OPTIONS, ...SHIKI_LANGUAGE_DEFINITIONS.map(({ id, label }) => ({ id, label }))]
 
 const SHIKI_LANGUAGE_BY_ID = new Map<string, ShikiLanguageDefinition>()
 for (const definition of SHIKI_LANGUAGE_DEFINITIONS) {
@@ -65,7 +95,10 @@ for (const definition of SHIKI_LANGUAGE_DEFINITIONS) {
 }
 
 export const SHIKI_LANGUAGE_LABEL_BY_ID: ReadonlyMap<string, string> =
-  new Map([...SHIKI_LANGUAGE_BY_ID].map(([id, definition]) => [id, definition.label]))
+  new Map([
+    ...SPECIAL_LANGUAGE_OPTIONS.map(({ id, label }) => [id, label] as const),
+    ...[...SHIKI_LANGUAGE_BY_ID].map(([id, definition]) => [id, definition.label] as const),
+  ])
 
 export function getShikiLanguageDefinition(
   language: string | null | undefined,

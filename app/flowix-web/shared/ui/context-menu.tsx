@@ -76,23 +76,28 @@ interface ContextMenuTriggerProps extends React.HTMLAttributes<HTMLDivElement> {
 	asChild?: boolean;
 }
 
-// `ContextMenuTrigger` is a div that opens the menu on right-click at the
-// cursor's location. We intentionally suppress the native context menu and
-// rely entirely on this component.
+// `ContextMenuTrigger` opens the web menu on right-click at the cursor's
+// location. A child handler may handle the event first (for example by
+// opening a macOS native menu); only an event that remains unhandled reaches
+// the web-menu fallback below.
 function ContextMenuTrigger({ children, className, onContextMenu, asChild, ...props }: ContextMenuTriggerProps) {
 	const { openAt } = useContextMenuContext();
 
 	const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+		onContextMenu?.(e);
+		if (e.defaultPrevented) return;
 		e.preventDefault();
 		e.stopPropagation();
 		openAt(e.clientX, e.clientY);
-		onContextMenu?.(e);
 	};
 
 	if (asChild && React.Children.count(children) === 1) {
 		const child = React.Children.only(children) as React.ReactElement<ContextMenuTriggerChildProps>;
 		return React.cloneElement(child, {
-			onContextMenu: handleContextMenu,
+			onContextMenu: (event: React.MouseEvent<HTMLDivElement>) => {
+				child.props.onContextMenu?.(event as React.MouseEvent<HTMLElement>);
+				handleContextMenu(event);
+			},
 			className: cn(child.props.className, className),
 			...props,
 		} as Record<string, unknown>);

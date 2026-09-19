@@ -9,6 +9,7 @@ const languageClassPrefix = 'language-'
 
 interface ShikiCodeBlockOptions {
   defaultTheme: string;
+  traceId?: number | null;
 }
 
 /** Shiki 主题白名单 — 与 styles/theme/*.css 中 --shiki-theme 的取值一一对应
@@ -33,6 +34,7 @@ export const CodeBlockShiki = CodeBlock.extend<ShikiCodeBlockOptions>({
       ...this.parent?.(),
       defaultLanguage,
       defaultTheme,
+      traceId: null,
     };
   },
 
@@ -96,6 +98,7 @@ export const CodeBlockShiki = CodeBlock.extend<ShikiCodeBlockOptions>({
         defaultLanguage,
         defaultTheme,
         preloadThemes: [...PRELOADED_SHIKI_THEMES],
+        traceId: this.options.traceId,
       }),
     ];
   },

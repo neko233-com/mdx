@@ -18,6 +18,8 @@ export type PasteKind =
 export interface PasteContext {
   editor: Editor;
   view: EditorView;
+  /** The memo that owns attachments inserted by this editor instance. */
+  memoId?: string;
   event: ClipboardEvent;
   types: string[];
   text: string;

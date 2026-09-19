@@ -28,9 +28,7 @@ import type { I18nKey } from '@/lib/i18n';
 import type { PropertyFieldConfig } from '@/lib/constants';
 import { canonicalizePropertyKey } from './property-key';
 
-/** UI-side data types. PascalCase to match the existing `PROPERTY_TYPES` array.
- *  'Tags' 已移除 — 多选统一走 'MultiSelect' (YAML 都是 array, UI 上 chips
- *  也一致), 旧 Tags 行加载时 inferType 直接映射到 MultiSelect。 */
+/** UI-side data types. PascalCase to match the existing `PROPERTY_TYPES` array. */
 export type PropertyKind =
   | 'Text'
   | 'Boolean'
@@ -40,19 +38,31 @@ export type PropertyKind =
   | 'Icon'
   | 'Select'
   | 'MultiSelect'
-  | 'List';
+  | 'Tag'
+  | 'Tags'
+  | 'Color';
 
-/** Field types in display order. Single source for both the dialog's type
- *  column and the Custom popup's type chip group. */
+/** Types available to configured/preset properties. */
 export const PROPERTY_KINDS: readonly PropertyKind[] = [
   'Text',
   'Boolean',
   'Number',
   'Date',
-  'Icon',
   'Select',
   'MultiSelect',
-  'List',
+  'Tag',
+  'Tags',
+  'Color',
+  'Icon',
+];
+
+/** Types available to unconfigured custom fields. */
+export const CUSTOM_PROPERTY_KINDS: readonly PropertyKind[] = [
+  'Text',
+  'Boolean',
+  'Number',
+  'Date',
+  'Tag',
 ];
 
 /**
@@ -81,7 +91,7 @@ export interface PropertyPreset {
   key: string;
   /** Resolved display name. Built-ins resolve this from i18n at runtime. */
   label: string;
-  /** Default UI kind. User can still override via the type column. */
+  /** Semantic kind used by preset-bound rows; row editors keep preset kinds locked. */
   kind: PropertyKind;
   /** Option values for `Select` / `MultiSelect`. */
   options?: readonly string[];
@@ -123,7 +133,7 @@ export const BUILTIN_PRESETS: readonly BuiltinPropertyPreset[] = [
     category: 'tags',
     key: 'tags',
     labelKey: 'document.properties.category.tags',
-    kind: 'MultiSelect',
+    kind: 'Tags',
     icon: TagIcon,
   },
   {
@@ -131,7 +141,7 @@ export const BUILTIN_PRESETS: readonly BuiltinPropertyPreset[] = [
     category: 'color',
     key: 'flowix_colors',
     labelKey: 'document.properties.commonKey.color',
-    kind: 'MultiSelect',
+    kind: 'Color',
     icon: PaletteIcon,
   },
   {
@@ -147,7 +157,7 @@ export const BUILTIN_PRESETS: readonly BuiltinPropertyPreset[] = [
     category: 'favorite',
     key: 'flowix_favorited',
     labelKey: 'document.action.pin',
-    kind: 'Select',
+    kind: 'Boolean',
     icon: PushPinIcon,
   },
 ];
@@ -184,7 +194,9 @@ export function getCustomPresets(fields: readonly PropertyFieldConfig[]): Proper
       key,
       label: field.name,
       kind: field.type,
-      options: field.options,
+      options: field.type === 'Select' || field.type === 'MultiSelect'
+        ? field.options
+        : undefined,
     }];
   });
 }

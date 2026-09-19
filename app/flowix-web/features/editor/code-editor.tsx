@@ -13,6 +13,7 @@ import {
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { basicSetup } from 'codemirror';
+import { redo, undo } from '@codemirror/commands';
 import {
   Compartment,
   EditorState,
@@ -44,11 +45,13 @@ import { cn } from '@/lib/utils';
 import { isMarkdownFilePath } from '@features/editor/code-file';
 import { shikiHighlighting, shikiLanguageIdForPath } from '@features/editor/code-editor-shiki';
 import { pushHandler, useShortcutScope } from '@features/shortcuts';
+import type { ClipboardSnapshot } from '@features/editor/extensions/paste-rules/clipboard';
 
 export interface CodeEditorHandle {
   flushPendingChanges: () => string | null;
   focusStart?: () => void;
   moveTitleToBody?: (trailingContent: string) => void;
+  pasteToBody?: (snapshot: ClipboardSnapshot) => void;
 }
 
 interface CodeEditorProps {
@@ -62,6 +65,9 @@ interface CodeEditorProps {
   onSearchPanelOpenChange?: (open: boolean) => void;
   onEditorScroll?: (scrollTop: number) => void;
   onEditingFinished?: () => void;
+  /** Optional control rendered in the source memo's title gutter. */
+  onToggleEditorMode?: () => void;
+  sourceModeToggleLabel?: string;
   /** React content mounted inside CodeMirror's actual scroll surface. */
   scrollHeader?: ReactNode;
 }
@@ -276,6 +282,8 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
   onSearchPanelOpenChange,
   onEditorScroll,
   onEditingFinished,
+  onToggleEditorMode,
+  sourceModeToggleLabel,
   scrollHeader,
 }, ref) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -338,6 +346,26 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
         effects: EditorView.scrollIntoView(bodyStart, { y: 'nearest' }),
       });
       view.focus();
+    },
+    pasteToBody: (snapshot: ClipboardSnapshot) => {
+      const view = viewRef.current;
+      if (!view || !editable || !snapshot.text) return;
+
+      const content = view.state.doc.toString();
+      const bodyStart = getSourceBodyStart(content);
+      const lineBreak = content.includes('\r\n') ? '\r\n' : '\n';
+      const text = snapshot.text.replace(/\r\n?/g, lineBreak);
+      const existingBody = content.slice(bodyStart);
+      const separator = existingBody.length > 0 && !text.endsWith(lineBreak)
+        ? lineBreak
+        : '';
+      const insertion = `${text}${separator}`;
+
+      view.dispatch({
+        changes: { from: bodyStart, to: bodyStart, insert: insertion },
+        selection: { anchor: bodyStart + insertion.length, head: bodyStart + insertion.length },
+        effects: EditorView.scrollIntoView(bodyStart, { y: 'nearest' }),
+      });
     },
   }), [editable]);
 
@@ -418,7 +446,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
 
   useEffect(() => {
     const editorIsFocused = () => viewRef.current?.hasFocus ?? false;
-    return pushHandler('editor.selectAll', () => {
+    const popSelectAll = pushHandler('editor.selectAll', () => {
       const view = viewRef.current;
       if (!view || !view.hasFocus) return false;
       view.dispatch({
@@ -426,6 +454,21 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
       });
       return true;
     }, { isActive: editorIsFocused });
+    const popUndo = pushHandler('editor.undo', () => {
+      const view = viewRef.current;
+      if (!view || !view.hasFocus) return false;
+      return undo(view);
+    }, { isActive: editorIsFocused });
+    const popRedo = pushHandler('editor.redo', () => {
+      const view = viewRef.current;
+      if (!view || !view.hasFocus) return false;
+      return redo(view);
+    }, { isActive: editorIsFocused });
+    return () => {
+      popSelectAll();
+      popUndo();
+      popRedo();
+    };
   }, []);
 
   useLayoutEffect(() => {
@@ -472,8 +515,37 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
 
     syncHeaderHeight();
     view.requestMeasure();
+    const toggleEditorMode = onToggleEditorMode ?? (() => {});
+    const sourceModeToggle = onToggleEditorMode
+      ? document.createElement('button')
+      : null;
+    if (sourceModeToggle) {
+      sourceModeToggle.type = 'button';
+      sourceModeToggle.className = 'cm-source-mode-toggle';
+      const markdownIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      markdownIcon.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      markdownIcon.setAttribute('width', '14');
+      markdownIcon.setAttribute('height', '14');
+      markdownIcon.setAttribute('fill', 'currentColor');
+      markdownIcon.setAttribute('viewBox', '48 96 160 68');
+      markdownIcon.setAttribute('aria-hidden', 'true');
+      const markdownPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      markdownPath.setAttribute(
+        'd',
+        'M128,104v48a8,8,0,0,1-16,0V123.31L93.66,141.66a8,8,0,0,1-11.32,0L64,123.31V152a8,8,0,0,1-16,0V104a8,8,0,0,1,13.66-5.66L88,124.69l26.34-26.35A8,8,0,0,1,128,104Zm77.66,18.34a8,8,0,0,1,0,11.32l-24,24a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L168,132.69V104a8,8,0,0,1,16,0v28.69l10.34-10.35A8,8,0,0,1,205.66,122.34Z',
+      );
+      markdownPath.setAttribute('fill', 'currentColor');
+      markdownIcon.appendChild(markdownPath);
+      sourceModeToggle.appendChild(markdownIcon);
+      sourceModeToggle.title = sourceModeToggleLabel ?? 'Switch to rich text mode';
+      sourceModeToggle.setAttribute('aria-label', sourceModeToggle.title);
+      sourceModeToggle.addEventListener('click', toggleEditorMode);
+      gutters.appendChild(sourceModeToggle);
+    }
     if (typeof ResizeObserver === 'undefined') {
       return () => {
+        sourceModeToggle?.removeEventListener('click', toggleEditorMode);
+        sourceModeToggle?.remove();
         gutterBackground.remove();
         editorMount?.style.removeProperty('--code-editor-source-header-top');
         editorMount?.style.removeProperty('--code-editor-source-header-height');
@@ -486,11 +558,13 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
     observer.observe(headerMount);
     return () => {
       observer.disconnect();
+      sourceModeToggle?.removeEventListener('click', toggleEditorMode);
+      sourceModeToggle?.remove();
       gutterBackground.remove();
       editorMount?.style.removeProperty('--code-editor-source-header-top');
       editorMount?.style.removeProperty('--code-editor-source-header-height');
     };
-  }, [hasScrollHeader, scrollHeaderMount]);
+  }, [hasScrollHeader, onToggleEditorMode, scrollHeaderMount, sourceModeToggleLabel]);
 
   // The title is a nested editing host inside a CodeMirror widget. Keep its
   // focus state on the CodeMirror wrapper explicitly so title and gutter

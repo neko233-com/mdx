@@ -2,12 +2,12 @@ import YAML, { isMap, isScalar, isSeq, type YAMLMap } from 'yaml';
 import type { PropertyKind } from '@features/document/properties/presets';
 import { canonicalizePropertyKey } from '@features/document/properties/property-key';
 import { isValidTagPath } from '@/lib/tag-path';
+import { MEMO_COLORS } from '@/types/memo-item';
 
 export const FRONTMATTER_RE = /^\uFEFF?(?:[ \t]*\r?\n)*---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 export const SYSTEM_FRONTMATTER_KEYS = new Set(['flowix_key', 'key']);
 
-const FLOWIX_COLOR_VALUES = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'gray'] as const;
-const FLOWIX_COLOR_SET = new Set<string>(FLOWIX_COLOR_VALUES);
+const FLOWIX_COLOR_SET = new Set<string>(MEMO_COLORS);
 
 export type FrontmatterPropertyErrorCode =
   | 'empty-key'
@@ -59,6 +59,8 @@ export interface ExtractedFrontmatter extends ParsedVisibleFrontmatter {
 export interface FrontmatterPropertyValue {
   key: string;
   value: unknown;
+  /** Optional semantic type supplied by the guided property editor. */
+  kind?: FrontmatterInputKind;
 }
 
 type FrontmatterInputKind = PropertyKind | 'Boolean';
@@ -225,15 +227,6 @@ function parseMultiSelect(value: string): string[] {
   return value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
 }
 
-function parseList(value: string): string[] {
-  if (!value.trim()) return [];
-  const lines = value
-    .split(/\r?\n/)
-    .map((item) => item.trim().replace(/^-\s*/, ''))
-    .filter(Boolean);
-  return lines;
-}
-
 export function normalizeTagInput(value: string): string {
   return value.trim().replace(/^#+/, '').trim();
 }
@@ -277,7 +270,7 @@ function normalizeFlowixColors(value: unknown): string[] {
     }
     selected.add(item.trim());
   }
-  return FLOWIX_COLOR_VALUES.filter((color) => selected.has(color));
+  return MEMO_COLORS.filter((color) => selected.has(color));
 }
 
 function parsePropertyInput(
@@ -300,9 +293,10 @@ function parsePropertyInput(
     case 'Boolean':
       return value.trim() === 'true';
     case 'MultiSelect':
+    case 'Tag':
+    case 'Tags':
+    case 'Color':
       return parseMultiSelect(value);
-    case 'List':
-      return parseList(value);
     case 'Text':
     case 'Date':
     case 'URL':
@@ -371,7 +365,8 @@ export function updateVisibleFrontmatterProperty(
     ? asRecord(document.toJS())[previousKey]
     : undefined;
   const parsedValue = parsePropertyInput(nextValueInput, kind, previousValue);
-  const collectionKey = nextKey === 'tags' || nextKey === 'flowix_colors';
+  const collectionKey = kind === 'Tag' || kind === 'Tags' || kind === 'Color'
+    || nextKey === 'tags' || nextKey === 'flowix_colors';
   // A key-only edit starts with the old scalar value. Switch collection
   // properties to an empty collection until the user chooses their items,
   // instead of rejecting the key change because the old value has the wrong
@@ -379,15 +374,15 @@ export function updateVisibleFrontmatterProperty(
   const collectionValue = collectionKey && kind === undefined && !Array.isArray(parsedValue)
     ? []
     : parsedValue;
-  const nextValue = nextKey === 'tags'
+  const nextValue = kind === 'Tags' || nextKey === 'tags'
     ? normalizeDocumentTags(collectionValue)
-    : nextKey === 'flowix_colors'
+    : kind === 'Color' || nextKey === 'flowix_colors'
       ? normalizeFlowixColors(collectionValue)
       : collectionValue;
   const valueNode = document.createNode(nextValue);
   if (
     Array.isArray(nextValue)
-    && (kind === 'MultiSelect' || nextKey === 'tags' || nextKey === 'flowix_colors')
+    && (kind === 'MultiSelect' || kind === 'Tag' || kind === 'Tags' || kind === 'Color' || nextKey === 'tags' || nextKey === 'flowix_colors')
     && isSeq(valueNode)
   ) {
     valueNode.flow = true;
@@ -517,14 +512,14 @@ export function replaceVisibleFrontmatterProperties(
       map.items.splice(index, 1);
     }
   }
-  properties.forEach(({ key, value }) => {
+  properties.forEach(({ key, value, kind }) => {
     const canonicalKey = canonicalizePropertyKey(key);
     if (SYSTEM_FRONTMATTER_KEYS.has(canonicalKey)) return;
     map.set(
       canonicalKey,
-      canonicalKey === 'tags'
+      kind === 'Tags' || canonicalKey === 'tags'
         ? normalizeDocumentTags(value)
-        : canonicalKey === 'flowix_colors'
+        : kind === 'Color' || canonicalKey === 'flowix_colors'
           ? normalizeFlowixColors(value)
           : value,
     );

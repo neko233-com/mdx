@@ -126,4 +126,16 @@ describe('user-settings-store · property preset sanitization', () => {
       { key: 'priority', name: '优先级', type: 'Number', options: undefined },
     ]);
   });
+
+  it('migrates the removed List preset type to MultiSelect', async () => {
+    const fields = [
+      { key: 'labels', name: '标签', type: 'List' },
+    ] as unknown as PropertyFieldConfig[];
+
+    await useUserSettingsStore.getState().updateSettings({ properties: { fields } });
+
+    expect(useUserSettingsStore.getState().settings.properties.fields).toEqual([
+      { key: 'labels', name: '标签', type: 'MultiSelect', options: undefined },
+    ]);
+  });
 });

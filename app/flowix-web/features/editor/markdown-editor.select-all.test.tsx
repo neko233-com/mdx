@@ -30,6 +30,35 @@ function pressSelectAll(editor: Editor, modifier: 'command' | 'control' = 'comma
   }));
 }
 
+function pasteClipboard(editor: Editor, text: string, html = ''): ClipboardEvent {
+  const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      types: html ? ['text/plain', 'text/html'] : ['text/plain'],
+      files: [],
+      getData(type: string) {
+        if (type === 'text/plain') return text;
+        if (type === 'text/html') return html;
+        return '';
+      },
+    },
+  });
+  editor.view.dom.dispatchEvent(event);
+  return event;
+}
+
+function pressUndo(editor: Editor): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', {
+    key: 'z',
+    code: 'KeyZ',
+    metaKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  editor.view.dom.dispatchEvent(event);
+  return event;
+}
+
 describe('MarkdownEditor select all', () => {
   beforeEach(() => {
     reactActEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
@@ -43,6 +72,16 @@ describe('MarkdownEditor select all', () => {
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
     vi.stubGlobal('ResizeObserver', ResizeObserverStub);
     vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+    Object.defineProperties(Range.prototype, {
+      getClientRects: {
+        configurable: true,
+        value: () => [],
+      },
+      getBoundingClientRect: {
+        configurable: true,
+        value: () => ({ bottom: 0, height: 0, left: 0, right: 0, top: 0, width: 0 }),
+      },
+    });
   });
 
   afterEach(async () => {
@@ -249,6 +288,62 @@ describe('MarkdownEditor select all', () => {
     expect(editor!.state.selection.from).toBe(0);
     expect(editor!.state.selection.to).toBe(editor!.state.doc.content.size);
 
+  });
+
+  it('undoes content pasted directly into the document with Command+Z', async () => {
+    let editor: Editor | null = null;
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content="Before"
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      editor!.commands.setTextSelection(editor!.state.doc.content.size - 1);
+      editor!.view.focus();
+      pasteClipboard(editor!, ' pasted');
+    });
+    expect(editor!.getMarkdown()).toBe('Before pasted');
+
+    act(() => {
+      const event = pressUndo(editor!);
+      expect(event.defaultPrevented).toBe(true);
+    });
+    expect(editor!.getMarkdown()).toBe('Before');
+  });
+
+  it.each([
+    ['markdown blocks', '\n\n## Pasted heading\n\nPasted body', ''],
+    ['rich HTML', 'Bold paste', '<p><strong>Bold paste</strong></p>'],
+  ])('undoes %s handled by managed paste rules with Command+Z', async (_label, text, html) => {
+    let editor: Editor | null = null;
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content="Before"
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      editor!.commands.setTextSelection(editor!.state.doc.content.size - 1);
+      editor!.view.focus();
+      pasteClipboard(editor!, text, html);
+    });
+    expect(editor!.getMarkdown()).not.toBe('Before');
+
+    act(() => {
+      pressUndo(editor!);
+    });
+    expect(editor!.getMarkdown()).toBe('Before');
   });
 
   it('normalizes multiple empty task placeholders without invalid positions', async () => {

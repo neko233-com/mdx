@@ -7,8 +7,12 @@ import { translate } from '@/lib/i18n';
 import { getCurrentAppLanguage } from '@features/preferences/public/runtime-api';
 import { toast } from '@/lib/toast';
 import type { MemoColor, MemoItem } from '@/types/memo-item';
+import { preparePdfPrint } from '@features/document/pdf-print';
+import type { Editor } from '@tiptap/core';
 
 type ExportableDocument = { title: string; markdown: string };
+
+let pdfExportInProgress = false;
 
 type CommandKey =
   | 'document.command.readFailed'
@@ -27,7 +31,10 @@ type CommandKey =
   | 'document.command.wordDocName'
   | 'document.command.exportFailed'
   | 'document.command.exportWord.success'
-  | 'document.command.exportWord.failed';
+  | 'document.command.exportWord.failed'
+  | 'document.command.exportPdf.success'
+  | 'document.command.exportPdf.failed'
+  | 'document.command.pdfName';
 
 function tCmd(key: CommandKey, params?: Record<string, string | number>): string {
   const language = getCurrentAppLanguage();
@@ -37,6 +44,7 @@ function tCmd(key: CommandKey, params?: Record<string, string | number>): string
 interface UseDocumentCommandsOptions {
   currentDocumentPath: string | null;
   getCurrentDocumentContent: () => string;
+  getCurrentDocumentEditor: () => Editor | null;
   currentMemo: MemoItem | null;
   updateMemoMeta: (id: string, meta: Partial<Pick<MemoItem, 'updatedAt' | 'preview' | 'thumbnail' | 'favorited' | 'filename'>>) => void;
   setMemoColors: (id: string, colors: MemoColor[]) => Promise<boolean>;
@@ -90,6 +98,7 @@ async function writeClipboardText(text: string): Promise<void> {
 export function useDocumentCommands({
   currentDocumentPath,
   getCurrentDocumentContent,
+  getCurrentDocumentEditor,
   currentMemo,
   updateMemoMeta,
   setMemoColors,
@@ -227,6 +236,35 @@ export function useDocumentCommands({
     toast[ok ? 'success' : 'error'](tCmd(ok ? 'document.command.exportWord.success' : 'document.command.exportWord.failed'));
   }, [promptExportTarget, requireExportableDocument]);
 
+  const handleExportPdf = useCallback(async () => {
+    if (pdfExportInProgress) return;
+    pdfExportInProgress = true;
+
+    let restorePrintView: (() => void) | null = null;
+    try {
+      const doc = await requireExportableDocument();
+      if (!doc) return;
+
+      const pdfName = tCmd('document.command.pdfName');
+      const target = await promptExportTarget(doc, 'pdf', { name: pdfName, extensions: ['pdf'] });
+      if (!target) return;
+
+      restorePrintView = await preparePdfPrint(getCurrentDocumentEditor(), doc.markdown);
+      const ok = await dialogs.exportPdf(target);
+      toast[ok ? 'success' : 'error'](
+        tCmd(ok ? 'document.command.exportPdf.success' : 'document.command.exportPdf.failed'),
+      );
+    } catch (error) {
+      console.warn('[useDocumentCommands] Failed to export PDF:', error);
+      toast.error(tCmd('document.command.exportPdf.failed'));
+    } finally {
+      const restore = restorePrintView;
+      restorePrintView = null;
+      restore?.();
+      pdfExportInProgress = false;
+    }
+  }, [getCurrentDocumentEditor, promptExportTarget, requireExportableDocument]);
+
   return {
     handleCopyFullText,
     handleCopyLink,
@@ -235,5 +273,6 @@ export function useDocumentCommands({
     handleExportMarkdown,
     handleSaveAsTemplate,
     handleExportWord,
+    handleExportPdf,
   };
 }

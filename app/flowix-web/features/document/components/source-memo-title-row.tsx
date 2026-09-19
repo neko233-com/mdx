@@ -1,4 +1,6 @@
 import type { RefObject } from 'react';
+import type { ClipboardSnapshot } from '@features/editor/extensions/paste-rules/clipboard';
+import type { DocumentEditorMode } from '@features/document/store/document-editor-view-store';
 
 import {
   MemoTitleEditor,
@@ -12,6 +14,9 @@ interface SourceMemoTitleRowProps {
   editable: boolean;
   autoFocus?: boolean;
   onMoveToBody: (request: MemoTitleBodyNavigation) => void;
+  onPasteToBody?: (snapshot: ClipboardSnapshot) => void;
+  editorMode?: DocumentEditorMode;
+  onToggleEditorMode?: () => void;
   titleRef?: RefObject<MemoTitleEditorHandle | null>;
 }
 
@@ -26,6 +31,9 @@ export function SourceMemoTitleRow({
   editable,
   autoFocus = false,
   onMoveToBody,
+  onPasteToBody,
+  editorMode,
+  onToggleEditorMode,
   titleRef,
 }: SourceMemoTitleRowProps) {
   return (
@@ -39,6 +47,9 @@ export function SourceMemoTitleRow({
         useDocumentSelection
         allowReadOnlyBoundaryNavigation={false}
         onMoveToBody={onMoveToBody}
+        onPasteToBody={onPasteToBody}
+        editorMode={editorMode}
+        onToggleEditorMode={onToggleEditorMode}
       />
     </div>
   );

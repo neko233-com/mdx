@@ -5,7 +5,7 @@ import { CaretDownIcon } from '@phosphor-icons/react';
 import { Input } from '@shared/ui/input';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@shared/ui/dropdown-menu';
 import { useI18n } from '@/lib/i18n';
-import { PROPERTY_KINDS, resolvePropertyPreset, type PropertyPreset } from '@features/document/properties/presets';
+import { CUSTOM_PROPERTY_KINDS, resolvePropertyPreset, type PropertyPreset } from '@features/document/properties/presets';
 import { cn } from '@/lib/utils';
 import { useComposingValue } from '@shared/hooks/use-composing-value';
 import type { PropertyRow, PropertyType } from './property-row-model';
@@ -23,7 +23,7 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function getPropertyTypeLabelKey(kind: PropertyType) {
-  return `document.properties.type.${kind === 'MultiSelect' ? 'multiSelect' : kind.toLowerCase()}` as
+  return `document.properties.type.${kind === 'MultiSelect' ? 'multiSelect' : kind === 'Tag' ? 'tag' : kind === 'Tags' ? 'tags' : kind === 'Color' ? 'color' : kind.toLowerCase()}` as
     | 'document.properties.type.text'
     | 'document.properties.type.boolean'
     | 'document.properties.type.number'
@@ -32,7 +32,9 @@ function getPropertyTypeLabelKey(kind: PropertyType) {
     | 'document.properties.type.icon'
     | 'document.properties.type.select'
     | 'document.properties.type.multiSelect'
-    | 'document.properties.type.list';
+    | 'document.properties.type.tag'
+    | 'document.properties.type.tags'
+    | 'document.properties.type.color';
 }
 
 /**
@@ -253,7 +255,7 @@ function PropertyTypePicker({
         sideOffset={6}
         className="z-[150] min-w-[120px] rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]"
       >
-        {PROPERTY_KINDS.map((kind) => (
+        {CUSTOM_PROPERTY_KINDS.map((kind) => (
           <DropdownMenuItem
             key={kind}
             onClick={() => onChange(kind)}

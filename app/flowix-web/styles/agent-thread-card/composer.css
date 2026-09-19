@@ -5,7 +5,7 @@
  * 下, 内容超出时走 overflow-y 内部滚动,
  * composer 容器不被撑破。
  *
- * 背景统一用 var(--document-bg) ── 跟文档背景融合 (与全屏态视觉一致),
+ * 背景使用 var(--input-bg) ── 输入面与文档背景解耦, 浅色模式统一为白色;
  * 1px border 保留, 仍能围出胶囊形状; 编辑器自身 transparent, 直接
  * 透出 composer 背景。多行状态由 .--multi-line 修饰类切到 flex-end
  * (按钮贴底, 始终维持 --atc-bottom-pad 距离)。 类切换由 agent-thread-card.tsx
@@ -26,7 +26,7 @@
   padding: 0 0.4rem 0 0.8rem;
   border: 1px solid var(--border);
   border-radius: 1rem;
-  background: var(--document-bg);
+  background: var(--input-bg, var(--document-bg));
   /* Keep the composer lighter than the Slash menu while
    * keeping a shorter offset for the composer sitting against the canvas edge. */
   box-shadow: 0 2px 24px -3px rgb(0 0 0 / 3%);
@@ -492,7 +492,7 @@
   max-width: 112px;
   overflow: hidden;
   padding: 8px 6px;
-  color: var(--text-secondary, #666);
+  color: var(--muted-foreground);
   font-size: 11px;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -591,13 +591,7 @@
 
 .markdown-editor
   .agent-thread-card__composer-role-icon.agent-thread-card__role-icon--svg {
-  color: #3f3f46;
-}
-
-[data-theme="dark"]
-  .markdown-editor
-  .agent-thread-card__composer-role-icon.agent-thread-card__role-icon--svg {
-  color: #fff;
+  color: var(--secondary-foreground);
 }
 
 .markdown-editor .agent-thread-card__composer-input {

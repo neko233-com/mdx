@@ -166,10 +166,10 @@ export function ListColumn({
             ? cn(
                 'absolute left-0 top-0 m-1 h-[calc(100%-0.5rem)] w-[280px] overflow-hidden rounded-xl transition-[left] flowix-note-navigation-motion',
                 noteNavigationPhase === 'open' ? 'z-[110]' : 'z-[90]',
-                'border border-[var(--border-popup)] bg-[var(--card)]',
+                'border border-[var(--border-popup)] bg-[var(--list-bg)]',
                 'shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]',
               )
-            : 'relative h-full w-full overflow-hidden border-r border-[var(--divider)] bg-[var(--card)]',
+            : 'relative h-full w-full overflow-hidden border-r border-[var(--divider)] bg-[var(--list-bg)]',
         )}
         style={previewVisible && noteNavigationPhase === 'open'
           ? { left: 'calc(var(--flowix-note-navigation-drawer-width) + 0.25rem)' }

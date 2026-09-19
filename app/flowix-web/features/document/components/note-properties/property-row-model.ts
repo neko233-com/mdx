@@ -33,9 +33,7 @@ export function createRowId(): string {
 }
 
 export function inferType(value: unknown): PropertyType {
-  // 未绑定预设的 YAML 数组按普通列表处理；tags / keywords 等预设在
-  // rowsFromData 中使用预设类型，仍然显示为 MultiSelect。
-  if (Array.isArray(value)) return 'List';
+  if (Array.isArray(value)) return 'MultiSelect';
   if (typeof value === 'number') return 'Number';
   if (typeof value === 'string') {
     if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return 'Date';
@@ -46,11 +44,8 @@ export function inferType(value: unknown): PropertyType {
 
 export function stringifyValue(value: unknown, type: PropertyType): string {
   if (type === 'Boolean') return value === true ? 'true' : value === false ? 'false' : '';
-  if (type === 'MultiSelect') {
+  if (type === 'MultiSelect' || type === 'Tag' || type === 'Tags' || type === 'Color') {
     return Array.isArray(value) ? value.map((item) => String(item)).join(', ') : String(value ?? '');
-  }
-  if (type === 'List') {
-    return Array.isArray(value) ? value.map((item) => String(item)).join('\n') : String(value ?? '');
   }
   if (value === null || value === undefined) return '';
   return String(value);
@@ -96,14 +91,12 @@ export function convertRowValue(row: PropertyRow): unknown {
       return Number.isFinite(numeric) ? numeric : value;
     }
     case 'MultiSelect':
+    case 'Tag':
+    case 'Tags':
+    case 'Color':
       return value
         .split(',')
         .map((item) => item.trim())
-        .filter(Boolean);
-    case 'List':
-      return value
-        .split(/\r?\n/)
-        .map((item) => item.trim().replace(/^-\s*/, ''))
         .filter(Boolean);
     case 'Select': {
       // 空 Select 表示 "未选择" — 写入时跳过整行, 不留 `key: ''`。
@@ -133,7 +126,7 @@ export function buildContentWithFrontmatter(content: string, rows: PropertyRow[]
       const key = row.key.trim();
       if (!key) return [];
       const value = convertRowValue(row);
-      return value === null ? [] : [{ key, value }];
+      return value === null ? [] : [{ key, value, kind: row.type }];
     }),
   );
 }

@@ -4,6 +4,7 @@ import svgPanZoom from 'svg-pan-zoom'
 import { translate, type I18nKey } from '@/lib/i18n'
 import { getCurrentAppLanguage } from '@features/preferences/public/runtime-api'
 import { CodeBlockClipboardController } from './clipboard-controller'
+import { registerCodeBlockThemeHandler } from './theme-coordinator'
 import { detectCodeLanguage } from './language-detection'
 import { setLanguageButtonContent } from './language-button'
 import { SHIKI_LANGUAGE_LABEL_BY_ID, SHIKI_LANGUAGE_OPTIONS } from './shiki/shiki-languages'
@@ -112,7 +113,8 @@ class CodeBlockShikiView implements NodeView {
   private currentLanguageId: string = ''
   private renderVersion = 0
   private lastRenderedSource: string | null = null
-  private boundThemeChangeHandler: ((e: Event) => void) | null = null
+  private unregisterThemeHandler: (() => void) | null = null
+  private initializeClipboard: ((event: MouseEvent) => void) | null = null
   private boundSyncFullscreenBounds: (() => void) | null = null
   private boundHandleFullscreenKeydown: ((event: KeyboardEvent) => void) | null = null
   private isFullscreen = false
@@ -199,20 +201,18 @@ class CodeBlockShikiView implements NodeView {
     this.copyBtn.type = 'button'
     this.copyBtn.tabIndex = -1
     this.copyBtn.title = 'Copy code'
-    this.clipboardController = new CodeBlockClipboardController(
-      this.copyBtn,
-      () => this.node.textContent,
-    )
-
-    // Mermaid preview/code tabs
-    this.modeTabs = document.createElement('div')
-    this.modeTabs.classList.add('code-block-mode-tabs')
-    this.modeTabs.setAttribute('role', 'tablist')
-    this.modeTabs.setAttribute('aria-label', 'Mermaid view mode')
-
-    this.previewTabBtn = this.createModeTab('preview', t('editor.codeblock.previewTab'), MERMAID_PREVIEW_ICON)
-    this.codeTabBtn = this.createModeTab('code', 'Code', MERMAID_CODE_ICON)
-    this.modeTabs.append(this.previewTabBtn, this.codeTabBtn)
+    CodeBlockClipboardController.setIdleIcon(this.copyBtn)
+    this.initializeClipboard = (event) => {
+      if (!this.copyBtn) return
+      this.copyBtn.removeEventListener('click', this.initializeClipboard!)
+      this.initializeClipboard = null
+      this.clipboardController = new CodeBlockClipboardController(
+        this.copyBtn,
+        () => this.node.textContent,
+      )
+      this.clipboardController.handleClick(event)
+    }
+    this.copyBtn.addEventListener('click', this.initializeClipboard)
 
     this.actions = document.createElement('div')
     this.actions.classList.add('code-block-actions')
@@ -228,21 +228,7 @@ class CodeBlockShikiView implements NodeView {
     // modeTabs 自己的 preview/code 切换一致, 都是对当前 mermaid
     // 视图的进一步操作。如果放右侧, copy 按钮会被全屏按钮 / modeTabs
     // 隔开, 失去"复制"作为"对代码块本身操作"的视觉归类。
-    this.fullscreenButton = document.createElement('button')
-    this.fullscreenButton.type = 'button'
-    this.fullscreenButton.tabIndex = -1
-    this.fullscreenButton.classList.add('code-block-fullscreen-btn')
-    this.fullscreenButton.setAttribute('aria-label', t('editor.codeblock.fullscreen'))
-    this.fullscreenButton.hidden = true
-    this.fullscreenButton.innerHTML = FULLSCREEN_ENTER_ICON
-    this.fullscreenButton.addEventListener('click', (event) => {
-      event.stopPropagation()
-      this.toggleFullscreen()
-    })
-
     this.actions.appendChild(this.copyBtn)
-    this.actions.appendChild(this.fullscreenButton)
-    this.actions.appendChild(this.modeTabs)
 
     this.header.appendChild(this.languageBtn)
     this.header.appendChild(this.actions)
@@ -258,27 +244,55 @@ class CodeBlockShikiView implements NodeView {
     this.dom.appendChild(this.codePre)
     this.dom.appendChild(this.header)
 
-    this.dropdown = this.createLanguageDropdownShell()
-    // 下拉面板整体也设 contenteditable=false ── dropdown 通过 Portal
-    // 挂到 document.body, 与编辑器 DOM 解耦, 单独标记避免选区渗入
-    // search input / 列表项。
-    this.dropdown.contentEditable = 'false'
-    document.body.appendChild(this.dropdown)
-
-    // Mermaid preview surface
-    // 同时挂 .code-block-mermaid-preview (容器几何: padding / border-radius /
-    // min-height / 显示态切换) 和 .mermaid-surface (SVG 内部样式: 字号 /
-    // 对齐 / 主题 ── 统一在 editor-mermaid.css 管理)。
-    // 双类分层: 改 mermaid 视觉 → 改 editor-mermaid.css; 改容器几何 →
-    // 改 editor-code-block.css ── 两层关注点解耦, 不会互相污染。
-    this.previewDOM = document.createElement('div')
-    this.previewDOM.classList.add('code-block-mermaid-preview', 'mermaid-surface')
-    this.previewDOM.contentEditable = 'false'
-    this.dom.appendChild(this.previewDOM)
-
     this.updateLanguageAttribute()
     this.syncShikiTheme()
     this.syncMermaidView()
+  }
+
+  private ensureMermaidControls(): void {
+    if (!this.actions) return
+
+    if (!this.fullscreenButton) {
+      this.fullscreenButton = document.createElement('button')
+      this.fullscreenButton.type = 'button'
+      this.fullscreenButton.tabIndex = -1
+      this.fullscreenButton.classList.add('code-block-fullscreen-btn')
+      this.fullscreenButton.setAttribute('aria-label', t('editor.codeblock.fullscreen'))
+      this.fullscreenButton.hidden = true
+      this.fullscreenButton.innerHTML = FULLSCREEN_ENTER_ICON
+      this.fullscreenButton.addEventListener('click', (event) => {
+        event.stopPropagation()
+        this.toggleFullscreen()
+      })
+      this.actions.appendChild(this.fullscreenButton)
+    }
+
+    if (!this.modeTabs) {
+      this.modeTabs = document.createElement('div')
+      this.modeTabs.classList.add('code-block-mode-tabs')
+      this.modeTabs.setAttribute('role', 'tablist')
+      this.modeTabs.setAttribute('aria-label', 'Mermaid view mode')
+
+      this.previewTabBtn = this.createModeTab('preview', t('editor.codeblock.previewTab'), MERMAID_PREVIEW_ICON)
+      this.codeTabBtn = this.createModeTab('code', 'Code', MERMAID_CODE_ICON)
+      this.previewTabBtn.addEventListener('click', (event) => {
+        event.stopPropagation()
+        this.setViewMode('preview')
+      })
+      this.codeTabBtn.addEventListener('click', (event) => {
+        event.stopPropagation()
+        this.setViewMode('code')
+      })
+      this.modeTabs.append(this.previewTabBtn, this.codeTabBtn)
+      this.actions.appendChild(this.modeTabs)
+    }
+
+    if (!this.previewDOM) {
+      this.previewDOM = document.createElement('div')
+      this.previewDOM.classList.add('code-block-mermaid-preview', 'mermaid-surface')
+      this.previewDOM.contentEditable = 'false'
+      this.dom.appendChild(this.previewDOM)
+    }
   }
 
   private syncShikiTheme(): void {
@@ -647,6 +661,12 @@ class CodeBlockShikiView implements NodeView {
   private syncMermaidView() {
     const isMermaid = this.isMermaidBlock()
 
+    if (isMermaid) {
+      this.ensureMermaidControls()
+    } else if (this.isFullscreen) {
+      this.setFullscreen(false)
+    }
+
     this.dom.classList.toggle('code-block-is-mermaid', isMermaid)
     this.dom.classList.toggle('code-block-mermaid-previewing', isMermaid && this.viewMode === 'preview')
 
@@ -718,24 +738,13 @@ class CodeBlockShikiView implements NodeView {
       this.toggleDropdown()
     })
 
-    this.previewTabBtn?.addEventListener('click', (e) => {
-      e.stopPropagation()
-      this.setViewMode('preview')
-    })
-
-    this.codeTabBtn?.addEventListener('click', (e) => {
-      e.stopPropagation()
-      this.setViewMode('code')
-    })
-
-    this.boundThemeChangeHandler = () => {
+    this.unregisterThemeHandler = registerCodeBlockThemeHandler(this.view, () => {
       this.syncShikiTheme()
       this.lastRenderedSource = null
       if (this.isMermaidBlock() && this.viewMode === 'preview') {
         void this.renderMermaidPreview()
       }
-    }
-    window.addEventListener('app-theme-changed', this.boundThemeChangeHandler)
+    })
   }
 
   // ── 全屏模式 ──
@@ -1168,9 +1177,11 @@ private unmountFullscreenOverlay(): void {
     this.closeDropdown()
     this.dropdown?.remove()
     this.dropdown = null
-    if (this.boundThemeChangeHandler) {
-      window.removeEventListener('app-theme-changed', this.boundThemeChangeHandler)
-      this.boundThemeChangeHandler = null
+    this.unregisterThemeHandler?.()
+    this.unregisterThemeHandler = null
+    if (this.copyBtn && this.initializeClipboard) {
+      this.copyBtn.removeEventListener('click', this.initializeClipboard)
+      this.initializeClipboard = null
     }
     this.clipboardController?.destroy()
     this.clipboardController = null

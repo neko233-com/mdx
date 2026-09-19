@@ -35,6 +35,7 @@ pub mod cli;
 pub mod cloud;
 pub mod dialog;
 pub mod dsh;
+pub mod export;
 pub mod external_document;
 pub mod external_document_watch;
 pub mod file;

@@ -327,7 +327,7 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
           background: showMenu ? 'var(--brand)' : (isHovered ? 'var(--muted)' : 'transparent'),
           color: showMenu ? 'var(--primary-foreground)' : 'var(--brand)',
           borderRadius: '4px',
-          cursor: isDragging ? 'grabbing' : 'grab',
+          cursor: isDragging ? 'grabbing' : 'pointer',
           touchAction: 'none',
           boxShadow: 'none',
         }}

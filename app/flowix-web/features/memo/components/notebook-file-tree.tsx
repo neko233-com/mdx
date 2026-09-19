@@ -1120,7 +1120,7 @@ export function NotebookFileTree({
     <div
       ref={externalDropSurfaceRef}
       data-notebook-external-drop-target="true"
-      className="relative flex h-full min-h-0 flex-col select-none bg-[var(--card)] text-[var(--foreground)]"
+      className="relative flex h-full min-h-0 flex-col select-none bg-[var(--list-bg)] text-[var(--foreground)]"
     >
       <div className="relative min-h-0 flex-1">
         <OverlayScrollbar

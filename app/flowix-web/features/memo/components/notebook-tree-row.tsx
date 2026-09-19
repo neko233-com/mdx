@@ -15,9 +15,9 @@ import { ChevronRight, File, FolderPlus, MoreHorizontal, Plus } from 'lucide-rea
 import { toast } from '@/lib/toast';
 import { cn, displayTitleFromFilename } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
-import { MemoCardActions } from '@features/memo/components/memo-card-actions';
+import { getMemoColorLabel, MemoCardActions } from '@features/memo/components/memo-card-actions';
 import { memoRepository } from '@features/memo/services/memo-repository';
-import { MEMO_COLOR_HEX, useMemoStore } from '@features/memo/store/memo-store';
+import { MEMO_COLORS, MEMO_COLOR_HEX, useMemoStore } from '@features/memo/store/memo-store';
 import type { MemoColor, MemoItem } from '@/types/memo-item';
 import { resolveMemoByPath } from '@features/memo/use-cases/open-by-target';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, useContextMenuContext } from '@shared/ui/context-menu';
@@ -26,7 +26,8 @@ import folderIcon from '@/assets/folder-outline.svg?raw';
 import { getPropertyIconOption } from '@features/document/properties/property-icons';
 import { resourceKindFromPath } from '@features/editor/code-file';
 import { FileTypeIcon } from '@features/memo/components/file-type-icon';
-import { memos, type DocTreeItem } from '@platform/tauri/client';
+import { memos, product, type DocTreeItem } from '@platform/tauri/client';
+import { canUseNativeContextMenu, logNativeContextMenuError, popupNativeContextMenu, type NativeContextMenuItems } from '@platform/tauri/native-context-menu';
 
 const TREE_MENU_CLASS =
   'w-[180px] space-y-0.5 rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]';
@@ -83,7 +84,7 @@ export const NotebookTreeRow = memo(function NotebookTreeRow({
   tabIndex?: number;
   moveStatus?: 'moving' | 'success';
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const isFolder = item.type === 'folder';
   const actionParentPath = isFolder ? item.fullPath : parentPath;
   const resourceKind = isFolder ? null : item.resourceKind ?? resourceKindFromPath(item.name);
@@ -135,22 +136,23 @@ export const NotebookTreeRow = memo(function NotebookTreeRow({
   }, [item.fullPath, keepsVirtualRowAlive, onKeepAliveChange]);
 
   const loadMemo = useCallback(async () => {
-    if (isFolder || !isNote) return;
+    if (isFolder || !isNote) return null;
     const memoId = item.memoMeta?.id
       ?? (await resolveMemoByPath(item.fullPath))?.memoId;
-    if (!memoId) return;
+    if (!memoId) return null;
     const state = useMemoStore.getState();
     const cached = state.memos.find((candidate) => candidate.id === memoId)
       ?? (state.selectedMemo?.id === memoId ? state.selectedMemo : null);
     if (cached) {
       setMemo(cached);
-      return;
+      return cached;
     }
     const loaded = await memos.readMemo(memoId);
     if (loaded) setMemo(loaded);
+    return loaded;
   }, [isFolder, isNote, item.fullPath, item.memoMeta?.id]);
 
-  const toggleFavorite = useCallback(async (nextMemo: MemoItem) => {
+  const toggleFavorite = useCallback(async (nextMemo: Pick<MemoItem, 'id' | 'favorited'>) => {
     await (nextMemo.favorited
       ? memoRepository.unfavorite(nextMemo.id)
       : memoRepository.favorite(nextMemo.id));
@@ -160,7 +162,7 @@ export const NotebookTreeRow = memo(function NotebookTreeRow({
     useMemoStore.getState().triggerRefresh();
   }, []);
 
-  const changeColors = useCallback(async (nextMemo: MemoItem, colors: MemoColor[]) => {
+  const changeColors = useCallback(async (nextMemo: Pick<MemoItem, 'id'>, colors: MemoColor[]) => {
     await useMemoStore.getState().setMemoColors(nextMemo.id, colors);
     setMemo((current) => current?.id === nextMemo.id
       ? { ...current, colors }
@@ -206,6 +208,116 @@ export const NotebookTreeRow = memo(function NotebookTreeRow({
     setRenameValue(isFolder || !isNote ? item.name : displayTitleFromFilename(item.name));
   }, [isFolder, isNote, item.name]);
 
+  const showNativeContextMenu = async (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!canUseNativeContextMenu()) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Build the menu synchronously from tree metadata. Full memo loading is
+    // deferred until an action actually needs the complete record, so a slow
+    // read_memo call cannot delay the native popup itself.
+    const nativeMemo = displayedMemo;
+    const memoId = nativeMemo?.id ?? item.memoMeta?.id ?? null;
+    const memoFavorited = nativeMemo?.favorited ?? item.memoMeta?.favorited ?? false;
+    const memoColors = nativeMemo?.colors ?? item.memoMeta?.colors ?? [];
+    const runWithMemo = (action: (loaded: MemoItem) => void) => {
+      void (nativeMemo ? Promise.resolve(nativeMemo) : loadMemo())
+        .then((loaded) => {
+          if (loaded) action(loaded);
+          else toast.error(t('memo.fileTree.openFailed'));
+        })
+        .catch((error) => {
+          logNativeContextMenuError('notebook tree memo action', error);
+          toast.error(t('memo.fileTree.openFailed'));
+        });
+    };
+    const items: NativeContextMenuItems = [
+      { text: t('memo.fileTree.newNote'), action: () => onCreateNote(actionParentPath) },
+      { text: t('memo.fileTree.newFolder'), action: () => onCreateFolder(actionParentPath) },
+      {
+        text: t('memo.fileTree.rename'),
+        action: () => {
+          setRenameValue(isFolder || !isNote ? item.name : displayTitleFromFilename(item.name));
+          setRenaming(true);
+        },
+      },
+    ];
+
+    if (isFolder && onDeleteFolder) {
+      items.push(
+        { text: t('memo.fileTree.copyLink'), action: () => void navigator.clipboard.writeText(item.fullPath) },
+        { item: 'Separator' },
+        { text: t('memo.fileTree.delete'), action: () => setConfirmDelete(true) },
+      );
+    } else if (isMediaResource && onDeleteResource) {
+      items.push(
+        { item: 'Separator' },
+        { text: t('media.fileTree.delete'), action: () => setConfirmResourceDelete(true) },
+      );
+    } else if (isNote) {
+      const selectedColors = new Set(memoColors);
+      items.push(
+        { item: 'Separator' },
+        ...(onOpenInNewTab ? [{
+          text: t('memo.action.openInSplit'),
+          action: () => onOpenInNewTab(item.fullPath),
+        }] : []),
+        {
+          text: t(memoFavorited ? 'memo.action.unpin' : 'memo.action.pin'),
+          action: () => runWithMemo((loaded) => void toggleFavorite(loaded)),
+        },
+        {
+          text: t('document.action.properties'),
+          enabled: Boolean(memoId),
+          action: () => {
+            if (!memoId) return;
+            window.dispatchEvent(new CustomEvent('flowix:open-note-properties', {
+              detail: { memoId },
+            }));
+          },
+        },
+        {
+          text: t('document.action.copyLink'),
+          action: () => void navigator.clipboard.writeText(item.fullPath),
+        },
+        {
+          text: t('document.action.copyFullText'),
+          action: () => void memos.readDocument(item.fullPath)
+            .then((content) => navigator.clipboard.writeText(content ?? '')),
+        },
+        {
+          text: t('memo.fileTree.reveal'),
+          action: () => void product.revealInFileManager(item.fullPath),
+        },
+        {
+          text: t('memo.list.filterColorGroup'),
+          items: [
+            {
+              text: t('document.color.clear'),
+              checked: memoColors.length === 0,
+              action: () => runWithMemo((loaded) => void changeColors(loaded, [])),
+            },
+            { item: 'Separator' },
+            ...MEMO_COLORS.map((color) => ({
+              text: getMemoColorLabel(color, language),
+              checked: selectedColors.has(color),
+              action: () => {
+                const next = new Set(selectedColors);
+                if (next.has(color)) next.delete(color);
+                else next.add(color);
+                runWithMemo((loaded) => void changeColors(loaded, MEMO_COLORS.filter((value) => next.has(value))));
+              },
+            })),
+          ],
+        },
+        { item: 'Separator' },
+        { text: t('memo.action.delete'), action: () => runWithMemo(requestDelete) },
+      );
+    }
+
+    await popupNativeContextMenu(event, items);
+  };
+
   return (
     <>
       <ContextMenu onOpenChange={(open) => {
@@ -225,6 +337,12 @@ export const NotebookTreeRow = memo(function NotebookTreeRow({
           data-notebook-tree-kind={isFolder ? 'folder' : resourceKind}
           data-move-status={moveStatus}
           title={item.fullPath}
+          onContextMenu={(event) => {
+            void showNativeContextMenu(event).catch((error) => {
+              logNativeContextMenuError('notebook tree', error);
+              toast.error(t('memo.fileTree.openFailed'));
+            });
+          }}
           onClick={isFolder
             ? () => onToggle(item.fullPath)
             : (event) => onOpen(item.fullPath, event)}

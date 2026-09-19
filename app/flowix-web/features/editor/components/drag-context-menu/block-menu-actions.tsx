@@ -8,13 +8,14 @@ import {
 } from '@features/editor/components/drag-context-menu/items'
 import { useI18n } from '@/lib/i18n'
 
-export type BlockMenuActionGroup = 'heading' | 'list' | 'block' | 'danger'
+export type BlockMenuActionGroup = 'heading' | 'list' | 'block' | 'mode' | 'danger'
 
 export interface BlockMenuAction {
   id: string
   group: BlockMenuActionGroup
   icon: ReactNode
   label: string
+  trailingIcon?: ReactNode
   shortcut?: string
   onSelect: () => void
 }

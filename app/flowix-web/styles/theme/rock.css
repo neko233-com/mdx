@@ -15,11 +15,15 @@
 
 	/* Same lightness structure as mist, shifted to rock's olive-gray axis. */
 	--background: oklch(0.988 0.006 var(--neutral-hue));
+	--frame-bg: var(--background);
 	--foreground: oklch(0.300 0.009 var(--neutral-hue));
 	--card: oklch(0.997 0.003 92);
+	--list-bg: var(--card);
 
 	--popover: oklch(1 0 0);
 	--popover-foreground: var(--foreground);
+	/* 输入面独立于 document-bg；浅色模式保持纯白。 */
+	--input-bg: oklch(1 0 0);
 
 	--secondary: oklch(0.980 0.005 var(--neutral-hue));
 	--secondary-foreground: oklch(0.360 0.010 var(--neutral-hue));
@@ -41,18 +45,14 @@
 	--agent-status-surface: oklch(0.965 0.004 var(--neutral-hue));
 	--agent-foreground: color-mix(in oklch, var(--foreground) 66%, transparent);
 
-	--statusbar-bg: color-mix(in oklch, var(--card) 92%, var(--background));
-
 	--bg-titlebar: oklch(0.984 0.005 var(--neutral-hue));
 
-	--document-bg: oklch(1 0 0);
+	--document-bg: oklch(0.975 0.003 92);
 	--document-foreground: oklch(0.300 0.009 var(--neutral-hue));
 	--document-link: oklch(0.480 0.140 var(--brand-hue));
 	--document-highlight-bg: oklch(0.940 0.060 84);
 	--document-tag-bg: oklch(0.900 0 0);
 	--document-tag-foreground: var(--foreground);
-	--document-tag-hover-bg: oklch(0.860 0 0);
-
 	/* Match mist's perceived color weight; only rock-specific warm hues change. */
 	--memo-color-red:    oklch(64% 0.140 22);
 	--memo-color-orange: oklch(70% 0.130 48);
@@ -62,7 +62,6 @@
 	--memo-color-blue:   oklch(60% 0.150 257);
 	--memo-color-gray:   oklch(62% 0.008 var(--neutral-hue));
 
-	--code-bg: oklch(0.982 0.005 var(--neutral-hue));
 	--editor-block-bg: oklch(0.982 0.005 var(--neutral-hue));
 	/* Agent conversation surfaces currently follow editor blocks; keep the
 	 * semantic token separate so they can evolve independently later. */
@@ -77,8 +76,9 @@
 	--success: oklch(0.740 0.115 145);
 	--destructive: oklch(0.620 0.165 22);
 	--warning: oklch(0.800 0.105 75);
-	/* 信息提示: 与 light 同值 ── blue 跟 warm rock 中性灰拉得开, 不与 brand 抢 */
-	--info: oklch(0.62 0.165 235);
+	/* 信息提示: blue 跟 warm rock 中性灰拉得开, 不与 brand 抢；亮度下调以
+	 * 保证白字达到普通文字 AA 对比度。 */
+	--info: oklch(0.52 0.165 235);
 	--info-foreground: oklch(1 0 0);
 
 	color-scheme: light;

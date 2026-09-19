@@ -1,9 +1,8 @@
 /**
- * Multi-select value input. Stores its value as a YAML array on disk —
- * functionally identical to the legacy `Tags` row type (which is why
- * they round-trip through the same `convertRowValue` path), but
- * explicitly typed as `MultiSelect` so the dialog UI distinguishes
- * "tag chips" from "preset-bound keyword list" cleanly.
+ * Array-value input shared by MultiSelect, Tag, and Note Tags rows.
+ * With options it renders a preset-bound multi-select menu; without options
+ * it renders free-form chips. The row's semantic type remains owned by the
+ * property model, not by this reusable input component.
  */
 
 import { useState } from 'react';

@@ -39,6 +39,25 @@ function dispatchKey(
   return event;
 }
 
+function dispatchPaste(element: HTMLTextAreaElement, text: string, html = ''): ClipboardEvent {
+  const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+  const values: Record<string, string> = {
+    'text/plain': text,
+    'text/html': html,
+  };
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      types: Object.keys(values),
+      files: [],
+      getData(type: string) {
+        return values[type] ?? '';
+      },
+    },
+  });
+  element.dispatchEvent(event);
+  return event;
+}
+
 describe('MemoTitleEditor IME handling', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -195,5 +214,45 @@ describe('MemoTitleEditor IME handling', () => {
     expect(title?.tagName).toBe('DIV');
     expect(title?.getAttribute('contenteditable')).toBe('plaintext-only');
     expect(container.querySelector('textarea')).toBeNull();
+  });
+});
+
+describe('MemoTitleEditor title paste splitting', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('uses the first line as the title and routes the rest to the body', () => {
+    const onPasteToBody = vi.fn();
+    act(() => {
+      root.render(createElement(MemoTitleEditor, {
+        memoId: 'memo-1',
+        filename: 'Original.md',
+        editable: true,
+        onMoveToBody: vi.fn(),
+        onPasteToBody,
+      }));
+    });
+
+    const textarea = container.querySelector('textarea')!;
+    textarea.select();
+    const event = dispatchPaste(textarea, 'Pasted title\nFirst body line\nSecond body line');
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(titleSession.setDraft).toHaveBeenCalledWith('Pasted title');
+    expect(onPasteToBody).toHaveBeenCalledWith(expect.objectContaining({
+      text: 'First body line\nSecond body line',
+    }));
   });
 });

@@ -15,6 +15,7 @@
     "windows": [
       {
         "title": "",
+        "transparent": false,
         "decorations": false,
         "width": 1100,
         "height": 720,

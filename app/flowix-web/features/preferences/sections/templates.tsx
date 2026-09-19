@@ -68,11 +68,11 @@ export function TemplatesSection() {
           <p className="text-sm text-[var(--muted-foreground)]">{t('preferences.templates.empty')}</p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]">
+        <div className="space-y-3">
           {templates.map((template) => (
             <div
               key={template.id}
-              className="flex min-h-12 items-center gap-3 border-b border-[var(--divider)] px-3 py-2 last:border-b-0"
+              className="flex min-h-12 items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2"
             >
               <FileText className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
               <div className="min-w-0 flex-1">

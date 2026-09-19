@@ -24,6 +24,7 @@ import {
 } from '@features/memo/components/use-folder-tree';
 import { FileTypeIcon } from '@features/memo/components/file-type-icon';
 import { useI18n } from '@/lib/i18n';
+import { logNativeContextMenuError, popupNativeContextMenu } from '@platform/tauri/native-context-menu';
 
 const TREE_EDGE_GUTTER = 6;
 const ITEM_INLINE_PADDING = 6;
@@ -222,6 +223,48 @@ export function FolderFileTree({
               aria-expanded={isFolder ? isExpanded : undefined}
               tabIndex={0}
               title={item.fullPath}
+              onContextMenu={(event) => {
+                void popupNativeContextMenu(event, [
+                  ...(!isFolder && onFileOpenInNewTab ? [{
+                    text: t('memo.fileTree.openInNewTab'),
+                    action: () => onFileOpenInNewTab(item.fullPath),
+                  }] : []),
+                  {
+                    text: `${t('memo.fileTree.createdAt')}${formatTimestamp(item.createdMs)}`,
+                    enabled: false,
+                  },
+                  {
+                    text: `${t('memo.fileTree.updatedAt')}${formatTimestamp(item.modifiedMs)}`,
+                    enabled: false,
+                  },
+                  { item: 'Separator' },
+                  {
+                    text: t('memo.fileTree.newDocument'),
+                    action: () => setDraftRow({ parentPath: creationParentPath, kind: 'file', value: '' }),
+                  },
+                  {
+                    text: t('memo.fileTree.newFolder'),
+                    action: () => setDraftRow({ parentPath: creationParentPath, kind: 'folder', value: '' }),
+                  },
+                  {
+                    text: t('memo.fileTree.rename'),
+                    action: () => setRenaming({ item, value: item.name }),
+                  },
+                  {
+                    text: t('memo.fileTree.copyPath'),
+                    action: () => void handleCopyPath(item),
+                  },
+                  {
+                    text: t('memo.fileTree.reveal'),
+                    action: () => handleReveal(item),
+                  },
+                  { item: 'Separator' },
+                  {
+                    text: t('memo.fileTree.delete'),
+                    action: () => void handleDelete(item),
+                  },
+                ]).catch((error) => logNativeContextMenuError('folder file tree', error));
+              }}
               onClick={() => (isFolder ? tree.toggle(item.fullPath) : openDocument(item))}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {

@@ -10,7 +10,6 @@ export type PropertyDisplayKind =
   | 'boolean'
   | 'array'
   | 'color'
-  | 'list'
   | 'icon';
 
 export interface ResolvedPropertyType {
@@ -21,18 +20,18 @@ export interface ResolvedPropertyType {
 export const FIXED_PROPERTY_KINDS: Readonly<Record<string, PropertyKind>> = {
   name: 'Text',
   description: 'Text',
-  tags: 'MultiSelect',
-  flowix_colors: 'MultiSelect',
+  tags: 'Tags',
+  flowix_colors: 'Color',
   flowix_icon: 'Icon',
-  flowix_favorited: 'Select',
+  flowix_favorited: 'Boolean',
 };
 
 export const PROPERTY_URL_RE = /^https?:\/\/\S+$/i;
 export const PROPERTY_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-function inferValueKind(value: unknown, isFlowSequence: boolean): PropertyKind {
-  if (typeof value === 'boolean') return 'Select';
-  if (Array.isArray(value)) return isFlowSequence ? 'MultiSelect' : 'List';
+function inferValueKind(value: unknown): PropertyKind {
+  if (typeof value === 'boolean') return 'Boolean';
+  if (Array.isArray(value)) return 'MultiSelect';
   if (typeof value === 'number') return 'Number';
   if (typeof value === 'string' && PROPERTY_DATE_RE.test(value)) return 'Date';
   if (typeof value === 'string' && PROPERTY_URL_RE.test(value)) return 'URL';
@@ -47,6 +46,12 @@ function toDisplayKind(kind: PropertyKind, value: unknown): PropertyDisplayKind 
       return 'number';
     case 'Date':
       return 'date';
+    case 'Tags':
+      return 'array';
+    case 'Tag':
+      return 'array';
+    case 'Color':
+      return 'color';
     case 'URL':
       return 'url';
     case 'Icon':
@@ -55,8 +60,6 @@ function toDisplayKind(kind: PropertyKind, value: unknown): PropertyDisplayKind 
       return typeof value === 'boolean' ? 'boolean' : 'text';
     case 'MultiSelect':
       return 'array';
-    case 'List':
-      return 'list';
     case 'Text':
     default:
       return 'text';
@@ -66,18 +69,18 @@ function toDisplayKind(kind: PropertyKind, value: unknown): PropertyDisplayKind 
 export function resolvePropertyType(
   key: string,
   value: unknown,
-  isFlowSequence = false,
+  _isFlowSequence = false,
   customPresets: readonly PropertyFieldConfig[] = [],
 ): ResolvedPropertyType {
   const canonicalKey = canonicalizePropertyKey(key);
   const kind = FIXED_PROPERTY_KINDS[canonicalKey]
     ?? resolvePropertyPreset(canonicalKey, customPresets)?.kind
-    ?? inferValueKind(value, isFlowSequence);
+    ?? inferValueKind(value);
 
   return {
     kind,
-    // The color preset is stored as a MultiSelect, but it has its own
-    // semantic icon. Do not make it look like the tags/array property.
+    // Keep the legacy key-based color rendering for documents created before
+    // Color became an explicit semantic preset type.
     displayKind: canonicalKey === 'flowix_colors'
       ? 'color'
       : toDisplayKind(kind, value),

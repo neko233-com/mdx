@@ -1,8 +1,12 @@
 ﻿import { describe, expect, it, vi } from 'vitest';
 import type { JSONContent } from '@tiptap/core';
 
+const attachmentUploadMock = vi.hoisted(() => ({
+  handleFileUpload: vi.fn(),
+}));
+
 vi.mock('@features/editor/extensions/attachment-link/upload/plugin', () => ({
-  handleFileUpload: () => undefined,
+  handleFileUpload: attachmentUploadMock.handleFileUpload,
 }));
 
 vi.mock('@features/editor/extensions/note-link', () => ({
@@ -31,6 +35,28 @@ function cellText(table: JSONContent | null, row: number, cell: number): string 
 }
 
 describe('paste rule helpers', () => {
+  it('forwards the owning memo to file uploads', () => {
+    const rule = createManagedPasteRules().find(item => item.id === 'files');
+    if (!rule) throw new Error('files paste rule is missing');
+
+    const view = { state: { selection: { from: 7 } } };
+    const files = [{ name: 'paste.png', type: 'image/png' }] as unknown as File[];
+    attachmentUploadMock.handleFileUpload.mockClear();
+
+    expect(rule.run({
+      view,
+      files,
+      memoId: 'memo-a',
+    } as unknown as Parameters<typeof rule.run>[0])).toBe('handled');
+    expect(attachmentUploadMock.handleFileUpload).toHaveBeenCalledWith(
+      view,
+      files,
+      7,
+      undefined,
+      'memo-a',
+    );
+  });
+
   it('normalizes text/uri-list by ignoring comments', () => {
     const data = {
       types: ['text/uri-list'],

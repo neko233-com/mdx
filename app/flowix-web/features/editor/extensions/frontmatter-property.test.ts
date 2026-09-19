@@ -24,7 +24,7 @@ describe('frontmatter property helpers', () => {
       displayKind: 'text',
     });
     expect(resolvePropertyType('tags', 'alpha')).toEqual({
-      kind: 'MultiSelect',
+      kind: 'Tags',
       displayKind: 'array',
     });
     expect(resolvePropertyType('status', 'todo')).toEqual({
@@ -40,11 +40,11 @@ describe('frontmatter property helpers', () => {
       displayKind: 'url',
     });
     expect(resolvePropertyType('languages', ['Rust'])).toEqual({
-      kind: 'List',
-      displayKind: 'list',
+      kind: 'MultiSelect',
+      displayKind: 'array',
     });
     expect(resolvePropertyType('enabled', false)).toEqual({
-      kind: 'Select',
+      kind: 'Boolean',
       displayKind: 'boolean',
     });
   });
@@ -247,6 +247,20 @@ describe('frontmatter property helpers', () => {
       '---\nflowix_key: ra61em97\n---\nBody',
       [{ key: 'tags', value: 'not-an-array' }],
     )).toThrow(/Tags must be a list/);
+
+    const customTags = replaceVisibleFrontmatterProperties(
+      '---\nflowix_key: ra61em97\n---\nBody',
+      [{ key: 'topics', value: ['#work/path', 'work/path', '中文'], kind: 'Tags' }],
+    );
+    expect(extractFrontmatter(customTags).userData.topics)
+      .toEqual(['work/path', '中文']);
+
+    const genericTags = replaceVisibleFrontmatterProperties(
+      '---\nflowix_key: ra61em97\n---\nBody',
+      [{ key: 'keywords', value: ['#work', '带 空格'], kind: 'Tag' }],
+    );
+    expect(extractFrontmatter(genericTags).userData.keywords)
+      .toEqual(['#work', '带 空格']);
   });
 
   it('uses the Flowix product palette for internal note colors', () => {
@@ -267,6 +281,13 @@ describe('frontmatter property helpers', () => {
       'purple',
       'MultiSelect',
     )).toThrow(/product color palette/);
+
+    const customColor = replaceVisibleFrontmatterProperties(
+      '---\nflowix_key: ra61em97\n---\nBody',
+      [{ key: 'accent', value: ['blue', 'red'], kind: 'Color' }],
+    );
+    expect(extractFrontmatter(customColor).userData.accent)
+      .toEqual(['red', 'blue']);
   });
 
   it('renders the Flowix color palette for flowix_colors values', async () => {
@@ -348,8 +369,8 @@ describe('frontmatter property helpers', () => {
     const fixedPropertyKinds = [
       ['name', '文本'],
       ['description', '文本'],
-      ['tags', '标签'],
-      ['flowix_colors', '标签'],
+      ['tags', '笔记标签'],
+      ['flowix_colors', '颜色'],
       ['flowix_icon', '图标'],
     ] as const;
     fixedPropertyKinds.forEach(([key, label]) => {
@@ -567,10 +588,12 @@ describe('frontmatter property helpers', () => {
       '是否',
       '数字',
       '日期',
-      '图标',
       '单选',
+      '多选',
       '标签',
-      '列表',
+      '笔记标签',
+      '颜色',
+      '图标',
     ]);
     typeTrigger?.focus();
     await Promise.resolve();
@@ -594,7 +617,7 @@ describe('frontmatter property helpers', () => {
     host.remove();
   });
 
-  it('renders YAML lists as bullet points and saves list input as a block list', async () => {
+  it('renders YAML arrays with the multi-select editor', async () => {
     const host = document.createElement('div');
     document.body.append(host);
     const editor = new Editor({
@@ -607,30 +630,14 @@ describe('frontmatter property helpers', () => {
     await new Promise((resolve) => window.setTimeout(resolve, 0));
 
     const row = host.querySelector<HTMLElement>('[data-property-key="languages"]');
-    expect(row?.querySelectorAll('.frontmatter-property__value-list-item')).toHaveLength(3);
-    expect([...row?.querySelectorAll('.frontmatter-property__value-list-item') ?? []]
+    expect(row?.querySelectorAll('.frontmatter-property__value-chip')).toHaveLength(3);
+    expect([...row?.querySelectorAll('.frontmatter-property__value-chip') ?? []]
       .map((item) => item.textContent)).toEqual(['JavaScript', 'TypeScript', 'Rust']);
 
     row?.querySelector<HTMLElement>('.frontmatter-property__display-value')?.click();
     const popover = document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
-    expect(popover?.querySelector('.frontmatter-property__edit-type-label')?.textContent)
-      .toBe('列表');
-    const input = popover?.querySelector<HTMLTextAreaElement>('.frontmatter-property__edit-list-input');
-    expect(input?.value).toBe('JavaScript\nTypeScript\nRust');
-    if (input) {
-      input.value = 'JavaScript\nTypeScript\nRust\nGo';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Enter',
-        bubbles: true,
-        ctrlKey: true,
-      }));
-    }
-
-    const yamlContent = String(editor.state.doc.firstChild?.attrs.yamlContent ?? '');
-    expect(parseVisibleFrontmatter(yamlContent).userData.languages)
-      .toEqual(['JavaScript', 'TypeScript', 'Rust', 'Go']);
-    expect(yamlContent).toContain('languages:\n  - JavaScript\n  - TypeScript\n  - Rust\n  - Go');
+    expect(popover?.querySelectorAll('.frontmatter-property__edit-tag-chip')).toHaveLength(3);
+    expect(popover?.querySelector('.frontmatter-property__edit-list-input')).toBeNull();
 
     editor.destroy();
     host.remove();
@@ -934,7 +941,7 @@ describe('frontmatter property helpers', () => {
     host.remove();
   });
 
-  it('renders tag, date, and checkbox controls for their selected value types', async () => {
+  it('renders date and checkbox controls for custom value types', async () => {
     const host = document.createElement('div');
     document.body.append(host);
     const editor = new Editor({
@@ -952,10 +959,7 @@ describe('frontmatter property helpers', () => {
       )?.click();
       return document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
     };
-    const selectType = (
-      popover: HTMLElement,
-      type: 'MultiSelect' | 'Date' | 'Select',
-    ) => {
+    const selectType = (popover: HTMLElement, type: 'Date' | 'Boolean') => {
       popover.querySelector<HTMLButtonElement>('.frontmatter-property__edit-type-trigger')?.click();
       popover.querySelector<HTMLButtonElement>(
         `.frontmatter-property__edit-type-option[data-value="${type}"]`,
@@ -965,26 +969,6 @@ describe('frontmatter property helpers', () => {
     let popover = openValueEditor();
     expect(popover?.querySelector<HTMLTextAreaElement>('.frontmatter-property__edit-input'))
       .not.toBeNull();
-    if (popover) selectType(popover, 'MultiSelect');
-    const tagInput = popover?.querySelector<HTMLInputElement>('.frontmatter-property__edit-tags-input');
-    expect(tagInput).not.toBeNull();
-    if (tagInput) {
-      tagInput.value = 'alpha';
-      tagInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      const chip = popover?.querySelector('.frontmatter-property__edit-tag-chip');
-      expect(chip?.textContent).toContain('alpha');
-      expect(chip?.textContent).not.toContain('#');
-      expect(chip?.classList.contains('frontmatter-property__edit-tag-chip--plain')).toBe(true);
-      tagInput.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Enter',
-        bubbles: true,
-        ctrlKey: true,
-      }));
-    }
-    let yamlContent = String(editor.state.doc.firstChild?.attrs.yamlContent ?? '');
-    expect(parseVisibleFrontmatter(yamlContent).userData.labels).toEqual(['alpha']);
-
-    popover = openValueEditor();
     if (popover) selectType(popover, 'Date');
     await Promise.resolve();
     const dateButton = popover?.querySelector<HTMLButtonElement>(
@@ -1006,11 +990,11 @@ describe('frontmatter property helpers', () => {
       bubbles: true,
       ctrlKey: true,
     }));
-    yamlContent = String(editor.state.doc.firstChild?.attrs.yamlContent ?? '');
+    let yamlContent = String(editor.state.doc.firstChild?.attrs.yamlContent ?? '');
     expect(parseVisibleFrontmatter(yamlContent).userData.labels).toBe('2026-09-13');
 
     popover = openValueEditor();
-    if (popover) selectType(popover, 'Select');
+    if (popover) selectType(popover, 'Boolean');
     const checkbox = popover?.querySelector<HTMLInputElement>('.frontmatter-property__edit-checkbox');
     expect(checkbox?.type).toBe('checkbox');
     if (checkbox) {
@@ -1075,7 +1059,7 @@ describe('frontmatter property helpers', () => {
     valueCell?.click();
     const popover = document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
     expect(popover?.querySelector('.frontmatter-property__edit-type-label')?.textContent)
-      .toBe('标签（预设属性不可修改）');
+      .toBe('笔记标签（预设属性不可修改）');
     const input = popover?.querySelector<HTMLInputElement>('.frontmatter-property__edit-tags-input');
     expect(input).not.toBeNull();
     expect(popover?.querySelector('.frontmatter-property__edit-tag-remove')).toBeNull();
@@ -1140,7 +1124,7 @@ describe('frontmatter property helpers', () => {
     host.remove();
   });
 
-  it('converts list values when switching to the multi-select editor', async () => {
+  it('does not expose removed list or multi-select types for unconfigured fields', async () => {
     const host = document.createElement('div');
     document.body.append(host);
     const editor = new Editor({
@@ -1155,47 +1139,18 @@ describe('frontmatter property helpers', () => {
       '[data-property-key="labels"] .frontmatter-property__display-value',
     )?.click();
     const popover = document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
-    popover?.querySelector<HTMLButtonElement>('.frontmatter-property__edit-type-trigger')?.click();
-    popover?.querySelector<HTMLButtonElement>(
-      '.frontmatter-property__edit-type-option[data-value="MultiSelect"]',
-    )?.click();
-
-    const chips = popover?.querySelectorAll('.frontmatter-property__edit-tag-chip') ?? [];
-    expect([...chips].map((chip) => chip.textContent)).toEqual(['alpha', 'beta']);
-    const input = popover?.querySelector<HTMLInputElement>('.frontmatter-property__edit-tags-input');
-    input?.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter',
-      bubbles: true,
-      ctrlKey: true,
-    }));
-    expect(parseVisibleFrontmatter(
-      String(editor.state.doc.firstChild?.attrs.yamlContent ?? ''),
-    ).userData.labels).toEqual(['alpha', 'beta']);
-
-    host.querySelector<HTMLElement>(
-      '[data-property-key="labels"] .frontmatter-property__display-value',
-    )?.click();
-    const reopenedPopover = document.body.querySelector<HTMLElement>('.frontmatter-property__edit-popover');
-    reopenedPopover?.querySelector<HTMLButtonElement>('.frontmatter-property__edit-type-trigger')?.click();
-    reopenedPopover?.querySelector<HTMLButtonElement>(
-      '.frontmatter-property__edit-type-option[data-value="List"]',
-    )?.click();
-    const listInput = reopenedPopover?.querySelector<HTMLTextAreaElement>('.frontmatter-property__edit-list-input');
-    expect(listInput?.value).toBe('alpha\nbeta');
-    listInput?.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter',
-      bubbles: true,
-      ctrlKey: true,
-    }));
-    expect(parseVisibleFrontmatter(
-      String(editor.state.doc.firstChild?.attrs.yamlContent ?? ''),
-    ).userData.labels).toEqual(['alpha', 'beta']);
+    const typeTrigger = popover?.querySelector<HTMLButtonElement>('.frontmatter-property__edit-type-trigger');
+    typeTrigger?.click();
+    expect(popover?.querySelector('[data-value="Icon"]')).toBeNull();
+    expect(popover?.querySelector('[data-value="Select"]')).toBeNull();
+    expect(popover?.querySelector('[data-value="MultiSelect"]')).toBeNull();
+    expect(popover?.querySelector('[data-value="Tag"]')).not.toBeNull();
 
     editor.destroy();
     host.remove();
   });
 
-  it('adds an empty text property at the end of the property list', async () => {
+  it('adds an empty text property in response to the title property action', async () => {
     const host = document.createElement('div');
     document.body.append(host);
     const editor = new Editor({
@@ -1212,7 +1167,9 @@ describe('frontmatter property helpers', () => {
     expect([...host.querySelectorAll('.frontmatter-property__key')]
       .map((element) => element.textContent)).toEqual(['status']);
 
-    host.querySelector<HTMLButtonElement>('.frontmatter-property__add-property')?.click();
+    window.dispatchEvent(new CustomEvent('flowix:add-property', {
+      detail: { memoId: '8c7dxu0l' },
+    }));
     expect([...host.querySelectorAll('.frontmatter-property__key')]
       .map((element) => element.textContent)).toEqual(['status', 'key1']);
     expect(host.querySelector('[data-property-key="key1"] .frontmatter-property__value-text')?.textContent)
@@ -1221,7 +1178,9 @@ describe('frontmatter property helpers', () => {
       String(editor.state.doc.firstChild?.attrs.yamlContent ?? ''),
     ).userData.key1).toBe('');
 
-    host.querySelector<HTMLButtonElement>('.frontmatter-property__add-property')?.click();
+    window.dispatchEvent(new CustomEvent('flowix:add-property', {
+      detail: { memoId: '8c7dxu0l' },
+    }));
     expect([...host.querySelectorAll('.frontmatter-property__key')]
       .map((element) => element.textContent)).toEqual(['status', 'key1', 'key2']);
 
@@ -1242,9 +1201,11 @@ describe('frontmatter property helpers', () => {
     await new Promise((resolve) => window.setTimeout(resolve, 0));
 
     expect(host.querySelector('.frontmatter-property__list')).toBeNull();
-    expect(host.querySelector('.frontmatter-property__add-property')).not.toBeNull();
+    expect(host.querySelector('.frontmatter-property__add-property')).toBeNull();
 
-    host.querySelector<HTMLButtonElement>('.frontmatter-property__add-property')?.click();
+    window.dispatchEvent(new CustomEvent('flowix:add-property', {
+      detail: { memoId: '8c7dxu0l' },
+    }));
 
     expect(host.querySelector('.frontmatter-property__list')).not.toBeNull();
     expect(host.querySelector('[data-property-key="key1"]')).not.toBeNull();

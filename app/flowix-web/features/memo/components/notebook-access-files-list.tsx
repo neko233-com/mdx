@@ -13,6 +13,8 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { NotebookIcon } from '@features/memo/components/notebook-icon';
 import type { Notebook } from '@features/memo/store/memo-store';
 import { openBrowserColumnFileBrowser } from '@features/workspace/use-cases/browser-column-navigation';
+import { canUseNativeContextMenu, logNativeContextMenuError, popupNativeContextMenu } from '@platform/tauri/native-context-menu';
+import { loadNativeMenuIcons } from '@platform/tauri/native-menu-icons';
 
 /**
  * Shows add-dir entries for the selected notebook.  The notebook itself is
@@ -39,6 +41,7 @@ const ACCESS_MENU_CLASS =
   'w-[160px] space-y-0.5 rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]';
 const ACCESS_MENU_ITEM_CLASS =
   'h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]';
+const ACCESS_NATIVE_ICON_NAMES = ['delete'] as const;
 
 export function NotebookAccessFilesList({
   notebook,
@@ -153,6 +156,18 @@ export function NotebookAccessFilesList({
                 tabIndex={canBrowse ? 0 : undefined}
                 title={rowTitle}
                 aria-current={isBrowsing ? 'true' : undefined}
+                onContextMenu={(event) => {
+                  if (!canUseNativeContextMenu()) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void loadNativeMenuIcons(ACCESS_NATIVE_ICON_NAMES)
+                    .then((icons) => popupNativeContextMenu(event, [{
+                      text: t('agent.access.contextDelete'),
+                      icon: icons.delete!,
+                      action: () => void handleRemoveFolder(item.path),
+                    }]))
+                    .catch((error) => logNativeContextMenuError('notebook access file', error));
+                }}
                 onClick={
                   canBrowse
                     ? () => {

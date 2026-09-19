@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { Check, ChevronRight, Code2, Ellipsis, Loader2, Palette } from 'lucide-react';
 import {
   LinkSimpleIcon,
@@ -10,6 +10,7 @@ import {
   PushPinSlashIcon,
   FileMdIcon,
   FileDocIcon,
+  FilePdfIcon,
   ClockIcon,
   TrashSimpleIcon,
   SwatchesIcon,
@@ -56,6 +57,23 @@ import { computeAgentThreadCardBadgeData } from '@features/agent/thread-card/run
 import { createRuntimeInfoRequester } from '@features/agent/thread-card/runtime/runtime-info-requester';
 import { getResolvedExternalSessionId } from '@features/agent/services/external-agent-runtime-service';
 import { getAgentConversationRuntimeCwd } from '@features/agent/conversation-presentation';
+import menuLinkSvg from '@/assets/menu-icons/link.svg?raw';
+import menuCopySvg from '@/assets/menu-icons/copy.svg?raw';
+import menuPinSvg from '@/assets/menu-icons/pin.svg?raw';
+import menuUnpinSvg from '@/assets/menu-icons/unpin.svg?raw';
+import menuCodeSvg from '@/assets/menu-icons/code.svg?raw';
+import menuTemplateSvg from '@/assets/menu-icons/template.svg?raw';
+import menuMarkdownSvg from '@/assets/menu-icons/markdown.svg?raw';
+import menuWordSvg from '@/assets/menu-icons/word.svg?raw';
+import menuPdfSvg from '@/assets/menu-icons/pdf.svg?raw';
+import menuHistorySvg from '@/assets/menu-icons/history.svg?raw';
+import menuDeleteSvg from '@/assets/menu-icons/delete.svg?raw';
+import {
+  canUseNativeContextMenu,
+  nativeMenuPositionBelowEnd,
+  popupNativeContextMenu,
+  type NativeContextMenuItems,
+} from '@platform/tauri/native-context-menu';
 
 const logger = createLogger('document-titlebar');
 
@@ -98,6 +116,7 @@ export interface DocumentTitlebarProps {
     onExportMarkdown: () => void;
     onSaveAsTemplate: () => void;
     onExportWord: () => void;
+    onExportPdf: () => void;
     onRequestDeleteMemo: () => void;
     onColorsChange?: (next: MemoColor[]) => void;
     editorMode: DocumentEditorMode;
@@ -559,6 +578,45 @@ function formatVersionSize(size: number): string {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
+async function loadNativeMoreMenuIcons(isPinned: boolean) {
+  const { phosphorMenuIcon } = await import('@platform/tauri/phosphor-menu-icon');
+  const [
+    linkIcon,
+    copyIcon,
+    pinIcon,
+    codeIcon,
+    templateIcon,
+    markdownIcon,
+    wordIcon,
+    pdfIcon,
+    historyIcon,
+    deleteIcon,
+  ] = await Promise.all([
+    phosphorMenuIcon('link', menuLinkSvg),
+    phosphorMenuIcon('copy', menuCopySvg),
+    phosphorMenuIcon(isPinned ? 'unpin' : 'pin', isPinned ? menuUnpinSvg : menuPinSvg),
+    phosphorMenuIcon('code', menuCodeSvg),
+    phosphorMenuIcon('template', menuTemplateSvg),
+    phosphorMenuIcon('markdown', menuMarkdownSvg),
+    phosphorMenuIcon('word', menuWordSvg),
+    phosphorMenuIcon('pdf', menuPdfSvg),
+    phosphorMenuIcon('history', menuHistorySvg),
+    phosphorMenuIcon('delete', menuDeleteSvg),
+  ]);
+  return {
+    linkIcon,
+    copyIcon,
+    pinIcon,
+    codeIcon,
+    templateIcon,
+    markdownIcon,
+    wordIcon,
+    pdfIcon,
+    historyIcon,
+    deleteIcon,
+  };
+}
+
 function VersionHistorySubmenu({
   memoId,
   refreshKey,
@@ -708,6 +766,7 @@ export function MemoActions({
   onExportMarkdown,
   onSaveAsTemplate,
   onExportWord,
+  onExportPdf,
   onRequestDeleteMemo,
   onColorsChange,
   editorMode,
@@ -725,6 +784,7 @@ export function MemoActions({
   onExportMarkdown: () => void;
   onSaveAsTemplate: () => void;
   onExportWord: () => void;
+  onExportPdf: () => void;
   onRequestDeleteMemo: () => void;
   onColorsChange: (next: MemoColor[]) => void;
   editorMode: DocumentEditorMode;
@@ -739,6 +799,41 @@ export function MemoActions({
   const [confirmVersion, setConfirmVersion] = useState<MemoVersionMeta | null>(null);
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
   const [versionRefreshKey, setVersionRefreshKey] = useState(0);
+  const [nativeVersionHistory, setNativeVersionHistory] = useState<MemoVersionMeta[] | null>(null);
+
+  // Warm native menu resources in the background so the click handler only
+  // assembles and opens the menu. The cache also makes this cheap after the
+  // first render and automatically retries failed icon rasterization.
+  useEffect(() => {
+    if (!canUseNativeContextMenu()) return;
+    void loadNativeMoreMenuIcons(isPinned).catch((error) => {
+      logger.debug('preloading native document menu icons failed', { error: String(error) });
+    });
+  }, [isPinned]);
+
+  // Version history is intentionally prefetched for the native menu. The
+  // native popup must appear immediately; a slow history query should leave a
+  // disabled loading submenu rather than block every other action.
+  useEffect(() => {
+    if (!canUseNativeContextMenu() || !canViewVersionHistory) {
+      setNativeVersionHistory(null);
+      return;
+    }
+    let active = true;
+    setNativeVersionHistory(null);
+    void memosClient.listVersions(memo.id)
+      .then((versions) => {
+        if (active) setNativeVersionHistory(versions);
+      })
+      .catch((error) => {
+        if (!active) return;
+        logger.error('prefetch native version history failed', { error, memoId: memo.id });
+        toast.error(t("document.version.loadFailed"));
+      });
+    return () => {
+      active = false;
+    };
+  }, [canViewVersionHistory, memo.id, t, versionRefreshKey]);
 
   const handleConfirmRestoreVersion = async () => {
     if (!confirmVersion || restoringVersionId) return;
@@ -794,6 +889,83 @@ export function MemoActions({
     }
   };
 
+  const showNativeMoreMenu = async (event: ReactMouseEvent<HTMLButtonElement>) => {
+    const popupPosition = nativeMenuPositionBelowEnd(event.currentTarget, 200);
+    const {
+      linkIcon,
+      copyIcon,
+      pinIcon,
+      codeIcon,
+      templateIcon,
+      markdownIcon,
+      wordIcon,
+      pdfIcon,
+      historyIcon,
+      deleteIcon,
+    } = await loadNativeMoreMenuIcons(isPinned);
+    const items: NativeContextMenuItems = [
+      { text: t("document.action.copyLink"), icon: linkIcon, action: onCopyLink },
+      ...(canCopyFullText ? [{
+        text: t("document.action.copyFullText"),
+        icon: copyIcon,
+        action: onCopyFullText,
+      }] : []),
+      {
+        text: t(isPinned ? "document.action.unpin" : "document.action.pin"),
+        icon: pinIcon,
+        action: onTogglePin,
+      },
+      {
+        text: editorMode === 'source'
+          ? t("document.action.richTextMode")
+          : t("document.action.sourceMode"),
+        icon: codeIcon,
+        action: onToggleEditorMode,
+      },
+    ];
+
+    if (canSaveAsTemplate || canExportContent) items.push({ item: 'Separator' });
+    if (canSaveAsTemplate) {
+      items.push({
+        text: t("document.action.saveAsTemplate"),
+        icon: templateIcon,
+        action: onSaveAsTemplate,
+      });
+    }
+    if (canExportContent) {
+      items.push(
+        { text: t("document.action.exportMarkdown"), icon: markdownIcon, action: onExportMarkdown },
+        { text: t("document.action.exportWord"), icon: wordIcon, action: onExportWord },
+        { text: t("document.action.exportPdf"), icon: pdfIcon, action: onExportPdf },
+      );
+    }
+
+    items.push({ item: 'Separator' });
+    if (canViewVersionHistory) {
+      const orderedVersions = [...(nativeVersionHistory ?? [])].sort((a, b) => b.createdAt - a.createdAt);
+      items.push({
+        text: t("document.version.menuLabel"),
+        icon: historyIcon,
+        items: nativeVersionHistory === null
+          ? [{ text: t("memo.fileTree.loading"), enabled: false }]
+          : orderedVersions.length > 0
+          ? orderedVersions.map((version) => ({
+              text: `${formatVersionTime(version.createdAt, language)} · ${translate(language, VERSION_SOURCE_LABEL_KEYS[version.source] ?? "") || version.source} · ${version.title || version.filename} · ${formatVersionSize(version.size)}`,
+              enabled: restoringVersionId !== version.id,
+              action: () => setConfirmVersion(version),
+            }))
+          : [{ text: t("document.version.empty"), enabled: false }],
+      });
+    }
+    items.push({
+      text: t("document.action.delete"),
+      icon: deleteIcon,
+      action: onRequestDeleteMemo,
+    });
+
+    await popupNativeContextMenu(event, items, popupPosition);
+  };
+
   return (
     <>
       <MemoColorPicker
@@ -801,6 +973,21 @@ export function MemoActions({
         iconButtonClass={iconButtonClass}
         onChange={onColorsChange}
       />
+      {canUseNativeContextMenu() ? (
+        <Tooltip content={t("document.titlebar.moreTooltip")}>
+          <button
+            type="button"
+            className={iconButtonClass}
+            onClick={(event) => {
+              void showNativeMoreMenu(event).catch((error) => {
+                logger.error('open native document actions menu failed', { error, memoId: memo.id });
+              });
+            }}
+          >
+            <Ellipsis className="w-4 h-4" />
+          </button>
+        </Tooltip>
+      ) : (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Tooltip content={t("document.titlebar.moreTooltip")}>
@@ -868,6 +1055,12 @@ export function MemoActions({
               >
                 <FileDocIcon className="w-4 h-4 mr-2" /> {t("document.action.exportWord")}
               </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={onExportPdf}
+                className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
+              >
+                <FilePdfIcon className="w-4 h-4 mr-2" /> {t("document.action.exportPdf")}
+              </DropdownMenuItem>
             </>
           )}
           <div role="separator" aria-hidden="true" className="mx-2 my-1 h-px bg-[var(--border-popup)] opacity-60" />
@@ -887,6 +1080,7 @@ export function MemoActions({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      )}
       <Dialog open={!!confirmVersion} onOpenChange={(open) => !open && setConfirmVersion(null)}>
         <DialogContent className="rounded-xl border border-[var(--border-popup)] bg-[var(--card)] shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]">
           <DialogHeader>

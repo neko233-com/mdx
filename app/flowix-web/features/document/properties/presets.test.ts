@@ -4,6 +4,7 @@ import type { PropertyFieldConfig } from '@/lib/constants';
 import {
   getAllPresets,
   getCustomPresets,
+  CUSTOM_PROPERTY_KINDS,
   isBuiltinPresetKey,
   PROPERTY_KINDS,
   resolvePropertyPreset,
@@ -95,5 +96,45 @@ describe('property preset runtime model', () => {
 
   it('does not expose URL as a configurable custom type', () => {
     expect(PROPERTY_KINDS).not.toContain('URL');
+    expect(PROPERTY_KINDS).toEqual([
+      'Text', 'Boolean', 'Number', 'Date',
+      'Select', 'MultiSelect', 'Tag', 'Tags', 'Color', 'Icon',
+    ]);
+    expect(CUSTOM_PROPERTY_KINDS).toEqual(['Text', 'Boolean', 'Number', 'Date', 'Tag']);
+    expect(getAllPresets([], label).map((preset) => [preset.key, preset.kind])).toContainEqual(['tags', 'Tags']);
+    expect(getAllPresets([], label).map((preset) => [preset.key, preset.kind])).toContainEqual(['flowix_colors', 'Color']);
+  });
+
+  it('ignores options for semantic tag and color presets', () => {
+    expect(getCustomPresets([
+      { key: 'topics', name: '主题', type: 'Tags', options: ['旧选项'] },
+      { key: 'keywords', name: '关键词', type: 'Tag', options: ['旧选项'] },
+      { key: 'accent', name: '强调色', type: 'Color', options: ['blue'] },
+    ])).toEqual([
+      {
+        source: 'custom',
+        category: 'custom',
+        key: 'topics',
+        label: '主题',
+        kind: 'Tags',
+        options: undefined,
+      },
+      {
+        source: 'custom',
+        category: 'custom',
+        key: 'keywords',
+        label: '关键词',
+        kind: 'Tag',
+        options: undefined,
+      },
+      {
+        source: 'custom',
+        category: 'custom',
+        key: 'accent',
+        label: '强调色',
+        kind: 'Color',
+        options: undefined,
+      },
+    ]);
   });
 });

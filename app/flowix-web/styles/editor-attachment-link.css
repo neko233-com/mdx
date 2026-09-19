@@ -306,6 +306,6 @@ body.is-image-resizing {
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) a:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):hover {
   /* hover 状态不单独维护 token, 直接基于 --document-link 与白色 20% 混色提亮:
    * - 单一来源: --document-link 决定基色, hover 由派生公式统一管理
-   * - 跨主题一致: 三套主题共享同一公式, 不会有"某主题的 hover 没设计"的问题 */
+   * - 跨主题一致: 各主题共享同一公式, 不会有"某主题的 hover 没设计"的问题 */
   color: color-mix(in oklch, var(--document-link), white 20%);
 }

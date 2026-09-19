@@ -49,6 +49,9 @@
 .code-block-header {
   order: 1;
   display: flex;
+  height: 24px;
+  min-height: 24px;
+  box-sizing: border-box;
   justify-content: space-between;
   align-items: center;
   padding: 0rem;
@@ -98,13 +101,13 @@
   border-radius: 0.5rem;
   cursor: pointer;
   font-size: 0.75rem;
-  color: #666;
+  color: var(--muted-foreground);
   position: relative;
   z-index: 1;
 }
 
 .code-block-language-selector:hover {
-  color: #949292;
+  color: var(--foreground);
 }
 
 .code-block-copy-btn {
@@ -117,11 +120,10 @@
   background: transparent;
   border-radius: 0.38rem;
   cursor: pointer;
-  color: #888;
+  color: var(--muted-foreground);
 }
 
 .code-block-copy-btn:hover {
-  background: color-mix(in oklch, var(--muted) 60%, transparent);
   color: var(--foreground);
 }
 
@@ -261,8 +263,8 @@
 }
 
 .code-block-copy-btn.copied {
-  color: #22c55e;
-  border-color: #22c55e;
+  color: var(--muted-foreground);
+  border-color: var(--muted-foreground);
 }
 
 .code-block-mermaid-preview {
@@ -351,7 +353,7 @@
   padding: 0;
   border: 0;
   border-radius: 0.38rem;
-  color: #888;
+  color: var(--muted-foreground);
   background: transparent;
   cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
@@ -536,7 +538,7 @@
  * 视觉共享 ──
  *   - 28×28 方形 / 14×14 icon / 透明底 / 0.38rem 圆角
  *   - 0 边框 / 0 阴影 (与入口一致, 不在 overlay 上额外加视觉重量)
- *   - 默认色 #888, hover var(--muted) 60% + foreground
+ *   - 默认色 var(--muted-foreground), hover var(--muted) 60% + foreground
  *
  * 定位独立 ──
  *   - 由父级 .code-block-fullscreen-actions 容器定位, 本按钮退化为
@@ -599,7 +601,7 @@
 
 /* 中间"百分比 / 还原"按钮 ── 比两侧 +/- 按钮宽, 留给百分比文本足够
  * 水平空间。视觉仍走 .code-block-fullscreen-btn 同源 (28×28 / 0.38rem
- * 圆角 / #888 / hover var(--muted)), 区别仅在 width 拉长 ── 改其它
+ * 圆角 / muted-foreground / hover var(--muted)), 区别仅在 width 拉长 ── 改其它
  * 视觉 token 会自动跟随, 不会"看起来不一样"。
  *
  * 纯文本显示 ── 之前内嵌 fit 图标 + 百分比双段内容, 现在去掉左侧

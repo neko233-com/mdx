@@ -1,10 +1,10 @@
 'use client';
 
-import { memo, useEffect, useState, type ReactNode } from 'react';
+import { memo, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { displayTitleFromFilename } from '@/lib/utils';
-import { ListTodo, MoreHorizontal } from 'lucide-react';
+import { ListTodo } from 'lucide-react';
 import { PushPin } from '@phosphor-icons/react';
-import { MEMO_COLOR_HEX } from '@features/memo/store/memo-store';
+import { MEMO_COLORS, MEMO_COLOR_HEX, useMemoStore } from '@features/memo/store/memo-store';
 import type { MemoColor, MemoItem } from '@/types/memo-item';
 import { cn } from '@/lib/utils';
 import { getAgentType } from '@/lib/agent-types';
@@ -13,27 +13,29 @@ import { useI18n } from '@/lib/i18n';
 import { formatTimeAgo } from '@/lib/format-time-ago';
 import { AgentIcon } from '@features/agent/components/agent-icon';
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from '@shared/ui/dropdown-menu';
-import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
 } from '@shared/ui/context-menu';
-import { MemoCardActions } from '@features/memo/components/memo-card-actions';
+import { getMemoColorLabel, MemoCardActions } from '@features/memo/components/memo-card-actions';
+import { buildMemoCardContextMenuItems } from '@features/memo/menus/memo-card-context-menu';
 import { assetUrl, decodeStorageKey } from '@features/editor/extensions/attachment-link/utils';
 import { TagIcon } from '@shared/ui/tag-icon';
+import { memos as memosClient, product } from '@platform/tauri/client';
+import { resolveMemoSessionPath } from '@features/memo/use-cases/open-memo-session';
+import { toast } from '@/lib/toast';
+import { canUseNativeContextMenu, logNativeContextMenuError, popupNativeContextMenu } from '@platform/tauri/native-context-menu';
+import { loadNativeMenuIcons } from '@platform/tauri/native-menu-icons';
+
+const MEMO_CARD_NATIVE_ICON_NAMES = [
+  'split', 'pin', 'unpin', 'info', 'link', 'copy', 'folder-open', 'palette', 'delete',
+] as const;
 
 interface MemoCardProps {
   memo: MemoItem;
   tagMap: Record<string, string>;
   isSelected: boolean;
-  isDropdownOpen: boolean;
-  onOpenDropdown: (id: string | null) => void;
   onSelect: (memo: MemoItem) => void;
   onOpenInWindow?: (memo: MemoItem) => void;
   onFavoriteToggle: (memo: MemoItem) => void;
@@ -59,10 +61,7 @@ interface MemoCardBodyProps {
 interface MemoCardShellProps {
   memo: MemoItem;
   isSelected: boolean;
-  isDropdownOpen: boolean;
-  moreLabel: string;
   children: ReactNode;
-  onOpenDropdown: (id: string | null) => void;
   onSelect: (memo: MemoItem) => void;
   onOpenInWindow?: (memo: MemoItem) => void;
   onFavoriteToggle: (memo: MemoItem) => void;
@@ -133,117 +132,132 @@ function ColorDots({ colors, limit, className }: { colors: MemoItem['colors']; l
   );
 }
 
-function MemoCardMoreMenu({
-  memo,
-  isDropdownOpen,
-  moreLabel,
-  onOpenDropdown,
-  onOpenInWindow,
-  onFavoriteToggle,
-  onDelete,
-  onColorsChange,
-}: Pick<
-  MemoCardShellProps,
-  'memo' | 'isDropdownOpen' | 'moreLabel' | 'onOpenDropdown' | 'onOpenInWindow' | 'onFavoriteToggle' | 'onDelete' | 'onColorsChange'
->) {
-  return (
-    <div className="absolute right-3 top-2 z-100 shrink-0 items-center gap-1">
-      <DropdownMenu
-        open={isDropdownOpen}
-        onOpenChange={(open) => onOpenDropdown(open ? memo.id : null)}
-      >
-        <DropdownMenuTrigger
-          asChild
-          onClick={(event) => event.stopPropagation()}
-        >
-          <button
-            type="button"
-            aria-label={moreLabel}
-            className={cn(
-              'rounded p-1 text-[var(--muted-foreground)] opacity-0 transition-[opacity,color] group-hover:opacity-100 hover:text-[var(--foreground)]',
-            )}
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="end"
-          className="w-[180px] space-y-0.5 rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]"
-        >
-          <MemoCardActions
-            memo={memo}
-            onOpenInSplit={
-              onOpenInWindow
-                ? (nextMemo) => {
-                    onOpenDropdown(null);
-                    onOpenInWindow(nextMemo);
-                  }
-                : undefined
-            }
-            onFavoriteToggle={(nextMemo) => {
-              onOpenDropdown(null);
-              onFavoriteToggle(nextMemo);
-            }}
-            onDelete={(nextMemo) => {
-              onOpenDropdown(null);
-              onDelete(nextMemo);
-            }}
-            onColorsChange={
-              onColorsChange
-                ? (nextMemo, nextColors) => {
-                    onOpenDropdown(null);
-                    onColorsChange(nextMemo, nextColors);
-                  }
-                : undefined
-            }
-            Item={DropdownMenuItem}
-          />
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  );
-}
-
 function MemoCardShell({
   memo,
   isSelected,
-  isDropdownOpen,
-  moreLabel,
   children,
-  onOpenDropdown,
   onSelect,
   onOpenInWindow,
   onFavoriteToggle,
   onDelete,
   onColorsChange,
 }: MemoCardShellProps) {
+  const { t, language } = useI18n();
+
+  useEffect(() => {
+    if (!canUseNativeContextMenu()) return;
+    void loadNativeMenuIcons(MEMO_CARD_NATIVE_ICON_NAMES)
+      .catch((error) => logNativeContextMenuError('memo card icon preload', error));
+  }, [memo.favorited]);
+
+  const resolvePath = () => resolveMemoSessionPath(
+    memo,
+    useMemoStore.getState().selectedNotebook,
+  );
+
+  const writeClipboardText = async (text: string) => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+    }
+    toast.success(t('document.command.copySuccess'));
+  };
+
+  const showNativeMenu = async (event: MouseEvent<HTMLDivElement>) => {
+    if (!canUseNativeContextMenu()) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    try {
+      const loadedIcons = await loadNativeMenuIcons(MEMO_CARD_NATIVE_ICON_NAMES);
+      await popupNativeContextMenu(event, buildMemoCardContextMenuItems({
+        memo,
+        icons: {
+          split: loadedIcons.split!,
+          pin: loadedIcons.pin!,
+          unpin: loadedIcons.unpin!,
+          info: loadedIcons.info!,
+          link: loadedIcons.link!,
+          copy: loadedIcons.copy!,
+          folderOpen: loadedIcons['folder-open']!,
+          palette: loadedIcons.palette!,
+          delete: loadedIcons.delete!,
+        },
+        labels: {
+          openInSplit: t('memo.action.openInSplit'),
+          pin: t('memo.action.pin'),
+          unpin: t('memo.action.unpin'),
+          properties: t('document.action.properties'),
+          copyLink: t('document.action.copyLink'),
+          copyFullText: t('document.action.copyFullText'),
+          reveal: t('memo.fileTree.reveal'),
+          colorGroup: t('memo.list.filterColorGroup'),
+          clearColor: t('document.color.clear'),
+          delete: t('memo.action.delete'),
+          colors: Object.fromEntries(MEMO_COLORS.map((color) => [color, getMemoColorLabel(color, language)])) as Record<MemoColor, string>,
+        },
+        onOpenInSplit: onOpenInWindow ? () => onOpenInWindow(memo) : undefined,
+        onFavoriteToggle: () => onFavoriteToggle(memo),
+        onOpenProperties: () => window.dispatchEvent(new CustomEvent('flowix:open-note-properties', {
+          detail: { memoId: memo.id },
+        })),
+        onCopyLink: () => {
+          const path = resolvePath();
+          if (path) void writeClipboardText(path).catch(() => toast.error(t('document.command.copyFailed')));
+        },
+        onCopyFullText: () => {
+          const path = resolvePath();
+          if (!path) return;
+          void memosClient.readDocument(path)
+            .then((content) => writeClipboardText(content ?? ''))
+            .catch(() => toast.error(t('document.command.copyFailed')));
+        },
+        onReveal: () => {
+          const path = resolvePath();
+          if (path) void product.revealInFileManager(path);
+        },
+        onColorsChange: onColorsChange ? (colors) => onColorsChange(memo, colors) : undefined,
+        onDelete: () => onDelete(memo),
+      }));
+    } catch (error) {
+      logNativeContextMenuError('memo card', error);
+      toast.error(t('memo.fileTree.openFailed'));
+    }
+  };
+
+  const card = (
+    <div
+      onClick={() => onSelect(memo)}
+      onContextMenu={showNativeMenu}
+      className={cn(
+        'group memo-card relative min-w-0 w-full cursor-pointer rounded-lg px-2 transition-all',
+        'py-3',
+        isSelected && ['bg-[var(--accent)]', 'memo-card--selected'],
+      )}
+    >
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (canUseNativeContextMenu()) return card;
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div
-          onClick={() => onSelect(memo)}
-          className={cn(
-            'group memo-card relative min-w-0 w-full cursor-pointer rounded-lg px-2 transition-all',
-            'py-3',
-            isSelected && ['bg-[var(--accent)]', 'memo-card--selected'],
-          )}
-        >
-          <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">
-              {children}
-            </div>
-          </div>
-          <MemoCardMoreMenu
-            memo={memo}
-            isDropdownOpen={isDropdownOpen}
-            moreLabel={moreLabel}
-            onOpenDropdown={onOpenDropdown}
-            onOpenInWindow={onOpenInWindow}
-            onFavoriteToggle={onFavoriteToggle}
-            onDelete={onDelete}
-            onColorsChange={onColorsChange}
-          />
-        </div>
+        {card}
       </ContextMenuTrigger>
       <ContextMenuContent className="w-[180px] space-y-0.5 rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]">
         <MemoCardActions
@@ -356,8 +370,6 @@ export function MemoCardImpl({
   memo,
   tagMap,
   isSelected,
-  isDropdownOpen,
-  onOpenDropdown,
   onSelect,
   onOpenInWindow,
   onFavoriteToggle,
@@ -394,9 +406,6 @@ export function MemoCardImpl({
     <MemoCardShell
       memo={memo}
       isSelected={isSelected}
-      isDropdownOpen={isDropdownOpen}
-      moreLabel={t('document.titlebar.moreTooltip')}
-      onOpenDropdown={onOpenDropdown}
       onSelect={onSelect}
       onOpenInWindow={onOpenInWindow}
       onFavoriteToggle={onFavoriteToggle}

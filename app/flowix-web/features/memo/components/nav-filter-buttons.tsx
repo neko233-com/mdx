@@ -21,6 +21,7 @@ import {
   ContextMenuTrigger,
   useContextMenuContext,
 } from '@shared/ui/context-menu';
+import { logNativeContextMenuError, popupNativeContextMenu } from '@platform/tauri/native-context-menu';
 
 interface NavFilterButtonsProps {
   totalMemoCount: number;
@@ -124,9 +125,11 @@ interface CustomFilterRowProps {
   filter: CustomFilter;
   active: boolean;
   onSelect: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }
 
-function CustomFilterRow({ filter, active, onSelect }: CustomFilterRowProps) {
+function CustomFilterRow({ filter, active, onSelect, onEdit, onDelete }: CustomFilterRowProps) {
   const { t } = useI18n();
   const { openAt } = useContextMenuContext();
 
@@ -143,6 +146,12 @@ function CustomFilterRow({ filter, active, onSelect }: CustomFilterRowProps) {
         role="button"
         tabIndex={0}
         onClick={onSelect}
+        onContextMenu={(event) => {
+          void popupNativeContextMenu(event, [
+            { text: t('memo.customFilter.edit'), action: onEdit },
+            { text: t('memo.customFilter.delete'), action: onDelete },
+          ]).catch((error) => logNativeContextMenuError('custom filter', error));
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
@@ -264,6 +273,8 @@ export function CustomFilterList({ onSelectItem }: { onSelectItem?: () => void }
                 setActiveCustomFilter(filter.id);
                 onSelectItem?.();
               }}
+              onEdit={() => openEditDialog(filter)}
+              onDelete={() => handleDelete(filter)}
             />
             <ContextMenuContent className="w-[160px] space-y-0.5 rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]">
               <ContextMenuItem

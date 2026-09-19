@@ -1,12 +1,19 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { readClipboardSnapshot } from '@features/editor/extensions/paste-rules/clipboard';
-import { createManagedPasteRules } from '@features/editor/extensions/paste-rules/rules';
-import type { PasteContext, PasteRuleResult } from '@features/editor/extensions/paste-rules/types';
+import { readClipboardSnapshot, type ClipboardSnapshot } from '@features/editor/extensions/paste-rules/clipboard';
+import { createManagedPasteRules, executeManagedPasteRules } from '@features/editor/extensions/paste-rules/rules';
+import type { PasteContext } from '@features/editor/extensions/paste-rules/types';
+import type { Editor } from '@tiptap/core';
 
-export const ManagedPasteRules = Extension.create({
+export const ManagedPasteRules = Extension.create<{ memoId?: string }>({
   name: 'managedPasteRules',
   priority: 1100,
+
+  addOptions() {
+    return {
+      memoId: undefined,
+    };
+  },
 
   addProseMirrorPlugins() {
     const rules = createManagedPasteRules();
@@ -23,6 +30,7 @@ export const ManagedPasteRules = Extension.create({
             const ctx: PasteContext = {
               editor: this.editor,
               view,
+              memoId: this.options.memoId,
               event,
               types: snapshot.types,
               text: snapshot.text,
@@ -30,29 +38,11 @@ export const ManagedPasteRules = Extension.create({
               files: snapshot.files,
             };
 
-            for (const rule of rules) {
-              let result: PasteRuleResult;
-              try {
-                if (!rule.match(ctx)) continue;
-                result = rule.run(ctx);
-              } catch (err) {
-                console.warn('[paste-rules] rule failed:', {
-                  ruleId: rule.id,
-                  kind: rule.kind,
-                  error: err,
-                });
-                continue;
-              }
-
-              if (result === 'handled') {
-                event.preventDefault();
-                event.stopPropagation();
-                return true;
-              }
-
-              if (result === 'default') {
-                return false;
-              }
+            const result = executeManagedPasteRules(ctx, rules);
+            if (result === 'handled') {
+              event.preventDefault();
+              event.stopPropagation();
+              return true;
             }
 
             return false;
@@ -62,5 +52,47 @@ export const ManagedPasteRules = Extension.create({
     ];
   },
 });
+
+function createSyntheticPasteEvent(): ClipboardEvent {
+  try {
+    return new ClipboardEvent('paste', { bubbles: true, cancelable: true });
+  } catch {
+    return new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+  }
+}
+
+/**
+ * Re-enter the same paste pipeline used by native ProseMirror paste events.
+ * The snapshot is intentionally supplied explicitly so callers can paste a
+ * transformed payload without exposing the original clipboard contents to
+ * the rules a second time.
+ */
+export function pasteClipboardSnapshot(
+  editor: Editor,
+  snapshot: ClipboardSnapshot,
+  memoId?: string,
+): boolean {
+  const event = createSyntheticPasteEvent();
+  const ctx: PasteContext = {
+    editor,
+    view: editor.view,
+    memoId,
+    event,
+    types: snapshot.types,
+    text: snapshot.text,
+    html: snapshot.html,
+    files: snapshot.files,
+  };
+  const result = executeManagedPasteRules(ctx);
+  if (result === 'handled') return true;
+
+  if (snapshot.html.trim().length > 0) {
+    return editor.view.pasteHTML(snapshot.html, event);
+  }
+  if (snapshot.text.length > 0) {
+    return editor.view.pasteText(snapshot.text, event);
+  }
+  return false;
+}
 
 export default ManagedPasteRules;

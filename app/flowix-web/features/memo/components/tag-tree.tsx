@@ -48,6 +48,8 @@ import {
 } from '@features/memo/components/tag-reorder';
 import { markTagsCollapsedByAncestor } from '@features/memo/components/tag-collapse';
 import { agent, system } from '@platform/tauri/client';
+import { canUseNativeContextMenu, logNativeContextMenuError, popupNativeContextMenu } from '@platform/tauri/native-context-menu';
+import { loadNativeMenuIcons } from '@platform/tauri/native-menu-icons';
 import { TagSvgIcon } from '@shared/ui/tag-icon';
 
 interface TagTreeProps {
@@ -65,6 +67,7 @@ interface TagTreeProps {
 // 笔记本列表区域高度 ── 持久化键 + 读 / 写助手。
 const TAG_COLLAPSED_STORAGE_PREFIX = 'flowix:tag-collapsed:';
 const logger = createLogger('tag-tree');
+const TAG_NATIVE_ICON_NAMES = ['pencil', 'pin', 'list-checks', 'delete'] as const;
 
 function getCollapsedTagsStorageKey(notebookId: string): string {
   return `${TAG_COLLAPSED_STORAGE_PREFIX}${notebookId}`;
@@ -722,6 +725,19 @@ export function TagTree({
                   }
                 }}
                 role="button"
+                onContextMenu={(event) => {
+                  if (!canUseNativeContextMenu()) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void loadNativeMenuIcons(TAG_NATIVE_ICON_NAMES)
+                    .then((icons) => popupNativeContextMenu(event, [
+                      { text: t('memo.tag.rename'), icon: icons.pencil!, action: () => startRename(tag) },
+                      { text: t('memo.tag.pin'), icon: icons.pin!, action: () => void pinTag(tag) },
+                      { text: t('memo.tag.batchManage'), icon: icons['list-checks']!, action: () => setBatchMode(true) },
+                      { text: t('memo.tag.delete'), icon: icons.delete!, action: () => setDeletingTag(tag) },
+                    ]))
+                    .catch((error) => logNativeContextMenuError('tag', error));
+                }}
                 tabIndex={tag.collapsedByAncestor ? -1 : 0}
                 onPointerDown={(event) => handlePointerDown(event, tag.id)}
                 onDoubleClick={(event) => {

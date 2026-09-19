@@ -31,7 +31,7 @@
   background: var(--floating-bg);
   /* 浮层文字统一用 --floating-foreground (柔和白), 不沿用 --primary-foreground:
    * 后者在 dark 主题里是深色 (oklch 0.173), 套到深色浮层上就是"深在深上"
-   * → 黑图标/黑文字. --floating-foreground 在三主题下都是浅色, 配对
+   * → 黑图标/黑文字. --floating-foreground 在各主题下都是浅色, 配对
    * 始终深色的 --floating-bg 形成稳定的高对比文本对. */
   color: var(--floating-foreground);
   /* padding 缩到 4/4/4/8 (上/右/下/左):
@@ -67,7 +67,7 @@
 
 .editor-link-hover-tooltip-text {
   /* 气泡里的 URL 固定为浅灰, 不随主题切换:
-   * - 浮层底色 (--floating-bg) 在三主题下都是深色, 浅灰 (L=0.7) 在上面
+   * - 浮层底色 (--floating-bg) 在各主题下都是深色, 浅灰 (L=0.7) 在上面
    *   始终保持高对比, 不会出现 --foreground 在 light/rock 上"深叠深"的问题
    * - 不用 token: 这是"浮层里的次要信息"专属视觉, 不参与主题色板
    * - 选 oklch(0.7 0 0) 而非 #9ca3af: 保持项目 OKLCH 统一, 中性无色相
@@ -98,7 +98,7 @@
   border-radius: 4px;
   /* 图标颜色: 同容器思路, 改用 --floating-foreground 派生半透明白.
    * 之前 84% 透明白在 light/rock 没问题, 但 dark 主题因 primary-foreground
-   * 本身就是深色 → 算出深色 → 黑图标, 修复后三主题都显示为亮图标. */
+   * 本身就是深色 → 算出深色 → 黑图标, 修复后各主题都显示为亮图标. */
   color: color-mix(in oklch, var(--floating-foreground) 84%, transparent);
   background: transparent;
   cursor: pointer;

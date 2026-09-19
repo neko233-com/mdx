@@ -14,10 +14,12 @@ import { usePropertyFieldPreferences } from '@features/preferences/public/runtim
 import { getAllPresets, getCustomPresets, type PropertyPreset } from '@features/document/properties/presets';
 import { SelectValueInput } from '@features/document/properties/select-value-input';
 import { MultiSelectValueInput } from '@features/document/properties/multi-select-value-input';
+import { ColorValueInput } from '@features/document/properties/color-value-input';
 import { IconValueInput } from '@features/document/properties/icon-value-input';
 import { generatePropertyKey } from '@features/document/properties/property-key';
 import {
   extractFrontmatter,
+  FrontmatterPropertyError,
   SYSTEM_FRONTMATTER_KEYS,
 } from '@features/document/properties/frontmatter-model';
 import type { PropertyFieldConfig, PropertyFieldType } from '@/lib/constants';
@@ -68,6 +70,7 @@ export function NotePropertiesDialog({
   const savedFieldsByKeyRef = useRef(savedFieldsByKey);
   const [rows, setRows] = useState<PropertyRow[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   // 共享 Popover 状态: 既用于 "添加属性" 按钮 (mode='add'), 也用于
   // 行内 key cell 点击 (mode='edit')。 anchor 记录触发按钮的 viewport
   // 坐标, AnchoredPropertyPopover 再决定显示在按钮上方或下方。
@@ -118,6 +121,7 @@ export function NotePropertiesDialog({
 
   useEffect(() => {
     if (!open) return;
+    setSaveError(null);
     setRows(rowsFromData(frontmatter.data, savedFieldsByKeyRef.current, (key) => t(key)));
   }, [frontmatter.data, open, t]);
 
@@ -131,6 +135,7 @@ export function NotePropertiesDialog({
     && duplicateKeys.size === 0;
 
   const updateRow = (id: string, patch: Partial<PropertyRow>) => {
+    setSaveError(null);
     setRows((current) => current.map((row) => {
       if (row.id !== id) return row;
       const nextType = patch.type ?? row.type;
@@ -258,6 +263,17 @@ export function NotePropertiesDialog({
     try {
       await onSave(buildContentWithFrontmatter(content, rows));
       onOpenChange(false);
+    } catch (error) {
+      if (error instanceof FrontmatterPropertyError) {
+        const message = error.code === 'invalid-tag'
+          ? t('document.properties.invalidTag')
+          : error.code === 'invalid-color'
+            ? t('document.properties.invalidColor')
+            : error.message;
+        setSaveError(message);
+        return;
+      }
+      throw error;
     } finally {
       setIsSaving(false);
     }
@@ -318,10 +334,16 @@ export function NotePropertiesDialog({
                         className="h-4 w-4 accent-[var(--brand)]"
                         aria-label={row.key}
                       />
-                    ) : row.type === 'MultiSelect' ? (
+                    ) : row.type === 'Color' ? (
+                      <ColorValueInput
+                        value={row.value}
+                        disabled={isKeyField}
+                        onChange={(value) => updateRow(row.id, { value })}
+                      />
+                    ) : row.type === 'Tag' || row.type === 'Tags' || row.type === 'MultiSelect' ? (
                       <MultiSelectValueInput
                         value={row.value}
-                        options={presetOptions}
+                        options={row.type === 'MultiSelect' ? presetOptions : []}
                         disabled={isKeyField}
                         onChange={(value) => updateRow(row.id, { value })}
                       />
@@ -343,15 +365,6 @@ export function NotePropertiesDialog({
                         options={presetOptions}
                         disabled={isKeyField}
                         onChange={(value) => updateRow(row.id, { value })}
-                      />
-                    ) : row.type === 'List' ? (
-                      <textarea
-                        value={row.value}
-                        rows={3}
-                        onChange={(event) => updateRow(row.id, { value: event.target.value })}
-                        disabled={isKeyField}
-                        className="min-h-8 w-full resize-y rounded-lg border border-input bg-background px-2 py-1.5 text-sm outline-none transition-colors focus-visible:border-[var(--primary)]"
-                        aria-label={row.key}
                       />
                     ) : (
                       <Input
@@ -396,6 +409,9 @@ export function NotePropertiesDialog({
             <div className="text-xs text-[var(--destructive)]">
               {t('document.properties.picker.reservedKeyError', { key: 'flowix_key' })}
             </div>
+          )}
+          {saveError && (
+            <div className="text-xs text-[var(--destructive)]">{saveError}</div>
           )}
 
           {popoverState.open && popoverState.anchor && (

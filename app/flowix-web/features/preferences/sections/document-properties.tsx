@@ -26,7 +26,7 @@ type DraftField = {
 };
 
 function getPropertyTypeLabelKey(kind: PropertyKind) {
-  return `document.properties.type.${kind === 'MultiSelect' ? 'multiSelect' : kind.toLowerCase()}` as
+  return `document.properties.type.${kind === 'MultiSelect' ? 'multiSelect' : kind === 'Tag' ? 'tag' : kind === 'Tags' ? 'tags' : kind === 'Color' ? 'color' : kind.toLowerCase()}` as
     | 'document.properties.type.text'
     | 'document.properties.type.boolean'
     | 'document.properties.type.number'
@@ -34,7 +34,9 @@ function getPropertyTypeLabelKey(kind: PropertyKind) {
     | 'document.properties.type.icon'
     | 'document.properties.type.select'
     | 'document.properties.type.multiSelect'
-    | 'document.properties.type.list';
+    | 'document.properties.type.tag'
+    | 'document.properties.type.tags'
+    | 'document.properties.type.color';
 }
 
 function normalizeOptions(type: PropertyFieldType, optionsText: string): string[] | undefined {
@@ -222,13 +224,13 @@ export function DocumentPropertiesSection() {
   };
 
   return (
-    <div className="space-y-4 pt-2">
+    <div className="space-y-4 pb-[100px] pt-2">
       <SectionHeader title={t('preferences.documentProperties.title')} />
       <p className="text-sm text-[var(--muted-foreground)]">
         {t('preferences.documentProperties.description')}
       </p>
 
-      <div className="flex justify-end">
+      <div className="flex justify-start">
         <Button type="button" variant="outline" size="sm" className="rounded-lg px-3" onClick={startAdd} disabled={isAdding}>
           <Plus />
           {t('preferences.documentProperties.add')}
@@ -237,15 +239,15 @@ export function DocumentPropertiesSection() {
 
       {isAdding && draft ? (
         <div className="rounded-lg border border-[var(--primary)] bg-[var(--card)] p-3">
-          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_136px]">
-            <Input value={draft.key} onChange={(event) => setDraft({ ...draft, key: event.target.value })} placeholder={t('preferences.documentProperties.keyPlaceholder')} />
-            <Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder={t('preferences.documentProperties.namePlaceholder')} />
+          <div className="grid gap-2 sm:grid-cols-[136px_1fr_1fr]">
             <Select value={draft.type} onValueChange={(value) => setDraft({ ...draft, type: value as PropertyFieldType })}>
               <SelectTrigger className="bg-[var(--background)]"><SelectValue>{t(getPropertyTypeLabelKey(draft.type as PropertyKind))}</SelectValue></SelectTrigger>
               <SelectContent align="end" fitViewport className="flowix-preferences-select-content max-w-[calc(100vw-1rem)]">
                 {PROPERTY_KINDS.map((kind) => <SelectItem key={kind} value={kind}>{t(getPropertyTypeLabelKey(kind))}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Input value={draft.key} onChange={(event) => setDraft({ ...draft, key: event.target.value })} placeholder={t('preferences.documentProperties.keyPlaceholder')} />
+            <Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder={t('preferences.documentProperties.namePlaceholder')} />
           </div>
           {draft.type === 'Select' ? (
             <div className="mt-2">
@@ -258,9 +260,9 @@ export function DocumentPropertiesSection() {
           ) : draft.type === 'MultiSelect' ? (
             <Input className="mt-2" value={draft.optionsText} onChange={(event) => setDraft({ ...draft, optionsText: event.target.value })} placeholder={t('preferences.documentProperties.optionsPlaceholder')} />
           ) : null}
-          <div className="mt-2 flex justify-end gap-1">
-            <Button type="button" variant="outline" size="sm" onClick={cancelAdd}>{t('preferences.documentProperties.cancel')}</Button>
-            <Button type="button" size="sm" onClick={() => void saveDraft()}>{t('preferences.documentProperties.save')}</Button>
+          <div className="mt-2 flex justify-start gap-1">
+            <Button type="button" variant="outline" size="sm" className="rounded-lg" onClick={cancelAdd}>{t('preferences.documentProperties.cancel')}</Button>
+            <Button type="button" size="sm" className="rounded-lg" onClick={() => void saveDraft()}>{t('preferences.documentProperties.save')}</Button>
           </div>
         </div>
       ) : null}
@@ -270,7 +272,7 @@ export function DocumentPropertiesSection() {
           {t('preferences.documentProperties.empty')}
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)]">
+        <div className="space-y-3">
           {fields.map((field) => {
             const isEditing = editingKey === field.key;
             const currentDraft = isEditing ? draft : null;
@@ -280,21 +282,11 @@ export function DocumentPropertiesSection() {
             return (
               <div
                 key={field.key}
-                className="border-b border-[var(--divider)] px-3 py-2.5 last:border-b-0"
+                className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2.5"
               >
                 {isEditing && currentDraft ? (
                   <div className="space-y-2">
-                      <div className="grid grid-cols-[1fr_1fr_136px] gap-2">
-                        <Input
-                          value={currentDraft.key}
-                          onChange={(event) => setDraft({ ...currentDraft, key: event.target.value })}
-                          placeholder={t('preferences.documentProperties.keyPlaceholder')}
-                        />
-                        <Input
-                        value={currentDraft.name}
-                        onChange={(event) => setDraft({ ...currentDraft, name: event.target.value })}
-                        placeholder={t('preferences.documentProperties.namePlaceholder')}
-                      />
+                    <div className="grid grid-cols-[136px_1fr_1fr] gap-2">
                       <Select
                         value={currentDraft.type}
                         onValueChange={(value) => setDraft({
@@ -315,6 +307,16 @@ export function DocumentPropertiesSection() {
                           ))}
                         </SelectContent>
                       </Select>
+                      <Input
+                        value={currentDraft.key}
+                        onChange={(event) => setDraft({ ...currentDraft, key: event.target.value })}
+                        placeholder={t('preferences.documentProperties.keyPlaceholder')}
+                      />
+                      <Input
+                        value={currentDraft.name}
+                        onChange={(event) => setDraft({ ...currentDraft, name: event.target.value })}
+                        placeholder={t('preferences.documentProperties.namePlaceholder')}
+                      />
                     </div>
                     {currentDraft.type === 'Select' ? (
                       <OptionTagsInput
@@ -329,10 +331,7 @@ export function DocumentPropertiesSection() {
                         placeholder={t('preferences.documentProperties.optionsPlaceholder')}
                       />
                     ) : null}
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate font-mono text-xs text-[var(--muted-foreground)]">
-                        {t('preferences.documentProperties.keyLabel')}: {field.key}
-                      </span>
+                    <div className="flex items-center justify-start gap-2">
                       <div className="flex shrink-0 items-center gap-1">
                         <Button
                           type="button"
@@ -341,6 +340,7 @@ export function DocumentPropertiesSection() {
                           tooltip={t('preferences.documentProperties.cancel')}
                           aria-label={t('preferences.documentProperties.cancel')}
                           onClick={cancelEdit}
+                          className="rounded-lg"
                         >
                           <X />
                         </Button>
@@ -351,11 +351,14 @@ export function DocumentPropertiesSection() {
                           tooltip={t('preferences.documentProperties.save')}
                           aria-label={t('preferences.documentProperties.save')}
                           onClick={() => void saveDraft()}
-                          className="text-[var(--primary)]"
+                          className="rounded-lg text-[var(--primary)]"
                         >
                           <Check />
                         </Button>
                       </div>
+                      <span className="min-w-0 truncate font-mono text-xs text-[var(--muted-foreground)]">
+                        {t('preferences.documentProperties.keyLabel')}: {field.key}
+                      </span>
                     </div>
                   </div>
                 ) : (
@@ -384,6 +387,7 @@ export function DocumentPropertiesSection() {
                         tooltip={t('preferences.documentProperties.edit')}
                         aria-label={`${t('preferences.documentProperties.edit')} ${field.name}`}
                         onClick={() => startEdit(field)}
+                        className="rounded-lg"
                       >
                         <Pencil />
                       </Button>

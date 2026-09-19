@@ -11,6 +11,7 @@ interface BlockActionMenuProps {
   style: CSSProperties
   onHover: (index: number) => void
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
+  ariaLabel?: string
 }
 
 export function BlockActionMenu({
@@ -21,6 +22,7 @@ export function BlockActionMenu({
   style,
   onHover,
   onKeyDown,
+  ariaLabel = 'Block actions',
 }: BlockActionMenuProps) {
   const { scrollerRef, itemRefs } = useSelectedItemScroll({
     items: actions,
@@ -39,7 +41,7 @@ export function BlockActionMenu({
     <div
       ref={menuRef}
       role="menu"
-      aria-label="Block actions"
+      aria-label={ariaLabel}
       tabIndex={-1}
       onPointerDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
@@ -72,6 +74,13 @@ export function BlockActionMenu({
                     chord={action.shortcut}
                     className={`shrink-0 ${index === selectedIndex ? 'text-[var(--primary-foreground)]' : 'text-[var(--muted-foreground)] group-hover:text-[var(--primary-foreground)]'}`}
                   />
+                )}
+                {action.trailingIcon && (
+                  <span
+                    className={`ml-auto shrink-0 ${index === selectedIndex ? 'text-[var(--primary-foreground)]' : 'text-[var(--brand)] group-hover:text-[var(--primary-foreground)]'}`}
+                  >
+                    {action.trailingIcon}
+                  </span>
                 )}
               </button>
             </Fragment>

@@ -6,12 +6,16 @@ import { files } from '@platform/tauri/client';
 import {
   applyLoadedDocumentContent,
   registerDocumentCapture,
+  captureLatestDocumentContent,
   consumeSelfDocumentPathUpdate,
   hasDocumentUnsavedChanges,
 } from '@features/document/store/document-session-service';
 import { useDocumentMetricsStore } from '@features/document/store/document-metrics-store';
 import { useDocumentStore } from '@features/document/store/document-store';
-import { useDocumentEditorMode } from '@features/document/store/document-editor-view-store';
+import {
+  setDocumentEditorMode,
+  useDocumentEditorMode,
+} from '@features/document/store/document-editor-view-store';
 import type { DocumentIdentity } from '@features/document/store/document-identity';
 import { getDocumentInstanceKey } from '@/lib/path';
 import { toast } from '@/lib/toast';
@@ -29,7 +33,10 @@ import { useDocumentContent } from '@features/document/components/session/use-do
 import { useDocumentAutosave } from '@features/document/components/session/use-document-autosave';
 import { useExternalDocumentChangeWatch } from '@features/document/components/session/use-external-document-change-watch';
 import { useMemoDocumentChangeWatch } from '@features/document/components/session/use-memo-document-change-watch';
-import { LazyDocumentEditor } from '@features/document/components/lazy-document-editor';
+import {
+  LazyDocumentEditor,
+  preloadDocumentEditor,
+} from '@features/document/components/lazy-document-editor';
 import { LazyCodeEditor } from '@features/document/components/lazy-code-editor';
 import { SourceMemoEditor } from '@features/document/components/source-memo-editor';
 import { MemoDocumentHeader } from '@features/document/components/memo-document-header';
@@ -38,6 +45,7 @@ import type {
   MemoTitleEditorHandle,
 } from '@features/document/components/memo-title-editor';
 import type { MarkdownEditorHandle } from '@features/editor/markdown-editor';
+import type { ClipboardSnapshot } from '@features/editor/extensions/paste-rules/clipboard';
 import { isEditableTextFilePath, isImageFilePath, isVideoFilePath } from '@features/editor/code-file';
 import { useI18n } from '@/lib/i18n';
 import { CenteredLoadingSpinner } from '@shared/ui/centered-loading-spinner';
@@ -47,6 +55,7 @@ import { removeBrowserColumnTabsByMemoId } from '@features/workspace/use-cases/b
 import { useWorkspaceFocusStore } from '@features/workspace/store/workspace-focus-store';
 import { getBuffer, subscribeDocumentBufferChanges } from '@features/document/store/buffer-registry';
 import { documentIdentityKey } from '@features/document/store/document-identity';
+import type { Editor } from '@tiptap/core';
 
 export function DocumentContainer({
   filePath,
@@ -63,6 +72,7 @@ export function DocumentContainer({
   documentSessionMode = 'main',
   readOnly: forcedReadOnly = false,
   initialFocus,
+  onEditorReady,
   onFlushReady,
 }: DocumentContainerProps) {
   const { t } = useI18n();
@@ -118,6 +128,30 @@ export function DocumentContainer({
     transitionId,
     isolatedSession: documentSessionMode === 'isolated',
   });
+
+  useEffect(() => {
+    if (usesCodeEditor) onEditorReady?.(null);
+    return () => onEditorReady?.(null);
+  }, [onEditorReady, usesCodeEditor]);
+
+  useEffect(() => {
+    if (
+      transitionId === null
+      || usesCodeEditor
+      || isImagePreview
+      || isVideoPreview
+      || isUnsupportedExternalFile
+    ) {
+      return;
+    }
+    preloadDocumentEditor();
+  }, [
+    isImagePreview,
+    isUnsupportedExternalFile,
+    isVideoPreview,
+    transitionId,
+    usesCodeEditor,
+  ]);
   const flushPendingEditorChanges = useCallback(() => {
     return editorHandleRef.current?.flushPendingChanges() ?? null;
   }, []);
@@ -140,6 +174,20 @@ export function DocumentContainer({
     }
     editorHandleRef.current?.moveTitleToBody?.(trailingContent ?? '');
   }, []);
+
+  const handlePasteTitleContentToBody = useCallback((snapshot: ClipboardSnapshot) => {
+    editorHandleRef.current?.pasteToBody?.(snapshot);
+  }, []);
+
+  const handleToggleEditorMode = useCallback(() => {
+    if (isExternalDocument || !memoId) return;
+    captureLatestDocumentContent(documentIdentity, hostId);
+    setDocumentEditorMode(
+      hostId,
+      documentIdentity,
+      editorMode === 'source' ? 'rich' : 'source',
+    );
+  }, [documentIdentity, editorMode, hostId, isExternalDocument, memoId]);
 
   useEffect(() => (
     registerDocumentCapture(documentIdentity, flushPendingEditorChanges, hostId)
@@ -429,6 +477,9 @@ export function DocumentContainer({
       editable={!readOnly}
       autoFocus={initialFocus === 'title'}
       onMoveToBody={handleMoveTitleToBody}
+      onPasteToBody={handlePasteTitleContentToBody}
+      editorMode={editorMode}
+      onToggleEditorMode={handleToggleEditorMode}
     />
   ) : null;
 
@@ -459,6 +510,10 @@ export function DocumentContainer({
               titleAutoFocus={initialFocus === 'title'}
               titleRef={titleEditorRef}
               onMoveToBody={handleMoveTitleToBody}
+              onPasteToBody={handlePasteTitleContentToBody}
+              editorMode={editorMode}
+              onToggleEditorMode={handleToggleEditorMode}
+              sourceModeToggleLabel={t('document.action.richTextMode')}
               onEditorScroll={handleEditorScroll}
               onEditingFinished={flushPendingEditorChanges}
               searchPanelOpen={searchPanelOpen}
@@ -483,6 +538,7 @@ export function DocumentContainer({
         {!state.isLoading && !usesCodeEditor && state.fullContent && (
           <LazyDocumentEditor
             memoId={memoId ?? undefined}
+            transitionId={transitionId}
             ref={editorHandleRef}
             key={documentInstanceKey}
             content={state.fullContent}
@@ -501,6 +557,7 @@ export function DocumentContainer({
             autoFocus={initialFocus === 'body'}
             searchPanelOpen={searchPanelOpen}
             onSearchPanelOpenChange={onSearchPanelOpenChange}
+            onBeforeCreate={(editor: Editor) => onEditorReady?.(editor)}
             toolbarCollapsed={toolbarCollapsed}
             onToolbarCollapsedChange={onToolbarCollapsedChange}
           />

@@ -12,7 +12,7 @@ import { useI18n } from '@/lib/i18n';
  *
  * 与 components/ui/dialog.tsx 一样, CommandDialog 使用 react portal
  * 渲染到 document.body, 并复用 flowix-fade-* / flowix-dialog-* 动画。
- * 配色 token 全部走 var(--*) 以适配 light / dark / rock 三套主题。
+ * 配色 token 全部走 var(--*) 以适配各主题。
  */
 
 const SELECTED_SCROLL_OFFSET = 30;

@@ -76,7 +76,9 @@ export type PropertyFieldType =
   | 'Icon'
   | 'Select'
   | 'MultiSelect'
-  | 'List';
+  | 'Tag'
+  | 'Tags'
+  | 'Color';
 
 export interface PropertyFieldConfig {
   key: string;
@@ -263,19 +265,6 @@ export const DEFAULT_REQUEST_TIMEOUT = 600000;
 /** 单条 toast 默认展示时长 (ms) */
 export const TOAST_DURATION_MS = 1600;
 
-/** Toast 背景色 */
-export const TOAST_BG = '#2d2f35';
-
 /** Toast 阴影 (用于内联 box-shadow) */
 export const TOAST_SHADOW =
   '0 16px 40px rgba(15,18,25,0.22), 0 3px 10px rgba(15,18,25,0.18)';
-
-/** Toast 4 种 tone 对应的图标颜色 */
-export const TOAST_COLORS = {
-  success: '#22C55E',
-  error:   '#FF8A8A',
-  info:    '#7CB9FF',
-  warning: '#FFC56B',
-} as const;
-
-export type ToastColorKey = keyof typeof TOAST_COLORS;

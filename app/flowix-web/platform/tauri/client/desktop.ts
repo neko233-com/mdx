@@ -119,6 +119,8 @@ export const dialogs = {
     }),
   writeExportFile: (filePath: string, content: string) =>
     invoke<boolean>('write_export_file', { filePath, content }),
+  exportPdf: (filePath: string) =>
+    invoke<boolean>('export_pdf', { filePath }),
   copyAttachmentFile: (sourcePath: string, targetPath: string) =>
     invoke<boolean>('copy_attachment_file', { sourcePath, targetPath }),
 };

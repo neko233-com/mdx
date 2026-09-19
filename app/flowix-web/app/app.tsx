@@ -7,7 +7,7 @@ import { useAppPreferencesViewModel } from "@features/preferences/public/app-api
 import { useAppAgentRuntimeViewModel } from "@features/agent/public/app-api";
 import { useApplyFontSettings } from "@features/preferences/public/app-api";
 import { ThemeProvider } from "@features/theme";
-import { NativeSelectAllBridge, ShortcutsProvider } from "@features/shortcuts";
+import { NativeEditMenuBridge, ShortcutsProvider } from "@features/shortcuts";
 import { I18nProvider } from "@/lib/i18n";
 import { TooltipProvider } from "@shared/ui/tooltip";
 import "@features/shortcuts/actions";
@@ -145,7 +145,7 @@ function App() {
           <ThemeProvider>
             <TooltipProvider>
               <ShortcutsProvider overrides={shortcutOverrides}>
-              <NativeSelectAllBridge />
+              <NativeEditMenuBridge />
               <Suspense fallback={null}>
                 <PreferencesView initialTab={tab} />
                 <AppReadySignal />
@@ -171,7 +171,7 @@ function App() {
           </Suspense>
           <TooltipProvider>
             <ShortcutsProvider overrides={shortcutOverrides}>
-              <NativeSelectAllBridge />
+              <NativeEditMenuBridge />
               <Suspense fallback={null}>
                 <MainWindow />
                 <MainWindowReadySignal />

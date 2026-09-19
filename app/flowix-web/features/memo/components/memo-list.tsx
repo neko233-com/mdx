@@ -172,7 +172,6 @@ export function MemoList({
       handleMemoCreated: s.handleMemoCreated,
     })),
   );
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [notebookDropdownOpen, setNotebookDropdownOpen] = useState(false);
   const [localNavigationDrawerOpen, setLocalNavigationDrawerOpen] = useState(false);
   const [colorSubmenuOpen, setColorSubmenuOpen] = useState(false);
@@ -379,7 +378,7 @@ export function MemoList({
     scrollerRef: listContainerRef,
     enabled: canVirtualizeMemos,
     resetKey: currentMemoListQueryKey,
-    keepAliveKeys: [selectedMemo?.id, openDropdown].filter(
+    keepAliveKeys: [selectedMemo?.id].filter(
       (id): id is string => Boolean(id),
     ),
   });
@@ -474,9 +473,7 @@ export function MemoList({
             memo={memo}
             tagMap={tagMap}
             isSelected={selectedMemo?.id === memo.id}
-            isDropdownOpen={openDropdown === memo.id}
             runningAgentType={getRunningAgentTypeForMemo(memo) ?? undefined}
-            onOpenDropdown={setOpenDropdown}
             onSelect={handleSelectMemo}
             onOpenInWindow={handleOpenMemoWindow}
             onFavoriteToggle={handleFavoriteToggle}
@@ -721,7 +718,7 @@ export function MemoList({
     : t('memo.list.viewDetailed');
 
   return (
-    <div className="memo-list relative flex h-full min-w-0 select-none flex-col bg-[var(--card)]">
+    <div className="memo-list relative flex h-full min-w-0 select-none flex-col bg-[var(--list-bg)]">
       <MemoListDataLoader
         dataLoadingEnabled={dataLoadingEnabled}
         startupPhase={startupPhase}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { Blocks, Check, ChevronDown, Code2, File as FileIcon, FileText, Folder, Globe, MessageSquare, X } from 'lucide-react';
 import {
@@ -7,6 +7,7 @@ import {
 } from '@features/workspace/public/browser-column-api';
 import {
   AgentThreadCardFullscreenExitButton,
+  getDocumentEditorMode,
   useDocumentEditorMode,
   useFullscreenAgentThreadCardInfo,
 } from '@features/document/public/shell-api';
@@ -16,6 +17,8 @@ import { useI18n } from '@/lib/i18n';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { WORK_COLUMN_TITLEBAR_GRADIENT } from './work-column-titlebar-shell';
+import { canUseNativeContextMenu, logNativeContextMenuError, popupNativeContextMenu } from '@platform/tauri/native-context-menu';
+import { buildBrowserTabContextMenuItems } from '@features/shell/menus/browser-tab-context-menu';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -190,6 +193,47 @@ export function BrowserColumnHeader({
     void selectTab(nextTab.id);
   };
 
+  const showNativeTabContextMenu = async (
+    event: MouseEvent<HTMLDivElement>,
+    tab: BrowserColumnTab,
+    index: number,
+  ) => {
+    if (!canUseNativeContextMenu()) return;
+
+    try {
+      const canMoveToWorkColumn = canMoveBrowserColumnTargetToWorkColumn(tab.target);
+      const editorMode = tab.target.kind === 'memo'
+        ? getDocumentEditorMode('browser-column', { kind: 'memo', id: tab.target.memoId })
+        : null;
+      await popupNativeContextMenu(event, buildBrowserTabContextMenuItems({
+        tab,
+        index,
+        tabCount: tabs.length,
+        canMoveToWorkColumn,
+        editorMode,
+        labels: {
+          close: t('tabWindow.context.close'),
+          closeOther: t('tabWindow.context.closeOther'),
+          closeRight: t('tabWindow.context.closeRight'),
+          closeAll: t('tabWindow.context.closeAll'),
+          sourceMode: t('document.action.sourceMode'),
+          richTextMode: t('document.action.richTextMode'),
+          openInWorkColumn: t('tabWindow.context.openInWorkColumn'),
+        },
+        actions: {
+          close: () => void onCloseTab(tab.id),
+          closeOther: () => void onCloseOtherTabs(tab.id),
+          closeRight: () => void onCloseTabsToRight(tab.id),
+          closeAll: () => void onCloseAllTabs(),
+          toggleMemoEditorMode: () => void onToggleMemoEditorMode(tab.id),
+          openInWorkColumn: () => void onOpenTabInWorkColumn(tab.id),
+        },
+      }));
+    } catch (error) {
+      logNativeContextMenuError('browser tab', error);
+    }
+  };
+
   return (
     <header
       data-browser-column-header
@@ -232,6 +276,7 @@ export function BrowserColumnHeader({
               <ContextMenuTrigger asChild>
                 <div
                   draggable
+                  onContextMenu={(event) => void showNativeTabContextMenu(event, tab, index)}
                   onDragStart={(event: DragEvent<HTMLDivElement>) => {
                     if ((event.target as HTMLElement).closest('[data-tab-close]')) {
                       event.preventDefault();

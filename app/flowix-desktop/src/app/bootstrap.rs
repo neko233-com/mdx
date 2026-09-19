@@ -747,6 +747,7 @@ pub fn run() {
             commands::dialog::select_files,
             commands::dialog::save_file_dialog,
             commands::dialog::write_export_file,
+            commands::export::export_pdf,
             commands::dialog::save_attachment,
             commands::dialog::upload_journal::list_attachment_import_records,
             commands::dialog::attachment_audit::scan_attachment_references,

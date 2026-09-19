@@ -53,6 +53,7 @@ export function DocumentTitlebarMac({
     onExportMarkdown,
     onSaveAsTemplate,
     onExportWord,
+    onExportPdf,
     onRequestDeleteMemo,
     onColorsChange,
     editorMode,
@@ -142,6 +143,7 @@ export function DocumentTitlebarMac({
             onExportMarkdown={onExportMarkdown}
             onSaveAsTemplate={onSaveAsTemplate}
             onExportWord={onExportWord}
+            onExportPdf={onExportPdf}
             onRequestDeleteMemo={onRequestDeleteMemo}
             onColorsChange={onColorsChange ?? (() => {})}
             editorMode={editorMode}

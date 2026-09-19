@@ -1,10 +1,12 @@
 'use client';
 
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, MouseEvent, ReactNode } from 'react';
 import { isMac } from '@features/shortcuts';
 import { useI18n } from '@/lib/i18n';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@shared/ui/context-menu';
 import { useWorkColumnTransferViewModel } from '@features/workspace/public/shell-api';
+import { canUseNativeContextMenu, logNativeContextMenuError, popupNativeContextMenu } from '@platform/tauri/native-context-menu';
+import { buildWorkColumnContextMenuItems } from '@features/shell/menus/work-column-context-menu';
 
 /** Shared titlebar fade used by the work column and browser-column tabs. */
 export const WORK_COLUMN_TITLEBAR_GRADIENT =
@@ -31,11 +33,25 @@ export function WorkColumnTitlebarShell({
   const { t } = useI18n();
   const { canOpenInBrowserColumn, openInBrowserColumn } = useWorkColumnTransferViewModel();
 
+  const showNativeContextMenu = async (event: MouseEvent<HTMLDivElement>) => {
+    if (!canUseNativeContextMenu()) return;
+    try {
+      await popupNativeContextMenu(event, buildWorkColumnContextMenuItems({
+        label: t('workColumn.context.openInBrowserColumn'),
+        enabled: canOpenInBrowserColumn,
+        openInBrowserColumn: () => void openInBrowserColumn(),
+      }));
+    } catch (error) {
+      logNativeContextMenuError('work-column titlebar', error);
+    }
+  };
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
           data-tauri-drag-region
+          onContextMenu={(event) => void showNativeContextMenu(event)}
           className={`z-[50] flex shrink-0 select-none items-center pl-2 ${
             isWindows
               ? `h-9 ${reserveWindowsControls ? 'pr-[126px]' : 'pr-0'}`

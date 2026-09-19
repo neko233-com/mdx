@@ -21,7 +21,8 @@ import { DragContextMenu } from '@features/editor/components/drag-context-menu';
 import { attachLinkHoverTooltip } from '@features/editor/components/link-hover-tooltip';
 import { Tag } from '@features/editor/extensions/tag';
 import MarkdownPaste from '@features/editor/extensions/markdown-paste';
-import ManagedPasteRules from '@features/editor/extensions/paste-rules';
+import ManagedPasteRules, { pasteClipboardSnapshot } from '@features/editor/extensions/paste-rules';
+import type { ClipboardSnapshot } from '@features/editor/extensions/paste-rules/clipboard';
 import { LinkSelectionHighlight, MarkdownLink } from '@features/editor/extensions/markdown-link';
 import { NoteReference } from '@features/editor/extensions/note-link';
 import { NoteMention, WikiNoteMention } from '@features/editor/extensions/note-mention';
@@ -40,10 +41,13 @@ import { SKIP_AGENT_THREAD_CARD_CLEANUP_META } from '@features/agent/thread-card
 import { TabAgentRun } from '@features/editor/extensions/tab-agent-run';
 import { TabCharacter } from '@features/editor/extensions/tab-character';
 import { TablePlugin } from '@features/editor/extensions/table/table-plugin';
+import { StableCaret } from '@features/editor/extensions/stable-caret';
 import { useI18n } from '@/lib/i18n';
+import { markDocumentOpenTrace } from '@/lib/document-open-perf';
 
 interface MarkdownEditorProps {
   memoId?: string;
+  transitionId?: number | null;
   content: string;
   editable?: boolean;
   placeholder?: string;
@@ -73,6 +77,7 @@ export interface MarkdownEditorHandle {
   getCurrentMarkdown: () => string;
   focusStart?: () => void;
   moveTitleToBody?: (trailingContent: string) => void;
+  pasteToBody?: (snapshot: ClipboardSnapshot) => boolean;
 }
 
 interface NestedListMarkdownContext {
@@ -507,6 +512,7 @@ function focusEmptyParagraphAfterMedia(
 
 export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({
   memoId,
+  transitionId = null,
   content,
   editable = true,
   placeholder,
@@ -537,6 +543,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   const editorMountRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const [editorInstance, setEditorInstance] = useState<Editor | null>(null);
+  const firstFrameTraceRef = useRef<number | null>(null);
   const [isScrolling, setIsScrolling] = useState(false);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const serializeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -625,7 +632,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       contentChars: contentRef.current.length,
       ...meta,
     });
-  }, []);
+    markDocumentOpenTrace(transitionId, `editor:${label}`, {
+      contentChars: contentRef.current.length,
+      stageElapsedMs: Math.round((performance.now() - startedAt) * 10) / 10,
+      ...meta,
+    });
+  }, [transitionId]);
 
   // 注册 'editor' scope — 挂载期间 editor.undo / editor.redo 生效,
   // 卸载后 pop, 防止在 memo 列表/弹窗里按 ⌘Z 误触发。
@@ -709,6 +721,26 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     editor.view.focus();
   }, []);
 
+  const pasteToBody = useCallback((snapshot: ClipboardSnapshot) => {
+    const editor = editorRef.current;
+    if (!editor || editor.isDestroyed || !editor.isEditable) return false;
+
+    const { block, position } = getEditableBodyStart(editor);
+    if (!block) {
+      const tr = editor.state.tr.insert(position, createEmptyParagraph(editor));
+      tr.setSelection(TextSelection.near(tr.doc.resolve(position + 1), 1));
+      editor.view.dispatch(tr);
+    } else {
+      const selection = TextSelection.near(
+        editor.state.doc.resolve(Math.min(position + 1, editor.state.doc.content.size)),
+        1,
+      );
+      editor.view.dispatch(editor.state.tr.setSelection(selection));
+    }
+
+    return pasteClipboardSnapshot(editor, snapshot, memoId);
+  }, [memoId]);
+
   const handleBackspaceAtBodyStart = useCallback(() => {
     const editor = editorRef.current;
     if (!editor || editor.isDestroyed || !editor.isEditable) return false;
@@ -758,7 +790,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     },
     focusStart: focusBodyStart,
     moveTitleToBody,
-  }), [focusBodyStart, moveTitleToBody, serializePendingChanges]);
+    pasteToBody,
+  }), [focusBodyStart, moveTitleToBody, pasteToBody, serializePendingChanges]);
 
   useEffect(() => {
     if (!editorMountRef.current || !content) {
@@ -832,7 +865,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         AttachmentLink.configure({ memoId }),
         MarkdownLink,
         LinkSelectionHighlight,
-        CodeBlockShiki,
+        CodeBlockShiki.configure({ traceId: transitionId }),
         MathBlock,
         WebCard,
         Highlight.configure({ multicolor: true }),
@@ -867,13 +900,14 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           },
         }),
         Tag,
-        ManagedPasteRules,
+        ManagedPasteRules.configure({ memoId }),
         MarkdownPaste,
         Frontmatter.configure({ memoId }),
         NoteReference,
         NoteMention,
         WikiNoteMention,
         TagMention,
+        StableCaret,
         AgentThreadCard,
         SlashMenu,
         TabCharacter,
@@ -907,9 +941,14 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       },
     });
     normalizeTaskItemPlaceholders(editor);
+    let codeBlockCount = 0;
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'codeBlock') codeBlockCount += 1;
+    });
     logEditorPerf('MarkdownEditor:create', mountStartedAt, {
       initialChars: initialContent.length,
       docSize: editor.state.doc.content.size,
+      codeBlockCount,
     });
 
     onBeforeCreate?.(editor);
@@ -988,6 +1027,43 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     schedulePendingSerialization,
     serializePendingChanges,
   ]);
+
+  useLayoutEffect(() => {
+    if (!editorInstance || transitionId === null || firstFrameTraceRef.current === transitionId) {
+      return;
+    }
+
+    firstFrameTraceRef.current = transitionId;
+    markDocumentOpenTrace(transitionId, 'editor:react-commit', {
+      domNodes: editorMountRef.current?.querySelectorAll('*').length ?? 0,
+    });
+
+    let firstFrameId: number | null = null;
+    let secondFrameId: number | null = null;
+    const scheduleFrame = (callback: FrameRequestCallback) => {
+      if (typeof requestAnimationFrame === 'function') {
+        return requestAnimationFrame(callback);
+      }
+      return window.setTimeout(() => callback(performance.now()), 16);
+    };
+
+    firstFrameId = scheduleFrame(() => {
+      secondFrameId = scheduleFrame(() => {
+        markDocumentOpenTrace(transitionId, 'editor:first-visible-frame', {
+          domNodes: editorMountRef.current?.querySelectorAll('*').length ?? 0,
+        });
+      });
+    });
+
+    return () => {
+      if (firstFrameId !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(firstFrameId);
+      }
+      if (secondFrameId !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(secondFrameId);
+      }
+    };
+  }, [editorInstance, transitionId]);
 
   // 语言切换时，placeholder 回调会读取最新的 ref；dispatch 一条带
   // 'placeholder-update' meta 的空事务触发重新装饰。不能把回调改回字符串，
@@ -1070,10 +1146,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         onSearchPanelOpenChangeRef.current?.(true);
       }, { isActive: editorIsFocused }),
       pushHandler('editor.undo', () => {
-        editorRef.current?.commands.undo();
+        return editorRef.current?.commands.undo() ?? false;
       }, { isActive: editorIsFocused }),
       pushHandler('editor.redo', () => {
-        editorRef.current?.commands.redo();
+        return editorRef.current?.commands.redo() ?? false;
       }, { isActive: editorIsFocused }),
       // 块元素切换 (⌘1-4 / ⌘0 / ⌘⇧7-9) — 与 drag-context-menu items.tsx
       // 里的菜单项一一对应, 走同一组 Tiptap chain().focus().toggleXxx() 命令。
@@ -1106,35 +1182,6 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     ];
     return () => {
       for (const pop of pops) pop();
-    };
-  }, []);
-
-  // 主题切换时强制 Shiki 重新着色。
-  //
-  // 链路: useApplyTheme.apply() 写完 --shiki-theme 后 dispatch 'app-theme-changed' →
-  // 本 effect 收到事件 → 在下一帧给 PM view 发一个带 'shikiPluginForceDecoration'
-  // meta 的空事务, shiki-plugin.ts 的 state.apply 据此重跑 getDecorations。
-  // 用 rAF 而非同步触发是为了与浏览器布局/绘制合批, 避免 CSS var 写入和
-  // decoration 重建在同一 microtask 里冲突 (rAF 还顺带去抖, 多次连续切换主题
-  // 时只触发一次 dispatch)。
-  useEffect(() => {
-    let rafId: number | null = null;
-    const handleThemeChange = () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        const editor = editorRef.current;
-        if (!editor || editor.isDestroyed) return;
-        editor.view.dispatch(
-          editor.state.tr.setMeta('shikiPluginForceDecoration', true)
-        );
-      });
-    };
-
-    window.addEventListener('app-theme-changed', handleThemeChange);
-    return () => {
-      window.removeEventListener('app-theme-changed', handleThemeChange);
-      if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, []);
 

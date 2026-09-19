@@ -1,18 +1,21 @@
 import type { BundledLanguage, BundledTheme } from 'shiki'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
-import type { Step } from '@tiptap/pm/transform'
 
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 
 import { getDecorations, invalidateShikiThemeCache } from '@features/editor/extensions/codeblock-shiki/shiki/shiki-decorations'
 import { getShiki, initHighlighter } from '@features/editor/extensions/codeblock-shiki/shiki/shiki-highlighter'
+import { transactionNeedsShikiLoad, transactionTouchesCodeBlock } from './shiki-transaction-scope'
+import { markDocumentOpenTrace } from '@/lib/document-open-perf'
+import { notifyCodeBlockThemeChange } from '../theme-coordinator'
 
 export interface PluginShikiOptions {
   name: string
   defaultLanguage: BundledLanguage | 'plaintext' | null | undefined
   defaultTheme: BundledTheme
   preloadThemes?: BundledTheme[]
+  traceId?: number | null
 }
 
 // ── apply() 辅助 ────────────────────────────────────────────────────
@@ -23,10 +26,9 @@ export interface PluginShikiOptions {
 // 跑能吃掉可观的主线程预算。
 //
 // 新实现换成范围受限的遍历:
-//   - countCodeBlocks ── 只数数量, 不构造 children 数组 (省分配)
-//   - rangeContainsCodeBlock ── 用 nodesBetween(step.from, step.to)
-//     做范围相交检查, 典型 keystroke (range = 1 字符) 只走 1 个节点
-//     而非整篇 doc
+// 每个 StepMap 同时给出变更前、后的局部范围。分别检查 step 前后的
+// 文档即可覆盖代码块内部编辑、创建、删除和替换，不需要为每次普通
+// 输入统计新旧全文中的代码块数量。
 //
 // 顺带修正一个潜在正确性 bug: 旧检查 node.pos >= step.from &&
 // node.pos + nodeSize <= step.to 是「代码块 ⊆ step」语义 ── 只捕
@@ -42,24 +44,13 @@ function countCodeBlocks(doc: ProseMirrorNode, typeName: string): number {
   return count
 }
 
-function rangeContainsCodeBlock(
-  doc: ProseMirrorNode,
-  from: number,
-  to: number,
-  typeName: string
-): boolean {
-  let found = false
-  doc.nodesBetween(from, to, (node) => {
-    if (node.type.name === typeName) {
-      found = true
-      return false
-    }
-  })
-  return found
+interface ShikiPluginState {
+  decorations: ReturnType<typeof getDecorations>
+  loadVersion: number
 }
 
 export function proseMirrorPluginShiki(options: PluginShikiOptions) {
-  const { name, defaultLanguage, defaultTheme, preloadThemes = [] } = options
+  const { name, defaultLanguage, defaultTheme, preloadThemes = [], traceId = null } = options
 
   // ── rAF 批处理 ────────────────────────────────────────────────
   //
@@ -96,41 +87,29 @@ export function proseMirrorPluginShiki(options: PluginShikiOptions) {
 
     state: {
       init: (_, { doc }) => {
-        return getDecorations({ doc, name, defaultLanguage, defaultTheme })
+        return {
+          decorations: getDecorations({ doc, name, defaultLanguage, defaultTheme }),
+          loadVersion: 0,
+        } satisfies ShikiPluginState
       },
 
-      apply: (transaction, decorationSet, oldState, newState) => {
+      apply: (transaction, pluginState, oldState, newState) => {
         const oldNodeName = oldState.selection.$head.parent.type.name
         const newNodeName = newState.selection.$head.parent.type.name
 
-        // didChangeSomeCodeBlock 三条短路 OR, 任一为真即触发重算:
+        // didChangeSomeCodeBlock 两条短路 OR, 任一为真即触发重算:
         //   A: selection 跨代码块 (光标进/出) ── 不需要扫 doc
-        //   B: 代码块数量变化 (create / delete) ── countCodeBlocks 数
-        //   C: 至少一个 step 的范围相交代码块 (内容编辑 / 删除代码块) ──
-        //      rangeContainsCodeBlock 走范围受限的 nodesBetween
-        //
-        // 短路链按「成本递增」排列: A 单次字符串 includes 立即返回;
-        // B 即便跑也只是两次 descendants 计数, 不构造 children 数组
-        // (省分配); C 是最差情况 ── 此时一定有 step 触碰代码块, 范围
-        // 受限的 nodesBetween 仅遍历 step.from..to 范围而非整篇 doc。
-        // 多数 keystroke 在 A 即短路, 完全不进 doc 遍历路径。
+        //   B: step 前后任一局部变更范围相交代码块 ── 覆盖内容编辑、
+        //      创建、删除和替换，只遍历变更范围而非整篇 doc。
         let didChangeSomeCodeBlock = false
+        let needsShikiLoad = false
         if (transaction.docChanged) {
           if ([oldNodeName, newNodeName].includes(name)) {
             didChangeSomeCodeBlock = true
-          } else if (countCodeBlocks(oldState.doc, name) !== countCodeBlocks(newState.doc, name)) {
-            didChangeSomeCodeBlock = true
           } else {
-            didChangeSomeCodeBlock = transaction.steps.some((step: Step) => {
-              // Step 基类不暴露 from/to ── 运行时检查; 没有范围的
-              // step (e.g. DocAttrStep 改文档级属性) 直接跳过, 没有
-              // 位置意义上的代码块可以重叠。
-              const from = (step as { from?: number }).from
-              const to = (step as { to?: number }).to
-              if (from === undefined || to === undefined) return false
-              return rangeContainsCodeBlock(oldState.doc, from, to, name)
-            })
+            didChangeSomeCodeBlock = transactionTouchesCodeBlock(transaction, name)
           }
+          needsShikiLoad = transactionNeedsShikiLoad(transaction, name)
         }
 
         // 强制刷新路径 ── rAF 批处理触发 / highlighter 加载完成 /
@@ -144,12 +123,15 @@ export function proseMirrorPluginShiki(options: PluginShikiOptions) {
             cancelAnimationFrame(pendingRaf)
             pendingRaf = null
           }
-          return getDecorations({
-            doc: transaction.doc,
-            name,
-            defaultLanguage,
-            defaultTheme
-          })
+          return {
+            decorations: getDecorations({
+              doc: transaction.doc,
+              name,
+              defaultLanguage,
+              defaultTheme
+            }),
+            loadVersion: pluginState.loadVersion,
+          } satisfies ShikiPluginState
         }
 
         // 代码块内容变化 ── 排到下一帧统一重新计算, 当前 transaction
@@ -159,13 +141,16 @@ export function proseMirrorPluginShiki(options: PluginShikiOptions) {
           scheduleRecompute()
         }
 
-        return decorationSet.map(transaction.mapping, transaction.doc)
+        return {
+          decorations: pluginState.decorations.map(transaction.mapping, transaction.doc),
+          loadVersion: pluginState.loadVersion + (needsShikiLoad ? 1 : 0),
+        } satisfies ShikiPluginState
       }
     },
 
     props: {
       decorations(state) {
-        return shikiPlugin.getState(state)
+        return shikiPlugin.getState(state).decorations
       }
     },
 
@@ -178,10 +163,6 @@ export function proseMirrorPluginShiki(options: PluginShikiOptions) {
       let needsRerun = false
       let idleId: number | null = null
       let timeoutId: ReturnType<typeof setTimeout> | null = null
-
-      const hasCodeBlocks = () => {
-        return countCodeBlocks(editorView.state.doc, name) > 0
-      }
 
       const forceDecorations = () => {
         if (cancelled) return
@@ -206,14 +187,18 @@ export function proseMirrorPluginShiki(options: PluginShikiOptions) {
       const handleThemeChange = () => {
         if (cancelled) return
         invalidateShikiThemeCache()
+        notifyCodeBlockThemeChange(editorView)
         forceDecorations()
       }
       window.addEventListener('app-theme-changed', handleThemeChange)
 
       const loadForCurrentDoc = async () => {
-        if (cancelled || pending || !hasCodeBlocks()) return
+        if (cancelled || pending) return
         pending = true
         needsRerun = false
+        markDocumentOpenTrace(traceId, 'shiki:init-start', {
+          codeBlockCount: countCodeBlocks(editorView.state.doc, name),
+        })
         try {
           await initHighlighter({
             doc: editorView.state.doc,
@@ -222,7 +207,9 @@ export function proseMirrorPluginShiki(options: PluginShikiOptions) {
             theme: defaultTheme,
             themes: preloadThemes,
           })
+          markDocumentOpenTrace(traceId, 'shiki:ready')
           forceDecorations()
+          markDocumentOpenTrace(traceId, 'shiki:first-decoration')
         } catch (err) {
           console.error('[CodeBlockShiki] failed to initialize highlighter:', err)
         } finally {
@@ -232,7 +219,7 @@ export function proseMirrorPluginShiki(options: PluginShikiOptions) {
       }
 
       const scheduleLoad = () => {
-        if (cancelled || !hasCodeBlocks()) return
+        if (cancelled) return
         if (pending) {
           needsRerun = true
           return
@@ -252,13 +239,17 @@ export function proseMirrorPluginShiki(options: PluginShikiOptions) {
         }
       }
 
-      scheduleLoad()
+      if (countCodeBlocks(editorView.state.doc, name) > 0) scheduleLoad()
 
       return {
         update(view, prevState) {
           const docChanged = prevState.doc !== view.state.doc
           if (!docChanged && getShiki()) return
-          scheduleLoad()
+          const previousPluginState = shikiPlugin.getState(prevState)
+          const currentPluginState = shikiPlugin.getState(view.state)
+          if (currentPluginState.loadVersion !== previousPluginState.loadVersion) {
+            scheduleLoad()
+          }
         },
         destroy() {
           cancelled = true

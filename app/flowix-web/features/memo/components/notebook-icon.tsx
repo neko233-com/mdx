@@ -161,7 +161,7 @@ export function NotebookIcon({
     return (
       <span
         className={cn(
-          "flex shrink-0 items-center justify-center overflow-hidden text-[#3f3f46] dark:text-white [[data-theme='dark']_&]:text-white",
+          'flex shrink-0 items-center justify-center overflow-hidden text-[var(--secondary-foreground)]',
           className,
         )}
         title={disableTitle ? undefined : option.label}

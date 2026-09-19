@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import {
   ArchiveIcon,
   PencilSimpleIcon,
@@ -38,6 +38,9 @@ import { formatTimeAgo } from '@/lib/format-time-ago';
 import { createLogger } from '@/lib/logger';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { canUseNativeContextMenu, logNativeContextMenuError, popupNativeContextMenu } from '@platform/tauri/native-context-menu';
+import { loadNativeMenuIcons } from '@platform/tauri/native-menu-icons';
+import { buildConversationContextMenuItems } from '@features/agent/menus/conversation-context-menu';
 import { useI18n } from '@/lib/i18n';
 import { OverlayScrollbar } from '@shared/ui/overlay-scrollbar';
 import {
@@ -61,6 +64,10 @@ import {
   updateConversationTitle,
   type ConversationPageState,
 } from './conversation-list-pagination';
+
+const CONVERSATION_NATIVE_ICON_NAMES = [
+  'split', 'star', 'pencil', 'archive', 'delete',
+] as const;
 
 /**
  * The "Conversations" navigation view. It deliberately lists conversation
@@ -113,6 +120,11 @@ function isSyntheticOpenCodeHistoryInstance(instance: AgentConversationInstance)
 
 export function AgentConversationList({ isActive = true }: AgentConversationListProps) {
   const { t } = useI18n();
+  useEffect(() => {
+    if (!canUseNativeContextMenu()) return;
+    void loadNativeMenuIcons(CONVERSATION_NATIVE_ICON_NAMES)
+      .catch((error) => logNativeContextMenuError('conversation icon preload', error));
+  }, []);
   const instances = useAgentSessionStore((state) => state.conversationRegistry.instances);
   const threadTombstones = useAgentSessionStore((state) => state.threadTombstones);
   const lifecycleVersion = useAgentSessionStore((state) => state.lifecycleVersion);
@@ -590,6 +602,49 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
     });
   }, [prepareConversation]);
 
+  const showConversationContextMenu = useCallback(async (
+    event: MouseEvent<HTMLDivElement>,
+    instance: AgentConversationInstance,
+  ) => {
+    if (!canUseNativeContextMenu()) {
+      setOpenMenuId(instance.instanceId);
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+
+    try {
+      const loadedIcons = await loadNativeMenuIcons(CONVERSATION_NATIVE_ICON_NAMES);
+      await popupNativeContextMenu(event, buildConversationContextMenuItems({
+        instance,
+        favorite: favoriteIds.has(instance.instanceId),
+        icons: {
+          split: loadedIcons.split!,
+          star: loadedIcons.star!,
+          pencil: loadedIcons.pencil!,
+          archive: loadedIcons.archive!,
+          delete: loadedIcons.delete!,
+        },
+        labels: {
+          openInBrowserColumn: t('workColumn.context.openInBrowserColumn'),
+          favorite: t('agent.chat.conversation.favorite'),
+          unfavorite: t('agent.chat.conversation.unfavorite'),
+          rename: t('agent.chat.conversation.rename'),
+          archive: t('document.agent.archiveConversation'),
+          delete: t('document.agent.deleteConversation'),
+        },
+        actions: {
+          openInBrowserColumn: openConversationInBrowserColumn,
+          toggleFavorite,
+          rename: renameConversation,
+          remove: (target, action) => void removeConversation(target, action),
+        },
+      }));
+    } catch (error) {
+      logNativeContextMenuError('conversation', error);
+    }
+  }, [favoriteIds, openConversationInBrowserColumn, removeConversation, renameConversation, t, toggleFavorite]);
+
   // 独立对话: 无文档 (memoId / documentPath 均为 null), 但归属当前选中的
   // notebook。notebook 未选中时不可新建 (cwd 无法解析到笔记本路径)。
   const createConversation = useCallback(
@@ -614,7 +669,7 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
   );
 
   return (
-    <section className="relative flex h-full min-h-0 flex-1 flex-col bg-[var(--card)]" aria-label={t('memo.navigation.conversations')}>
+    <section className="relative flex h-full min-h-0 flex-1 flex-col bg-[var(--list-bg)]" aria-label={t('memo.navigation.conversations')}>
       {/* 标题行 ── 与 MemoList / FolderFileTree 共用同一套中间列头部结构:
           左侧标题占据剩余空间, 右侧保留本列表自己的筛选控件。 */}
       <div className="flex items-center justify-between px-3 pb-2 gap-2">
@@ -782,10 +837,7 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
                     style={{ height: size, transform: `translateY(${start}px)` }}
                   >
                     <div
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        setOpenMenuId(instance.instanceId);
-                      }}
+                      onContextMenu={(event) => void showConversationContextMenu(event, instance)}
                       className={cn(
                         'group relative flex h-9 w-full items-center rounded-lg px-2 text-left transition-colors',
                         selected ? 'bg-[var(--muted)]' : 'hover:bg-[var(--muted)]',
@@ -818,7 +870,7 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
                           {formatTimeAgo(instance.updatedAt, t, { compact: true })}
                         </time>
                         </button>
-                        <>
+                        {!canUseNativeContextMenu() && (
                           <DropdownMenu
                             open={openMenuId === instance.instanceId}
                             onOpenChange={(open) => setOpenMenuId(open ? instance.instanceId : null)}
@@ -857,6 +909,8 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
+                        )}
+                        <>
                           <button
                             type="button"
                             aria-label={favoriteIds.has(instance.instanceId) ? t('agent.chat.conversation.unfavorite') : t('agent.chat.conversation.favorite')}

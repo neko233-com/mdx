@@ -14,8 +14,11 @@ export class CodeBlockClipboardController {
     private readonly button: HTMLButtonElement,
     private readonly getText: () => string,
   ) {
-    button.innerHTML = COPY_ICON;
     button.addEventListener('click', this.handleClick);
+  }
+
+  static setIdleIcon(button: HTMLButtonElement): void {
+    button.innerHTML = COPY_ICON;
   }
 
   destroy(): void {
@@ -26,7 +29,7 @@ export class CodeBlockClipboardController {
     }
   }
 
-  private readonly handleClick = (event: MouseEvent): void => {
+  readonly handleClick = (event: MouseEvent): void => {
     event.stopPropagation();
     void this.copy(this.getText());
   };

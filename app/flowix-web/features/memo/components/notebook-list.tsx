@@ -9,6 +9,8 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '@shared/ui/context-menu';
+import { canUseNativeContextMenu, logNativeContextMenuError, popupNativeContextMenu } from '@platform/tauri/native-context-menu';
+import { loadNativeMenuIcons } from '@platform/tauri/native-menu-icons';
 import { NotebookIcon } from '@features/memo/components/notebook-icon';
 import { useMemoStore, type Notebook } from '@features/memo/store/memo-store';
 import { useI18n } from '@/lib/i18n';
@@ -30,6 +32,8 @@ interface NotebookListProps {
   onDeleteNotebook: (notebook: Notebook) => void;
   onCreateNotebook: () => void;
 }
+
+const NOTEBOOK_NATIVE_ICON_NAMES = ['pencil', 'delete'] as const;
 
 // 笔记本路径行 ── 纯 CSS 头部省略: 溢出时浏览器在左缘画 "…", 尾部 (笔记本名)
 // 保持可见。direction:rtl 会把开头的 "/" (双向中立字符) 重排到行尾, 显得像
@@ -169,7 +173,20 @@ export function NotebookList({
                 cloudSyncStatus?.state === 'finalizing';
               return (
                 <ContextMenu key={notebook.id}>
-                  <ContextMenuTrigger className="w-full">
+                  <ContextMenuTrigger
+                    className="w-full"
+                    onContextMenu={(event) => {
+                      if (!canUseNativeContextMenu()) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void loadNativeMenuIcons(NOTEBOOK_NATIVE_ICON_NAMES)
+                        .then((icons) => popupNativeContextMenu(event, [
+                          { text: t('common.edit'), icon: icons.pencil!, action: () => onEditNotebook(notebook) },
+                          { text: t('dialog.delete'), icon: icons.delete!, action: () => onDeleteNotebook(notebook) },
+                        ]))
+                        .catch((error) => logNativeContextMenuError('notebook', error));
+                    }}
+                  >
                     <NotebookSelectorPopup
                   open={notebookPopupOpen}
                   onOpenChange={setNotebookPopupOpen}

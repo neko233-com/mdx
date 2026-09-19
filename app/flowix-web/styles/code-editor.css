@@ -241,6 +241,43 @@
 	z-index: 0;
 }
 
+.code-editor .cm-source-mode-toggle {
+	display: flex;
+	position: absolute;
+	top: var(--code-editor-source-header-top, var(--code-editor-content-padding-top, 14px));
+	left: 0;
+	width: 100%;
+	height: var(--code-editor-source-header-height, 54px);
+	box-sizing: border-box;
+	align-items: center;
+	justify-content: flex-end;
+	padding: 0 15px 0 3px;
+	border: 0;
+	border-radius: 4px;
+	color: color-mix(in oklch, var(--muted-foreground, #6b7280) 72%, transparent);
+	background: transparent;
+	font-family: var(--code-editor-font-family, var(--code-font-family));
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: -0.04em;
+	line-height: 1;
+	cursor: pointer;
+	z-index: 2;
+	transition: color 120ms ease, background-color 120ms ease;
+}
+
+.code-editor .cm-source-mode-toggle svg {
+	display: block;
+	width: 14px;
+	height: 14px;
+}
+
+.code-editor .cm-source-mode-toggle:hover,
+.code-editor .cm-source-mode-toggle:focus-visible {
+	color: var(--foreground, #1f2937);
+	outline: none;
+}
+
 .code-editor:not([data-source-header-focused]) .cm-source-header-gutter-background {
 	visibility: hidden;
 }

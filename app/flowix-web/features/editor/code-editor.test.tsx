@@ -197,6 +197,32 @@ describe('CodeEditor', () => {
     expect(gutterBackground?.getAttribute('aria-hidden')).toBe('true');
   });
 
+  it('renders an MD control in the source header gutter and switches modes on click', async () => {
+    const onToggleEditorMode = vi.fn();
+
+    await act(async () => root.render(
+      <CodeEditor
+        filePath="/project/note.md"
+        content={'---\nflowix_key: memo-1\n---\nBody'}
+        onChange={vi.fn()}
+        onToggleEditorMode={onToggleEditorMode}
+        sourceModeToggleLabel="Switch to rich text mode"
+        scrollHeader={<div data-testid="source-title">Title</div>}
+      />
+    ));
+
+    const toggle = container.querySelector<HTMLButtonElement>('.cm-source-mode-toggle');
+    expect(toggle?.querySelector('svg')).not.toBeNull();
+    expect(toggle?.querySelector('svg')?.getAttribute('viewBox')).toBe('48 96 160 68');
+    const iconPath = toggle?.querySelector('path')?.getAttribute('d') ?? '';
+    expect(iconPath).toContain('M128,104');
+    expect(iconPath).not.toContain('M232,48H24');
+    expect(toggle?.getAttribute('aria-label')).toBe('Switch to rich text mode');
+
+    await act(async () => toggle?.click());
+    expect(onToggleEditorMode).toHaveBeenCalledOnce();
+  });
+
   it('focuses the source body after frontmatter', async () => {
     const editorRef = createRef<CodeEditorHandle>();
     const content = '---\nflowix_key: memo-1\n---\nBody';
@@ -311,6 +337,44 @@ describe('CodeEditor', () => {
     expect(event.defaultPrevented).toBe(true);
     expect(view?.state.selection.main.from).toBe(0);
     expect(view?.state.selection.main.to).toBe(view?.state.doc.length);
+  });
+
+  it('undoes and redoes the focused CodeMirror document through shared actions', async () => {
+    await act(async () => root.render(
+      <ShortcutsProvider overrides={{}}>
+        <CodeEditor
+          filePath="/project/example.md"
+          content="Before"
+          onChange={vi.fn()}
+        />
+      </ShortcutsProvider>
+    ));
+
+    const content = container.querySelector<HTMLElement>('.cm-content');
+    const view = EditorView.findFromDOM(content!);
+    content!.focus();
+    act(() => {
+      view!.dispatch({ changes: { from: 6, insert: ' after' } });
+    });
+    expect(view!.state.doc.toString()).toBe('Before after');
+
+    const press = (key: string, shiftKey = false) => {
+      const event = new KeyboardEvent('keydown', {
+        key,
+        code: key === 'z' ? 'KeyZ' : 'KeyY',
+        metaKey: true,
+        shiftKey,
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => content!.dispatchEvent(event));
+      expect(event.defaultPrevented).toBe(true);
+    };
+
+    press('z');
+    expect(view!.state.doc.toString()).toBe('Before');
+    press('z', true);
+    expect(view!.state.doc.toString()).toBe('Before after');
   });
 
   it('exposes non-empty selections without changing CodeMirror selection state', async () => {

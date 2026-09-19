@@ -1,5 +1,5 @@
 [data-theme="ember"] {
-	/* 整体方向 v2: "近白纸面 + 珊瑚橙焦点" ── 主色 #FB6A42 维持不变,
+	/* 整体方向 v2: "近白纸面 + 珊瑚橙焦点" ── 主色约 #CF432C,
 	 * 把 v1 暖米纸面的暖意 chroma 普遍砍到 0.003–0.005 档, 让 UI chrome
 	 * (background / card / secondary / muted / border / agent-bg / 文档
 	 * 区) 整体推向近白, 整窗读作"白纸 + 单色锚"。 主色担当 button / focus
@@ -12,10 +12,10 @@
 	 * - foreground:  0.31  0.020 → 0.30  0.008 (略深, 降 chroma 保"中性墨")
 	 * - card:        0.992 0.010 → 0.996 0.003 (几乎纯白, 仅 ΔL=+0.011 vs bg)
 	 * - secondary:   0.945 0.012 → 0.978 0.004 (大幅抬升, 与 bg ΔL 仅 0.007)
-	 * - muted:       0.928 0.012 → 0.970 0.004 (ΔL vs bg = 0.015, 浅 hover)
-	 * - accent:      同 muted (维持视觉等价惯例)
+	 * - muted:       0.928 0.012 → 0.945 0.004 (ΔL vs bg = 0.040, 浅 hover)
+	 * - accent:      0.945 0.012 → 0.950 0.004 (接近 muted, 维持视觉等价)
 	 * - border:      0.876 0.012 → 0.945 0.005 (浅纸痕, ΔL vs bg = 0.040)
-	 * - document-bg: 0.992 0.008 → 0.997 0.003 (近纯白纸)
+	 * - document-bg: 0.992 0.008 → 1.000 0.000 (纯白纸)
 	 * - memo-color-*: L 普遍 +0.04–0.06, C −0.020–0.045 ── 往 pastel 推
 	 * - 状态色: C 普遍 −0.020–0.045 (降饱和, 仍维持功能语义)
 	 *
@@ -27,7 +27,7 @@
 	 *   3) 极轻浮 / 沉的 hover / 选中面 (ΔL < 0.02, 几乎不可见)
 	 * - memo 7 色褪到 pastel 档 (L 普遍 +0.04–0.06), hue 身份稳定 ── 在
 	 *   白底上读作"柔色块", 不抢主色焦点。
-	 * - 与 mist 的 "纯灰纸 + 蓝锚" 形成 "暖白 vs 冷白 + 暖锚 vs 冷锚" 双
+	 * - 与 mist 的 "暖白纸 + 绿锚" 形成 "暖白 vs 冷白 + 暖锚 vs 冷锚" 双
 	 *   向对照; 与 light 的 "冷蓝紫整体染" 形成 "白纸 vs 染纸" 对照。 */
 
 	--neutral-hue: 50;
@@ -49,16 +49,20 @@
 	 * 比 mist (0.996 纯灰) 略沉一档, 留一丝日光暖意 (chroma 0.005 几乎不
 	 * 可见, 仅在并置时透出色温)。 */
 	--background: oklch(0.985 0.005 var(--neutral-hue));
+	--frame-bg: var(--background);
 	/* 文字: L=0.30 + chroma 0.008 ── 比 v1 略深一档 + chroma 砍 60%,
 	 * 在白底上读作"中性墨"。 实际对比度 (vs bg): ΔL≈0.69, 算 ~8:1 AAA。 */
 	--foreground: oklch(0.30 0.008 var(--neutral-hue));
 	/* 卡片: L=0.996 + chroma 0.003 ── 几乎纯白, 比 bg 高 0.011, 形成
 	 * "飘渺浮起"层次, 比 v1 (ΔL=0.020) 更克制。 */
 	--card: oklch(0.996 0.003 var(--neutral-hue));
+	--list-bg: var(--card);
 
 	/* 浮层底: 纯白, v2 不变 ── 在近白底上 popover 仍是最白面 */
 	--popover: oklch(1 0 0);
 	--popover-foreground: var(--foreground);
+	/* 输入面独立于 document-bg；浅色模式保持纯白。 */
+	--input-bg: oklch(1 0 0);
 
 	/* 二级面: L=0.978 + chroma 0.004 ── ΔL vs bg = 0.007, 几乎贴底;
 	 * 在白底上读作"纸面微沉", 比 v1 (ΔL=0.027) 显著压缩。 */
@@ -90,8 +94,6 @@
 	--agent-status-surface: oklch(0.965 0.004 var(--neutral-hue));
 	--agent-foreground: color-mix(in oklch, var(--foreground) 66%, transparent);
 
-	--statusbar-bg: color-mix(in oklch, var(--card) 92%, var(--background));
-
 	/* 标题栏: 与 agent-bg 同 L, chroma 略低 ── 形成与 main 一致的顶边感。 */
 	--bg-titlebar: oklch(0.982 0.004 var(--neutral-hue));
 	/* 文档: 纯白纸面。 */
@@ -105,11 +107,9 @@
 	/* 标签: 中性浅灰, 不带 brand 色相。 */
 	--document-tag-bg: oklch(0.90 0 0);
 	/* 标签文字: 直接接 --foreground, 与正文同色 ── 让 tag 读作"被高亮背景
-	 * 托住的普通文字", 而非"一段彩色字"。五主题统一, 维持跨主题的 tag
+	 * 托住的普通文字", 而非"一段彩色字"。各主题统一, 维持跨主题的 tag
 	 * 视觉语义。 */
 	--document-tag-foreground: var(--foreground);
-	--document-tag-hover-bg: oklch(0.86 0 0);
-
 	/* 文档颜色标签 — v2 推到 pastel 档: L 普遍 +0.04–0.06, C −0.020
 	 * ~−0.045, hue 不变 (跨主题身份识别稳定), 在白底上读作"柔色块"。 */
 	--memo-color-red:    oklch(64% 0.140 25);
@@ -120,10 +120,9 @@
 	--memo-color-blue:   oklch(60% 0.150 258);
 	--memo-color-gray:   oklch(62% 0.008 50);
 
-	--code-bg: oklch(0.980 0.003 var(--neutral-hue));
 	/* editor-block-bg: v2.1 从 1.0 → 0.982 ── 参考 mist (0.982 纯灰)
 	 * 的 ΔL=0.018 "轻微沉底"语义: agent 卡片 / 代码块在白纸面上需要
-	 * 视觉锚点, 但不与 --accent (0.970) 冲突, 不与 --muted (0.945)
+	 * 视觉锚点, 但不与 --accent (0.950) 冲突, 不与 --muted (0.945)
 	 * 抢 hover 层级。
 	 *
 	 * 1.0 的问题: 与 --document-bg (1 0 0) 完全同色, block 在文档里
@@ -139,7 +138,7 @@
 	--agent-surface-bg: var(--editor-block-bg);
 
 	--floating-bg: oklch(0.32 0.014 var(--neutral-hue));
-	/* 浮层文字: 与 floating-bg 配对, 五主题统一柔和白, 避纯白在深底的眩光 */
+	/* 浮层文字: 与 floating-bg 配对, 各主题统一柔和白, 避纯白在深底的眩光 */
 	--floating-foreground: oklch(0.95 0 0);
 
 	/* 反色面: 与当前主题背景形成强对比, 用于 tooltip、临时标记等小面积 UI */
@@ -152,9 +151,9 @@
 	--destructive: oklch(0.62 0.165 28);
 	/* 警告: 与 v1 同色系 (hue 75), L +0.05 / C −0.035 ── 维持"暖琥珀"。 */
 	--warning: oklch(0.80 0.105 75);
-	/* 信息提示: 与 light 同值 ── 在 ember 暖白底上读作 "冷锚点", 跟珊瑚主
-	 * 色形成色温对位, 信息块不会被主焦点吞掉。 */
-	--info: oklch(0.62 0.165 235);
+	/* 信息提示: 在 ember 暖白底上读作 "冷锚点", 跟珊瑚主色形成色温对位；
+	 * 亮度下调以保证白字达到普通文字 AA 对比度。 */
+	--info: oklch(0.52 0.165 235);
 	--info-foreground: oklch(1 0 0);
 
 	color-scheme: light;

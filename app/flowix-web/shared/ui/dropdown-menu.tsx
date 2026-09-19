@@ -260,7 +260,8 @@ function DropdownMenuContent({
 	return createPortal(
 		<div
 			ref={contentRef}
-			data-flowix-list-column-overlay={belongsToListColumnPreview ? "" : undefined}
+				data-flowix-list-column-overlay={belongsToListColumnPreview ? "" : undefined}
+				data-flowix-surface="popover"
 			onMouseEnter={onMouseEnter}
 			onMouseLeave={onMouseLeave}
 			className={cn(

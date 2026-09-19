@@ -6,6 +6,7 @@ import { useTagStore } from '@features/memo/store/tag-store';
 import { memoMatchesCustomFilter, useCustomFilterStore, type CustomFilter } from '@features/memo/store/custom-filter-store';
 
 import type { MemoColor, MemoItem } from '@/types/memo-item';
+export { MEMO_COLORS } from '@/types/memo-item';
 
 // 颜色筛选二级选项。'any' = 任意带色 (memo.colors.length > 0),
 // 'none' = 无色 (memo.colors.length === 0), 其它值是具体颜色单选。
@@ -35,14 +36,10 @@ interface MemoListPageQuery {
 // 写入 memo index。单文档可挂多个色, 空数组即"无颜色"。色值在
 // `MEMO_COLOR_HEX` 集中维护, picker / 列表 dot 共用。
 
-export const MEMO_COLORS: readonly MemoColor[] = [
-  'red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'gray',
-] as const;
-
 /**
  * 7 色色板 → 返回 `var(--memo-color-<key>)`, 由 css/theme/{light,dark,rock}.css
  * 各主题文件定义实际 OKLCH 色值。这样:
- *   - 三套主题能各自微调 L / C / hue, 暗底提一档亮度、rock 降 chroma 让色
+ *   - 各主题能各自微调 L / C / hue, 暗底提一档亮度、浅底降 chroma 让色
  *     块"嵌进"岩灰底。
  *   - 消费点 (picker 按钮底色 / 列表小圆点) 不需要感知主题 ── 读 `style={{
  *     backgroundColor: MEMO_COLOR_HEX[c] }}` 一致, 浏览器在元素层面解析 var。

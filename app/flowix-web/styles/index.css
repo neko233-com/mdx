@@ -21,6 +21,7 @@
 @import './editor-bubble-menus.css';
 @import './editor-attachment-link.css';
 @import './code-editor.css';
+@import './pdf-print.css';
 
 /* 自定义滚动条 ── 全局 webkit 滚动条 + .overlay-scrollbar-* 组件样式。
  * 非 Mac 平台门控在文件内部, 详见 overlay-scrollbar.css 顶部注释。 */
@@ -30,7 +31,7 @@
 @import './agent-icon.css';
 
 /* 主题色板单一真源在 css/theme, JS 只通过 data-theme 切换;
- * 5 个主题 import 在 @layer base 之外, 保证 [data-theme="..."]
+ * 各主题 import 在 @layer base 之外, 保证 [data-theme="..."]
  * 选择器特异性优先于 tailwind base。 */
 @import './theme/light.css';
 @import './theme/dark.css';
@@ -47,7 +48,6 @@
 }
 
 @import "shadcn/tailwind.css";
-
 
 /* shadcn/ui variable convention: --[role]-[property]
  * Roles: background, foreground, primary, secondary, muted, accent, border, ring */
@@ -467,7 +467,7 @@
 
 @layer components {
 
-	/* 文本选区色统一收口到 var(--brand), 跟随 light / dark / rock 三主题
+	/* 文本选区色统一收口到 var(--brand), 跟随各主题
 	 * 自动取色 (在 .markdown-editor 内被 .ProseMirror ::selection 覆盖, 强
 	 * 度更高用于"块内文本被选中"场景)。这里保持 22% 透明度做非编辑器区
 	 * (侧边栏 / 命令面板 / 输入框) 的默认选区色。 */
@@ -697,9 +697,6 @@
 	   列表错误合并 (它会丢掉 [data-theme="dark"] 前缀)。 */
 	[data-theme="dark"] {
 		--tag-icon-hover: oklch(1 0 0);
-	}
-	[data-theme="dark"] .memo-list {
-		background: var(--memo-list-bg);
 	}
 	[data-tag-icon][aria-expanded="true"] .tag-expand-indicator,
 	[data-tag-icon]:hover .tag-expand-indicator,

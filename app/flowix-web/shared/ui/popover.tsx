@@ -276,8 +276,9 @@ function PopoverContent({
 				shadowClass,
 				className
 			)}
-			data-motion-state={motionState}
-			data-side={side}
+				data-motion-state={motionState}
+				data-side={side}
+				data-flowix-surface="popover"
 			style={{
 				top: position.top,
 				left: position.left,

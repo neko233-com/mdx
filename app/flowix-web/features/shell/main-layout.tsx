@@ -19,7 +19,6 @@ import {
   MemoList,
   MemoListServicesHost,
   NoteNavigationDrawer,
-  useNotebookTodoCount,
   useShellMemoViewModel,
   type MemoItem,
   type Notebook,
@@ -56,6 +55,7 @@ import {
 import { MainStatusBarHost } from '@features/shell/components/main-status-bar-host';
 import { CenteredLoadingSpinner } from '@shared/ui/centered-loading-spinner';
 import { MainPromptHost } from '@features/shell/components/main-prompt-host';
+import type { Editor } from '@tiptap/core';
 
 const DOCUMENT_PANEL_MIN_WIDTH = BROWSER_COLUMN_MIN_WIDTH;
 
@@ -236,6 +236,7 @@ export function MainLayout({
     ? workColumnTarget.plugin
     : null;
   const currentDocumentContentRef = useRef('');
+  const currentDocumentEditorRef = useRef<Editor | null>(null);
   const {
     browserColumnLayout,
     browserColumnLayoutKey,
@@ -294,8 +295,11 @@ export function MainLayout({
     'main-third',
     mainMemoEditorIdentity ?? { kind: 'external', path: currentDocumentPath ?? '' },
   );
-  const todoCount = useNotebookTodoCount(selectedNotebook?.id);
   const getCurrentDocumentContent = useCallback(() => currentDocumentContentRef.current, []);
+  const getCurrentDocumentEditor = useCallback(() => currentDocumentEditorRef.current, []);
+  const handleDocumentEditorReady = useCallback((editor: Editor | null) => {
+    currentDocumentEditorRef.current = editor;
+  }, []);
   const {
     handleCopyFullText,
     handleCopyLink,
@@ -304,9 +308,11 @@ export function MainLayout({
     handleExportMarkdown,
     handleSaveAsTemplate,
     handleExportWord,
+    handleExportPdf,
   } = useDocumentCommands({
     currentDocumentPath,
     getCurrentDocumentContent,
+    getCurrentDocumentEditor,
     currentMemo,
     updateMemoMeta,
     setMemoColors,
@@ -320,6 +326,7 @@ export function MainLayout({
   // re-fire on every parent render.
   useEffect(() => {
     currentDocumentContentRef.current = '';
+    currentDocumentEditorRef.current = null;
   }, [currentDocumentInstanceKey]);
 
   // 切换 memo 时关闭搜索面板 — 搜索/替换的 matches 是基于当前 editor state,
@@ -338,14 +345,6 @@ export function MainLayout({
       sort: activeSort,
     });
   }, [activeFilter, activeSort, loadMemos, selectedNotebook?.id, setActiveFilter, setMemoListVisible]);
-
-  // 状态栏 Agents 星标: 打开中间列展示 AgentConversationList,
-  // 已在 agents 视图则 no-op, 不再回退。
-  const handleOpenAgentConversationView = useCallback(() => {
-    if (isAgentConversationView) return;
-    setActiveFilter('agents');
-    setMemoListVisible(true);
-  }, [isAgentConversationView, setActiveFilter, setMemoListVisible]);
 
   const handleNavigateBack = useCallback(() => {
     void navigateDocumentHistory('back');
@@ -468,6 +467,7 @@ export function MainLayout({
             onMetainfoData: (data: { memoContent: string }) => {
               currentDocumentContentRef.current = data.memoContent;
             },
+            onEditorReady: handleDocumentEditorReady,
           },
         },
       }
@@ -531,6 +531,7 @@ export function MainLayout({
       onExportMarkdown: handleExportMarkdown,
       onSaveAsTemplate: handleSaveAsTemplate,
       onExportWord: handleExportWord,
+      onExportPdf: handleExportPdf,
       onRequestDeleteMemo: handleRequestDeleteMemo,
       onColorsChange: handleColorsChange,
       editorMode: mainEditorMode,
@@ -548,13 +549,13 @@ export function MainLayout({
       className="flowix-main-layout flex h-screen w-screen overflow-hidden"
       data-agent-conversation-view={isAgentConversationView || undefined}
       data-agent-conversation-detail={isAgentConversationDetail || undefined}
-      style={{ backgroundColor: 'var(--document-bg)' }}
+      style={{ backgroundColor: 'var(--frame-bg)' }}
     >
       <WindowsTitlebarControls />
       <MarkdownFileDropOverlay />
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-col flex-1 overflow-hidden">
-          <div className="relative flex flex-1 h-full overflow-hidden">
+          <div className="relative flex flex-1 h-full overflow-hidden rounded-b-[18px] shadow-[0_1px_0_var(--divider)]">
           <NoteNavigationDrawer
             phase={noteNavigationPhase}
             notebooks={notebooks}
@@ -638,7 +639,7 @@ export function MainLayout({
           >
           {/* Memo detail */}
             <div
-              className="h-full min-w-0 relative -left-px flex flex-col"
+              className="h-full min-w-0 relative -left-px flex flex-col bg-[var(--document-bg)]"
               style={browserColumnVisible
                 ? {
                     minWidth: DOCUMENT_PANEL_MIN_WIDTH,
@@ -718,10 +719,8 @@ export function MainLayout({
             onEditNotebook={handleEditNotebook}
             onDeleteNotebook={handleDeleteNotebook}
             onCreateNotebook={handleCreateNotebook}
-            todoCount={todoCount}
             onOpenTodos={handleOpenTodos}
             onToggleNoteNavigation={handleToggleNoteNavigation}
-            onOpenAgentConversationView={handleOpenAgentConversationView}
             dshDownload={dshDownload}
             updater={updater}
           />

@@ -13,7 +13,7 @@ static MAIN_WINDOW_FOCUS_CONSUMED: AtomicBool = AtomicBool::new(false);
 // required for Tauri to apply the traffic-light inset on overlay title bars.
 #[cfg(target_os = "macos")]
 const MACOS_TRAFFIC_LIGHT_POSITION: tauri::LogicalPosition<f64> =
-    tauri::LogicalPosition::new(18.0, 25.0);
+    tauri::LogicalPosition::new(12.0, 25.0);
 
 fn preferences_navigation_script(hash: &str) -> Result<String, String> {
     serde_json::to_string(hash)

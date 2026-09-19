@@ -339,8 +339,8 @@
 }
 
 /* 引用块 ── 颜色对齐编辑器内的 quote (tiptap blockquote border-left:
- * 0.1875rem solid #ddd), 用 var(--border) token 做三主题自适应
- * (与右栏面板 markdown-renderer 同源, 不硬编码 #ddd)。卡片
+ * 0.1875rem 边线), 用 var(--border) token 做各主题自适应
+ * (与右栏面板 markdown-renderer 同源, 不写死颜色)。卡片
  * 映射到 3px 左边框 + 12px 左 padding, italic + muted-foreground
  * 跟编辑器一致。 */
 .markdown-editor .agent-thread-card__message-content blockquote {

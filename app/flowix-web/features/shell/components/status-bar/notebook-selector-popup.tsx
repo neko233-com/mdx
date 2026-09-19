@@ -352,16 +352,21 @@ export function NotebookSelectorPopup({
         {trigger ?? (
           <button
             type="button"
-            className="flex h-[26px] items-center gap-1 bg-[var(--primary)] pl-2.5 pr-1 hover:opacity-90"
+            className="flex h-[26px] items-center gap-0.5 pl-2.5 pr-1 text-[var(--foreground)] hover:bg-[var(--muted)]"
             aria-label={t('status.switchNotebook')}
             title={t('status.switchNotebook')}
           >
             <NotebookIcon
               icon={selectedNotebook?.icon}
               name={selectedNotebook?.name}
-              className="h-4 w-4 rounded text-[12px] font-semibold text-[var(--primary-foreground)]"
+              className="h-4 w-4 rounded text-[12px] font-semibold !text-[var(--foreground)]"
             />
-            <ChevronsUpDown className="h-3 w-3 shrink-0 text-[var(--primary-foreground)]" />
+            {selectedNotebook?.name && (
+              <span className="w-fit max-w-20 min-w-0 truncate text-xs text-[var(--muted-foreground)]">
+                {selectedNotebook.name}
+              </span>
+            )}
+            <ChevronsUpDown className="h-3 w-3 shrink-0 text-[var(--foreground)]" />
           </button>
         )}
       </PopoverTrigger>

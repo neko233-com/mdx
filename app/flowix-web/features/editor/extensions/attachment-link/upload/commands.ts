@@ -43,7 +43,9 @@ export function createAttachmentCommands(memoId?: string): Partial<RawCommands> 
                 if (editor.isDestroyed || !editor.isEditable) return false;
                 void runTrackedUpload(editor.view, async (signal) => {
                     if (isTauriApp()) {
-                        const paths = await invoke<string[] | null>('select_files');
+                        const paths = await invoke<string[] | null>('select_files', {
+                            accept: params?.accept ?? null,
+                        });
                         if (!paths?.length || signal.aborted) return [];
                         return (await createAttachmentUploadFromPaths(paths, memoId, signal)).assets;
                     }

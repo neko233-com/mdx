@@ -7,11 +7,10 @@
  * 语义解耦靠具体 className (--collapse / --delete / --fullscreen /
  * --open-panel) 维持, 视觉同源靠共享基类统一 ── 两件事各司其职。
  *
- * ── 颜色用 var(--muted-foreground) 而非硬编码 #888 ──
- *   - 三套主题 (light/dark/rock) 都定义了 --muted-foreground, 与
+ * ── 颜色用 var(--muted-foreground), 跟随主题 ──
+ *   - 各主题都定义了 --muted-foreground, 与
  *     __meta 等"次要文字"位置用同一 token, 跨主题视觉一致。
- *   - 硬编码 #888 在 dark 主题下偏亮 (与 muted-foreground 不匹配),
- *     rock 主题下色彩倾向也不对 ── 改 token 后自动跟随主题。
+ *   - 原先的固定灰色在暗色和暖色主题下都不匹配 ── 改 token 后自动跟随主题。
  *
  * 选类名 __icon-btn (而非 __header-btn) ── 后续若 composer / footer
  * 等位置出现同款方形按钮可直接复用同一基类, 不必再起一个名字。 */
@@ -225,7 +224,7 @@
  *   - border-radius 0.5px 让两端圆滑, 避免 1px 实心方块的"硬边"感。
  *
  * ── 颜色 ──
- *   - var(--border) ── 跨三套主题 (light/dark/rock) 都有定义, 与卡片
+ *   - var(--border) ── 各主题都有定义, 与卡片
  *     其它 1px 描边 (e.g. agent-type-badge) 用同一 token, 视觉一致。
  *   - 不用 var(--muted-foreground) ── 那是文字色 token, 在分割线这
  *     种"非文字"几何元素上复用偏亮, 会让分割线变成"第二条文字"。 */

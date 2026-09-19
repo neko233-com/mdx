@@ -55,10 +55,6 @@
   scrollbar-width: none;
 }
 
-.heading-outline-navigation:hover .heading-outline-navigation__item::before {
-  background: var(--brand);
-}
-
 .heading-outline-navigation:focus-visible {
   outline: 2px solid color-mix(in oklch, var(--ring) 60%, transparent);
   outline-offset: 3px;
@@ -253,7 +249,7 @@
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: 0.35rem;
+	border-radius: 4px;
   background: transparent;
   color: var(--muted-foreground);
   cursor: pointer;
@@ -264,13 +260,15 @@
 }
 
 .memo-title-shell:focus-within .memo-title-properties-toggle,
-.memo-title-properties-toggle:focus-visible {
+.memo-title-properties-toggle:focus-visible,
+.memo-title-properties-toggle[aria-expanded='true'] {
   opacity: 1;
   pointer-events: auto;
 }
 
 .memo-title-properties-toggle:hover,
-.memo-title-properties-toggle:focus-visible {
+.memo-title-properties-toggle:focus-visible,
+.memo-title-properties-toggle[aria-expanded='true'] {
   background: var(--muted);
   color: var(--foreground);
   outline: none;
@@ -354,6 +352,33 @@
 
 .markdown-editor:focus .ProseMirror {
   outline: none;
+}
+
+/* Native contenteditable carets use the full line box, so their height grows
+ * with the user's line-spacing preference. StableCaret draws a glyph-height
+ * caret instead; keep the native caret available during IME composition. */
+.markdown-editor .ProseMirror.has-stable-caret,
+.markdown-editor .ProseMirror.has-stable-caret * {
+  caret-color: transparent !important;
+}
+
+.stable-editor-caret {
+  position: fixed;
+  z-index: 1000;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--brand);
+  pointer-events: none;
+  animation: stable-editor-caret-blink 1.05s steps(1, end) infinite;
+}
+
+.stable-editor-caret[hidden] {
+  display: none;
+}
+
+@keyframes stable-editor-caret-blink {
+  0%, 52% { opacity: 1; }
+  53%, 100% { opacity: 0; }
 }
 
 .markdown-editor .ProseMirror:not(.agent-thread-card__composer-editor) > :nth-child(1 of :not(.agent-thread-card, .frontmatter-property-node)) {
@@ -495,10 +520,10 @@
 
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) blockquote:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
-  border-left: 0.1875rem solid #ddd;
+  border-left: 0.1875rem solid var(--border);
   margin: 0.4rem 0 0.8rem;
   padding: 0 0 0 1rem;
-  color: #666;
+  color: var(--muted-foreground);
   font-style: italic;
 }
 
@@ -630,9 +655,9 @@
  * 颜色 token 化:
  *  - 基色: var(--brand) — 跨主题与 caret / 链接 / 选中态 / 标签底色同源
  *    (light: 紫 273 / dark: 亮紫 / rock: 浅紫, 全部融入各自底色)
- *    取代原硬编码 #5262DC (hue 240 indigo) 在 dark/rock 主题下脱节的问题.
+ *    取代原硬编码 #5262DC (hue 240 indigo) 在不同主题下脱节的问题.
  *  - hover: color-mix × white 25% 提亮派生, 与 .tiptap a:hover (white 20%)
- *    同公式一族, 三主题共享同一提亮曲线, 不会有"某主题的 hover 没设计". */
+ *    同公式一族, 各主题共享同一提亮曲线, 不会有"某主题的 hover 没设计". */
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) .column-resize-handle {
   position: absolute;
   right: -3px;
@@ -784,7 +809,7 @@
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) ul[data-type="taskList"] li:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) > label input[type="checkbox"]:checked {
   background-color: transparent;
-  border-color: #999;
+  border-color: var(--muted-foreground);
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) ul[data-type="taskList"] li:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) > label input[type="checkbox"]:checked::after {
@@ -793,7 +818,7 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: #999;
+  color: var(--muted-foreground);
   font-size: 11px;
   font-weight: bold;
 }
@@ -803,7 +828,7 @@
   width: 11px;
   height: 9px;
   top: 51%;
-  background-color: #999;
+  background-color: var(--muted-foreground);
   color: transparent;
   font-size: 0;
   font-weight: normal;
@@ -818,14 +843,14 @@
  * 子 todo，所以选择器要限定到本级文本所在的 <p>，避免子级被划线。 */
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) ul[data-type="taskList"] li:where(:not(.agent-thread-card__message, .agent-thread-card__message *))[data-checked="true"] > div > p {
   text-decoration: line-through;
-  color: #999;
+  color: var(--muted-foreground);
 }
 
 /* todo 切到已完成态时, 标签底色跟着文本一起走灰, 视觉上"这条 todo 已经
- * 收尾, 标签也一并沉寂"。复用与文本同色的 #999, 保持和上方 li > p 的
+ * 收尾, 标签也一并沉寂"。复用与文本同色的 muted-foreground, 保持和上方 li > p 的
  * color 一致 — 改 li 文字色时这里要同步。 */
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) ul[data-type="taskList"] li:where(:not(.agent-thread-card__message, .agent-thread-card__message *))[data-checked="true"] .tag-node {
-  background: #999;
+  background: var(--muted-foreground);
 }
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) ol:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
@@ -857,7 +882,7 @@
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) .editor-link-selection-highlight:where(:not(.agent-thread-card__message, .agent-thread-card__message *)) {
   /* 链接选区高亮: 与 .is-block-selected 同思路, 用 --brand 派生透明底,
-   * 在三套主题 (light / dark / rock) 下都能融入品牌色相, 避免硬编码 indigo. */
+   * 在各主题下都能融入品牌色相, 避免硬编码 indigo. */
   background: color-mix(in oklch, var(--brand) 18%, transparent);
   border-radius: 2px;
 }
@@ -1181,7 +1206,7 @@
 
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) p.is-empty:where(:not(.agent-thread-card__message, .agent-thread-card__message *))::before {
   content: attr(data-placeholder);
-  color: #aaa;
+  color: var(--muted-foreground);
   pointer-events: none;
   float: left;
   height: 0;
@@ -1258,7 +1283,7 @@
 /* 节点级选中 (image / videoAttachment / fileAttachment 等
  * atom 节点被 NodeSelection 选中时): 用品牌色 outline 替代 Tiptap 默认
  * 的浅蓝 #8cf, 与 .is-block-selected 左侧描边、::selection 文字底色共
- * 同收口到 var(--brand), 三主题下视觉一致。 */
+ * 同收口到 var(--brand), 各主题下视觉一致。 */
 .markdown-editor .ProseMirror:not(.agent-thread-card__composer-editor) .ProseMirror-selectednode {
   /* outline: 2px solid var(--brand);
   outline-offset: 2px; */
@@ -1336,7 +1361,7 @@
 /* 时间戳行: 不可编辑, 随编辑器滚动 */
 .markdown-editor .timestamp-row {
   font-size: 0.75rem;
-  color: #999;
+  color: var(--muted-foreground);
   padding: 0.5rem 0;
   pointer-events: none;
   user-select: none;

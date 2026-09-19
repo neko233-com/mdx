@@ -16,6 +16,7 @@ import { replaceActiveMemoPath } from '@features/workspace/use-cases/workspace-n
 import { replaceBrowserColumnMemoPath } from '@features/workspace/use-cases/browser-column-navigation';
 import { getCurrentAppLanguage } from '@features/preferences/public/runtime-api';
 import { formatDateTime } from '@/lib/utils';
+import { markDocumentOpenTrace } from '@/lib/document-open-perf';
 import {
   initialDocumentContainerState,
   type DocumentContainerState,
@@ -60,6 +61,13 @@ function logOpenDocPerf(label: string, startedAt: number, meta?: Record<string, 
     elapsedMs: Math.round((performance.now() - startedAt) * 10) / 10,
     ...meta,
   });
+  const transitionId = meta?.transitionId;
+  if (typeof transitionId === 'number') {
+    markDocumentOpenTrace(transitionId, `content:${label}`, {
+      stageElapsedMs: Math.round((performance.now() - startedAt) * 10) / 10,
+      ...meta,
+    });
+  }
 }
 
 export function useDocumentContent({
@@ -88,6 +96,11 @@ export function useDocumentContent({
       options?: Pick<LoadContentOptions, 'preservePending'> & { recovery?: RecoveryDraft | null },
     ) => {
       const startedAt = performance.now();
+      markDocumentOpenTrace(transitionId, 'content:apply-start', {
+        memoId,
+        bytes: fullContent.length,
+        isolatedSession,
+      });
       const buf = applyLoadedDocumentContent(identity, path, fullContent, {
         preservePending: options?.preservePending ?? true,
         setAsCurrent: !isolatedSession,
@@ -146,6 +159,12 @@ export function useDocumentContent({
     async (path: string, options?: LoadContentOptions) => {
       if (!path) return;
       const startedAt = performance.now();
+      markDocumentOpenTrace(transitionId, 'content:load-start', {
+        memoId,
+        path,
+        isExternalDocument,
+        isolatedSession,
+      });
 
       // Switch the active buffer up-front so any in-flight writes from
       // the previous document that resolve after this point still
@@ -169,7 +188,16 @@ export function useDocumentContent({
       }
       const stagedContent = consumeStagedDocumentSnapshot(identity, path);
       if (stagedContent !== null) {
+        markDocumentOpenTrace(transitionId, 'recovery:read-start', {
+          memoId,
+          source: 'staged',
+        });
         const recovery = await readRecoveryDraft(identity).catch(() => null);
+        markDocumentOpenTrace(transitionId, 'recovery:read-end', {
+          memoId,
+          source: 'staged',
+          found: recovery !== null,
+        });
         applyLoadedContent(path, stagedContent, { preservePending: true, recovery });
         logOpenDocPerf('reloadDocument:staged', startedAt, {
           memoId,
@@ -198,6 +226,11 @@ export function useDocumentContent({
           path,
         });
         const readStartedAt = performance.now();
+        markDocumentOpenTrace(transitionId, 'ipc:read-start', {
+          memoId,
+          path,
+          isExternalDocument,
+        });
         let readPath = path;
         let fullContent = isExternalDocument
           ? await externalDocuments.read(readPath, externalScopePath)
@@ -234,6 +267,12 @@ export function useDocumentContent({
           path: readPath,
           bytes: fullContent?.length ?? 0,
         });
+        markDocumentOpenTrace(transitionId, 'ipc:read-end', {
+          memoId,
+          path: readPath,
+          bytes: fullContent?.length ?? 0,
+          isExternalDocument,
+        });
 
         if (fullContent === null || fullContent === undefined) {
           if (currentLoadId !== counter.current) return;
@@ -246,7 +285,12 @@ export function useDocumentContent({
         }
 
         if (currentLoadId !== counter.current) return;
+        markDocumentOpenTrace(transitionId, 'recovery:read-start', { memoId });
         const recovery = await readRecoveryDraft(identity).catch(() => null);
+        markDocumentOpenTrace(transitionId, 'recovery:read-end', {
+          memoId,
+          found: recovery !== null,
+        });
         if (currentLoadId !== counter.current) return;
         applyLoadedContent(readPath, fullContent, {
           preservePending: options?.preservePending,

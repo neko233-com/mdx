@@ -78,7 +78,7 @@ const COLOR_LABEL_KEYS: Record<MemoColor, I18nKey> = {
   gray: 'document.color.gray',
 };
 
-function getColorLabel(color: MemoColor, language: AppLanguage): string {
+export function getMemoColorLabel(color: MemoColor, language: AppLanguage): string {
   return translate(language, COLOR_LABEL_KEYS[color]);
 }
 
@@ -169,7 +169,7 @@ function MemoCardColorRow({ colors, onChange }: MemoCardColorRowProps) {
           <button
             key={c}
             type="button"
-            aria-label={getColorLabel(c, language)}
+            aria-label={getMemoColorLabel(c, language)}
             aria-pressed={isSelected}
             onClick={() => toggle(c)}
             onMouseDown={(event) => {
