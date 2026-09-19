@@ -119,3 +119,9 @@ pub fn apply_window_theme(theme: Theme, app: tauri::AppHandle) -> Result<(), Str
     crate::window_chrome::apply_theme_background_all(&app, theme);
     Ok(())
 }
+
+/// Keep the native application menu in sync with the frontend language.
+#[tauri::command]
+pub fn apply_menu_language(language: String, app: tauri::AppHandle) -> Result<(), String> {
+    crate::app::native_menu::set_language(&app, &language).map_err(|error| error.to_string())
+}

@@ -837,6 +837,7 @@ pub fn run() {
             commands::window::show_main_window,
             commands::window::open_preferences_window,
             commands::window::apply_window_theme,
+            commands::window::apply_menu_language,
             commands::external_document_watch::watch_external_document,
             commands::external_document_watch::unwatch_external_document,
             commands::file_browser_watch::watch_file_browser_root,

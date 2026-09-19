@@ -40,6 +40,25 @@ export function filterHeadingsForOutline(headings: HeadingItem[]): HeadingItem[]
   return withoutH4.filter((heading) => heading.level !== 3)
 }
 
+export function getNavigationActiveElement(
+  allHeadings: HeadingItem[],
+  visibleHeadings: HeadingItem[],
+  activeElement: HTMLElement | null,
+): HTMLElement | null {
+  if (!activeElement) return null
+
+  const visibleElements = new Set(visibleHeadings.map((heading) => heading.element))
+  const activeIndex = allHeadings.findIndex((heading) => heading.element === activeElement)
+  if (activeIndex < 0) return null
+
+  for (let index = activeIndex; index >= 0; index -= 1) {
+    const element = allHeadings[index].element
+    if (visibleElements.has(element)) return element
+  }
+
+  return null
+}
+
 function readHeadings(editor: Editor): HeadingItem[] {
   if (editor.isDestroyed) return []
   return extractHeadings(editor.view.dom)
@@ -63,15 +82,18 @@ function getActiveHeadingIndex(headings: HeadingItem[], scrollContainer: HTMLEle
 
 export function HeadingOutlineNavigation({ editor }: { editor: Editor }) {
   const { t } = useI18n()
-  const [headings, setHeadings] = useState<HeadingItem[]>([])
-  const [activeIndex, setActiveIndex] = useState(0)
+  const [allHeadings, setAllHeadings] = useState<HeadingItem[]>([])
+  const [activeElement, setActiveElement] = useState<HTMLElement | null>(null)
+  const [expanded, setExpanded] = useState(false)
   const [visible, setVisible] = useState(false)
-  const headingsRef = useRef<HeadingItem[]>([])
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const allHeadingsRef = useRef<HeadingItem[]>([])
+  const headings = filterHeadingsForOutline(allHeadings)
 
   const refreshHeadings = useCallback(() => {
-    const nextHeadings = filterHeadingsForOutline(readHeadings(editor))
-    headingsRef.current = nextHeadings
-    setHeadings(nextHeadings)
+    const nextHeadings = readHeadings(editor)
+    allHeadingsRef.current = nextHeadings
+    setAllHeadings(nextHeadings)
   }, [editor])
 
   useEffect(() => {
@@ -84,15 +106,36 @@ export function HeadingOutlineNavigation({ editor }: { editor: Editor }) {
   }, [editor, refreshHeadings])
 
   useEffect(() => {
-    setActiveIndex(0)
-    if (headings.length === 0) {
+    setActiveElement(null)
+    if (allHeadings.length === 0) {
       setVisible(false)
       return
     }
 
     const revealTimer = window.setTimeout(() => setVisible(true), REVEAL_DELAY_MS)
     return () => window.clearTimeout(revealTimer)
-  }, [headings.length])
+  }, [allHeadings.length])
+
+  useEffect(() => {
+    if (!expanded) return
+
+    const closeOnPointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Node && !anchorRef.current?.contains(target)) {
+        setExpanded(false)
+      }
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setExpanded(false)
+    }
+
+    document.addEventListener('pointerdown', closeOnPointerDown, true)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnPointerDown, true)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [expanded])
 
   useEffect(() => {
     const scrollContainer = getScrollContainer(editor)
@@ -101,11 +144,11 @@ export function HeadingOutlineNavigation({ editor }: { editor: Editor }) {
     let frameId: number | null = null
     const updateActiveHeading = () => {
       frameId = null
-      const currentHeadings = headingsRef.current
-      const nextIndex = currentHeadings.length === 0
-        ? 0
-        : getActiveHeadingIndex(currentHeadings, scrollContainer)
-      setActiveIndex((current) => current === nextIndex ? current : nextIndex)
+      const currentHeadings = allHeadingsRef.current
+      const nextHeading = currentHeadings.length === 0
+        ? null
+        : currentHeadings[getActiveHeadingIndex(currentHeadings, scrollContainer)] ?? null
+      setActiveElement((current) => current === nextHeading?.element ? current : nextHeading?.element ?? null)
     }
     const scheduleUpdate = () => {
       if (frameId !== null) return
@@ -125,12 +168,13 @@ export function HeadingOutlineNavigation({ editor }: { editor: Editor }) {
 
   useEffect(() => {
     const scrollContainer = getScrollContainer(editor)
-    if (scrollContainer && headings.length > 0) {
-      setActiveIndex(getActiveHeadingIndex(headings, scrollContainer))
+    if (scrollContainer && allHeadings.length > 0) {
+      const activeHeading = allHeadings[getActiveHeadingIndex(allHeadings, scrollContainer)]
+      setActiveElement(activeHeading?.element ?? null)
     }
-  }, [editor, headings])
+  }, [editor, allHeadings])
 
-  const scrollToHeading = (heading: HeadingItem, index: number) => {
+  const scrollToHeading = (heading: HeadingItem) => {
     const scrollContainer = getScrollContainer(editor)
     if (!scrollContainer) return
 
@@ -142,34 +186,71 @@ export function HeadingOutlineNavigation({ editor }: { editor: Editor }) {
     )
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-    setActiveIndex(index)
+    setActiveElement(heading.element)
+    setExpanded(false)
     scrollContainer.scrollTo({
       top,
       behavior: reduceMotion ? 'auto' : 'smooth',
     })
   }
 
-  if (headings.length === 0 || !visible) return null
+  const navigationActiveElement = getNavigationActiveElement(
+    allHeadings,
+    headings,
+    activeElement,
+  )
+
+  if (allHeadings.length === 0 || !visible) return null
 
   return (
-    <div className="heading-outline-navigation-anchor">
+    <div ref={anchorRef} className="heading-outline-navigation-anchor">
       <nav
         className="heading-outline-navigation"
+        role="button"
+        tabIndex={0}
         aria-label={t('editor.headingOutline.ariaLabel')}
+        aria-expanded={expanded}
+        onClick={() => setExpanded(true)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            setExpanded(true)
+          }
+        }}
       >
         {headings.map((heading, index) => (
-          <button
+          <span
             key={`${heading.level}-${index}`}
-            type="button"
-            className={`heading-outline-navigation__item${index === activeIndex ? ' is-active' : ''}`}
+            className={`heading-outline-navigation__item${heading.element === navigationActiveElement ? ' is-active' : ''}`}
             data-level={heading.level}
-            aria-label={heading.text || `H${heading.level}`}
-            aria-current={index === activeIndex ? 'location' : undefined}
-            title={heading.text || `H${heading.level}`}
-            onClick={() => scrollToHeading(heading, index)}
           />
         ))}
       </nav>
+      {expanded && (
+        <div
+          className="heading-outline-navigation__popover"
+          role="dialog"
+          aria-label={t('editor.headingOutline.fullOutlineAriaLabel')}
+        >
+          <div className="heading-outline-navigation__popover-title">
+            {t('editor.headingOutline.title')}
+          </div>
+          <div className="heading-outline-navigation__popover-list">
+            {allHeadings.map((heading, index) => (
+              <button
+                key={`${heading.level}-${index}`}
+                type="button"
+                className={`heading-outline-navigation__popover-item${heading.element === activeElement ? ' is-active' : ''}`}
+                data-level={heading.level}
+                aria-current={heading.element === activeElement ? 'location' : undefined}
+                onClick={() => scrollToHeading(heading)}
+              >
+                {heading.text || `H${heading.level}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

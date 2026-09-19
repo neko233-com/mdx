@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   extractHeadings,
   filterHeadingsForOutline,
+  getNavigationActiveElement,
   type HeadingItem,
 } from './heading-outline-navigation'
 
@@ -85,5 +86,14 @@ describe('filterHeadingsForOutline', () => {
 
     expect(visible).toHaveLength(31)
     expect(visible).toEqual(headings)
+  })
+
+  it('falls back to the nearest visible heading when the active heading is hidden', () => {
+    const h2 = heading(2, 0)
+    const h3 = heading(3, 1)
+    const h4 = heading(4, 2)
+    const allHeadings = [h2, h3, h4]
+
+    expect(getNavigationActiveElement(allHeadings, [h2], h4.element)).toBe(h2.element)
   })
 })

@@ -139,6 +139,8 @@ export const windows = {
   showMain: () => invoke<void>('show_main_window'),
   openPreferences: (tab?: string) => invoke<void>('open_preferences_window', { tab }),
   applyWindowTheme: (theme: ThemeId) => invoke<void>('apply_window_theme', { theme }),
+  applyMenuLanguage: (language: 'zh-CN' | 'en-US') =>
+    invoke<void>('apply_menu_language', { language }),
   watchExternalDocument: (filePath: string, scopePath?: string | null) =>
     invoke<string>('watch_external_document', { filePath, scopePath: scopePath ?? null }),
   unwatchExternalDocument: (leaseId: string) =>

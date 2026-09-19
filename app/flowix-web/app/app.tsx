@@ -89,6 +89,12 @@ function App() {
   useApplyFontSettings(format);
 
   useEffect(() => {
+    void windows.applyMenuLanguage(language).catch((error) => {
+      logger.error("apply native menu language failed", { error });
+    });
+  }, [language]);
+
+  useEffect(() => {
     // The static loading screen is only a first-paint fallback. It must not
     // depend on a lazy route resolving: if a packaged chunk is unavailable,
     // ErrorBoundary should be visible instead of an endless spinner.
