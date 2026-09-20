@@ -20,6 +20,14 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Windows uses the shared overlay scrollbar wrapper. Keep the wrapper at the
+ * same viewport size as the former editor scroller so ProseMirror, sticky
+ * decorations, and the toolbar keep their existing layout contract. */
+.markdown-editor .editor-content-frame {
+  height: 100%;
+  min-height: 0;
+}
+
 .markdown-editor .editor-content {
   position: relative;
   display: flex;

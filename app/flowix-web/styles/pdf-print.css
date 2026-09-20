@@ -145,7 +145,8 @@ html.flowix-pdf-exporting body > *:not(#flowix-pdf-print-root) {
 .flowix-pdf-print-root code,
 .flowix-pdf-print-root pre {
   font-family: "SFMono-Regular", "SF Mono", Menlo, Consolas,
-    "Liberation Mono", monospace;
+    "Inter", "Microsoft YaHei", "微软雅黑", "SFMono-Regular", "SF Mono", Menlo,
+    Consolas, "Liberation Mono", monospace;
 }
 
 .flowix-pdf-print-root code {

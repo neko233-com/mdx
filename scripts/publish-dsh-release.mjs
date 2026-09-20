@@ -79,7 +79,7 @@ function put(key, file) {
     cwd: repo,
     env: process.env,
     stdio: 'inherit',
-    shell: false,
+    shell: true,
   })
   if (result.error) throw result.error
   if (result.status !== 0) throw new Error(`wrangler upload failed for ${key}`)

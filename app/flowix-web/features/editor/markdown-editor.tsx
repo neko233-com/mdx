@@ -44,6 +44,8 @@ import { TablePlugin } from '@features/editor/extensions/table/table-plugin';
 import { StableCaret } from '@features/editor/extensions/stable-caret';
 import { useI18n } from '@/lib/i18n';
 import { markDocumentOpenTrace } from '@/lib/document-open-perf';
+import { isWindowsPlatform } from '@/lib/shortcuts/platform';
+import { OverlayScrollbar } from '@shared/ui/overlay-scrollbar';
 
 interface MarkdownEditorProps {
   memoId?: string;
@@ -553,6 +555,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   const editorMountRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const [editorInstance, setEditorInstance] = useState<Editor | null>(null);
+  const useWindowsEditorScrollbar = isWindowsPlatform();
   const firstFrameTraceRef = useRef<number | null>(null);
   const [isScrolling, setIsScrolling] = useState(false);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1217,6 +1220,21 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     };
   }, []);
 
+  const editorContentChildren = (
+    <>
+      {editorInstance && <HeadingOutlineNavigation editor={editorInstance} />}
+      {header}
+      <div ref={editorMountRef} className="editor-document-body" />
+      {editorInstance && <DragContextMenu editor={editorInstance} />}
+      {editorInstance && !isScrolling && (
+        <>
+          <TableBubbleMenu editor={editorInstance} />
+          <SelectionBubbleMenu editor={editorInstance} />
+        </>
+      )}
+    </>
+  );
+
   return (
     <div className={`markdown-editor ${className || ''}`}>
       <SearchReplacePanel
@@ -1224,22 +1242,24 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         visible={searchPanelOpen}
         onClose={() => onSearchPanelOpenChangeRef.current?.(false)}
       />
-      <div
-        ref={elementRef}
-        className="editor-content"
-        onMouseDown={handleEditorSurfaceMouseDown}
-      >
-        {editorInstance && <HeadingOutlineNavigation editor={editorInstance} />}
-        {header}
-        <div ref={editorMountRef} className="editor-document-body" />
-        {editorInstance && <DragContextMenu editor={editorInstance} />}
-        {editorInstance && !isScrolling && (
-          <>
-            <TableBubbleMenu editor={editorInstance} />
-            <SelectionBubbleMenu editor={editorInstance} />
-          </>
-        )}
-      </div>
+      {useWindowsEditorScrollbar ? (
+        <OverlayScrollbar
+          className="editor-content-frame"
+          scrollerClassName="editor-content"
+          scrollerRef={elementRef}
+          onMouseDown={handleEditorSurfaceMouseDown}
+        >
+          {editorContentChildren}
+        </OverlayScrollbar>
+      ) : (
+        <div
+          ref={elementRef}
+          className="editor-content"
+          onMouseDown={handleEditorSurfaceMouseDown}
+        >
+          {editorContentChildren}
+        </div>
+      )}
       <EditorToolbar
         editor={editorInstance}
         collapsed={toolbarCollapsed}

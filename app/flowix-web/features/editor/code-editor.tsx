@@ -173,7 +173,7 @@ const codeEditorTheme = EditorView.theme({
   },
   '.cm-scroller': {
     overflow: 'auto',
-    fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+    fontFamily: "'Inter', 'Microsoft YaHei', '微软雅黑', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
     lineHeight: 'var(--code-editor-line-height, 1.65)',
   },
   '.cm-content': {

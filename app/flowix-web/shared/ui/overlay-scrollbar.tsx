@@ -7,6 +7,7 @@ import {
   type ReactNode,
   type MutableRefObject,
   type RefCallback,
+  type MouseEventHandler,
   type UIEventHandler,
 } from 'react';
 import { cn } from '@/lib/utils';
@@ -23,6 +24,7 @@ interface OverlayScrollbarProps {
   scrollerClassName?: string;
   scrollerRef?: MutableRefObject<HTMLDivElement | null> | RefCallback<HTMLDivElement>;
   onScroll?: UIEventHandler<HTMLDivElement>;
+  onMouseDown?: MouseEventHandler<HTMLDivElement>;
 }
 
 export const OverlayScrollbar = forwardRef<OverlayScrollbarHandle, OverlayScrollbarProps>(
@@ -33,6 +35,7 @@ export const OverlayScrollbar = forwardRef<OverlayScrollbarHandle, OverlayScroll
       scrollerClassName,
       scrollerRef,
       onScroll,
+      onMouseDown,
     },
     ref,
   ) {
@@ -86,6 +89,7 @@ export const OverlayScrollbar = forwardRef<OverlayScrollbarHandle, OverlayScroll
           ref={setScrollerRef}
           className={cn('overlay-scrollbar', scrollerClassName)}
           onScroll={handleScroll}
+          onMouseDown={onMouseDown}
         >
           {children}
         </div>
