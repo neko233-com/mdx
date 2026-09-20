@@ -11,6 +11,9 @@ const rootArg = rootFlagIndex >= 0 ? process.argv[rootFlagIndex + 1] : process.a
 if (!rootArg) throw new Error('usage: node smoke-dsh-package.mjs --root <bundle-root>')
 
 const root = resolve(rootArg)
+const smokeTimeoutMs = Number(process.env.FLOWIX_DSH_SMOKE_TIMEOUT_MS) > 0
+  ? Number(process.env.FLOWIX_DSH_SMOKE_TIMEOUT_MS)
+  : 120_000
 const metadata = existsSync(resolve(root, 'dsh-runtime.json'))
   ? JSON.parse(await readFile(resolve(root, 'dsh-runtime.json'), 'utf8'))
   : { runtimeType: 'node-bundle', nodeExecutable: 'node/node', entrypoint: 'runtime/node_modules/@deepseek-ai/dsh/lib/bin.js' }
@@ -116,7 +119,7 @@ try {
 async function request(childProcess, iterator, id, method, params) {
   const requestBody = JSON.stringify({ jsonrpc: '2.0', id, method, params })
   childProcess.stdin.write(`${requestBody}\n`)
-  const deadline = Date.now() + 30_000
+  const deadline = Date.now() + smokeTimeoutMs
   while (Date.now() < deadline) {
     const remaining = deadline - Date.now()
     let timer
