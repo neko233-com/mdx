@@ -728,6 +728,12 @@
     color 120ms ease;
 }
 
+/* 模型名现在会带上思考深度 (例如 "GPT-5.5 · medium"), 给模型控件
+ * 单独留出更多空间，避免比全屏输入框更早截断。 */
+.markdown-editor .agent-thread-card__empty-control[data-kind='model'] {
+  max-width: 240px;
+}
+
 .markdown-editor .agent-thread-card__empty-workspace {
   display: inline-flex;
   align-items: center;

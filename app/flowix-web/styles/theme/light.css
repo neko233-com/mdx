@@ -35,7 +35,7 @@
 	 * — 原值在白底上读作"被蓝灰染过的深字", 偏色相; 降 chroma 后
 	 * 读作"中性墨", 与 rock/mist 一致. */
 	--foreground: oklch(0.300 0.009 var(--neutral-hue));
-	--card: oklch(0.997 0.003 var(--neutral-hue));
+	--card: #ffffff;
 	--list-bg: var(--card);
 
 	/* 浮层底: 原 light 写死 98.212% 0.00011 271.152 — 既写死 hue 又
@@ -117,7 +117,6 @@
 	--editor-block-bg: oklch(0.982 0.005 var(--neutral-hue));
 	/* Agent conversation surfaces currently follow editor blocks; keep the
 	 * semantic token separate so they can evolve independently later. */
-	--agent-surface-bg: var(--editor-block-bg);
 
 	/* 浮层: 原写死 chroma=0, 改为 var(--neutral-hue) + chroma 0.012 派生
 	 * (与 rock 一致), 跨主题切换时跟随 neutral-hue 偏移. */

@@ -324,18 +324,18 @@
   width: 100%;
   min-height: 0;
   overflow: hidden;
-  background: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
+  background: var(--agent-bg, var(--document-bg));
 }
 
 .agent-conversation-detail {
-  background: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
+  background: var(--agent-bg, var(--document-bg));
 }
 
 /* 独立 Agent 对话标题栏与消息区使用完全相同的纯色背景。
  * 只作用于 AgentConversationTitlebar, 不覆盖布局级 --bg-titlebar, 因此
  * 普通文档标题栏、偏好设置标题栏和 WindowsTitlebarControls 保持原样。 */
 .agent-conversation-titlebar {
-  background-color: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
+  background-color: var(--agent-bg, var(--document-bg));
   background-image: none;
 }
 
@@ -343,7 +343,7 @@
  * class is intentionally independent of fullscreen state so Browser Column
  * conversations and fullscreen embedded Thread Cards cannot drift apart. */
 .agent-surface-titlebar {
-  background-color: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
+  background-color: var(--agent-bg, var(--document-bg));
   background-image: linear-gradient(
     to bottom,
     color-mix(in oklch, var(--primary) 3%, transparent),
@@ -354,7 +354,7 @@
 /* Media resources share the same surface background as conversations, while
  * keeping their own semantic chrome type. */
 .media-surface-titlebar {
-  background-color: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
+  background-color: var(--agent-bg, var(--document-bg));
   background-image: none;
 }
 

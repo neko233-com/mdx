@@ -1,5 +1,6 @@
 import type { Editor } from '@tiptap/core'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useI18n } from '@/lib/i18n'
 
 const HEADING_SELECTOR = 'h1, h2, h3, h4'
@@ -7,6 +8,8 @@ const NON_DOCUMENT_HEADING_SELECTOR = '.agent-thread-card, .frontmatter-property
 const MAX_OUTLINE_ITEMS = 30
 const REVEAL_DELAY_MS = 450
 const SCROLL_OFFSET_PX = 16
+const POPOVER_WIDTH_PX = 253
+const VIEWPORT_PADDING_PX = 8
 
 export interface HeadingItem {
   element: HTMLElement
@@ -80,6 +83,68 @@ function getActiveHeadingIndex(headings: HeadingItem[], scrollContainer: HTMLEle
   return activeIndex
 }
 
+interface SurfaceRectLike {
+  top: number
+  right: number
+  bottom: number
+  left: number
+  width: number
+  height: number
+}
+
+export interface HeadingOutlinePopoverPosition {
+  left: number
+  top: number
+  maxWidth: number
+  maxHeight: number
+}
+
+/**
+ * Keep a portalled outline inside the editor surface that owns it. The
+ * surface can be either the main work column or the browser column, so this
+ * deliberately works from the current editor's bounds instead of a global
+ * column width or a browser-column store value.
+ */
+export function calculateHeadingOutlinePopoverPosition(
+  surfaceRect: SurfaceRectLike,
+  popoverWidth = POPOVER_WIDTH_PX,
+  popoverHeight = 0,
+  viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth,
+  viewportHeight = typeof window === 'undefined' ? 0 : window.innerHeight,
+): HeadingOutlinePopoverPosition {
+  const maxWidth = Math.max(0, Math.min(
+    popoverWidth,
+    surfaceRect.width - VIEWPORT_PADDING_PX * 2,
+    viewportWidth - VIEWPORT_PADDING_PX * 2,
+  ))
+  const maxHeight = Math.max(
+    0,
+    Math.min(
+      Math.round(viewportHeight * 0.8),
+      surfaceRect.height - VIEWPORT_PADDING_PX * 2,
+    ),
+  )
+  const actualWidth = Math.min(popoverWidth, maxWidth || popoverWidth)
+  const actualHeight = Math.min(popoverHeight || Math.round(viewportHeight * 0.8), maxHeight || popoverHeight)
+  const minLeft = Math.max(VIEWPORT_PADDING_PX, surfaceRect.left + VIEWPORT_PADDING_PX)
+  const maxLeft = Math.min(
+    surfaceRect.right - actualWidth - VIEWPORT_PADDING_PX,
+    viewportWidth - actualWidth - VIEWPORT_PADDING_PX,
+  )
+  const left = maxLeft >= minLeft ? maxLeft : minLeft
+  const centerY = surfaceRect.top + surfaceRect.height / 2
+  const minTop = Math.max(VIEWPORT_PADDING_PX, surfaceRect.top + VIEWPORT_PADDING_PX)
+  const maxTop = Math.min(
+    surfaceRect.bottom - actualHeight - VIEWPORT_PADDING_PX,
+    viewportHeight - actualHeight - VIEWPORT_PADDING_PX,
+  )
+  const top = maxTop >= minTop
+    ? Math.max(minTop, Math.min(centerY - actualHeight / 2, maxTop))
+    : minTop
+
+  return { left, top, maxWidth, maxHeight }
+}
+
 export function HeadingOutlineNavigation({ editor }: { editor: Editor }) {
   const { t } = useI18n()
   const [allHeadings, setAllHeadings] = useState<HeadingItem[]>([])
@@ -87,6 +152,8 @@ export function HeadingOutlineNavigation({ editor }: { editor: Editor }) {
   const [expanded, setExpanded] = useState(false)
   const [visible, setVisible] = useState(false)
   const anchorRef = useRef<HTMLDivElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const [popoverPosition, setPopoverPosition] = useState<HeadingOutlinePopoverPosition | null>(null)
   const allHeadingsRef = useRef<HeadingItem[]>([])
   const headings = filterHeadingsForOutline(allHeadings)
 
@@ -121,7 +188,11 @@ export function HeadingOutlineNavigation({ editor }: { editor: Editor }) {
 
     const closeOnPointerDown = (event: PointerEvent) => {
       const target = event.target
-      if (target instanceof Node && !anchorRef.current?.contains(target)) {
+      if (
+        target instanceof Node
+        && !anchorRef.current?.contains(target)
+        && !popoverRef.current?.contains(target)
+      ) {
         setExpanded(false)
       }
     }
@@ -136,6 +207,59 @@ export function HeadingOutlineNavigation({ editor }: { editor: Editor }) {
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [expanded])
+
+  useLayoutEffect(() => {
+    if (!expanded) {
+      setPopoverPosition(null)
+      return
+    }
+
+    const surface = editor.isDestroyed
+      ? null
+      : editor.view.dom.closest<HTMLElement>('.markdown-editor')
+    if (!surface) return
+
+    let frameId: number | null = null
+    const updatePosition = () => {
+      frameId = null
+      const surfaceRect = surface.getBoundingClientRect()
+      const popoverRect = popoverRef.current?.getBoundingClientRect()
+      const nextPosition = calculateHeadingOutlinePopoverPosition(
+        surfaceRect,
+        POPOVER_WIDTH_PX,
+        popoverRect?.height ?? 0,
+      )
+      setPopoverPosition((current) => (
+        current
+        && current.left === nextPosition.left
+        && current.top === nextPosition.top
+        && current.maxWidth === nextPosition.maxWidth
+        && current.maxHeight === nextPosition.maxHeight
+          ? current
+          : nextPosition
+      ))
+    }
+    const scheduleUpdate = () => {
+      if (frameId !== null) return
+      frameId = window.requestAnimationFrame(updatePosition)
+    }
+
+    updatePosition()
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(scheduleUpdate)
+    resizeObserver?.observe(surface)
+    if (popoverRef.current) resizeObserver?.observe(popoverRef.current)
+    window.addEventListener('resize', scheduleUpdate)
+    window.visualViewport?.addEventListener('resize', scheduleUpdate)
+
+    return () => {
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', scheduleUpdate)
+      window.visualViewport?.removeEventListener('resize', scheduleUpdate)
+      if (frameId !== null) window.cancelAnimationFrame(frameId)
+    }
+  }, [editor, expanded])
 
   useEffect(() => {
     const scrollContainer = getScrollContainer(editor)
@@ -227,29 +351,41 @@ export function HeadingOutlineNavigation({ editor }: { editor: Editor }) {
         ))}
       </nav>
       {expanded && (
-        <div
-          className="heading-outline-navigation__popover"
-          role="dialog"
-          aria-label={t('editor.headingOutline.fullOutlineAriaLabel')}
-        >
-          <div className="heading-outline-navigation__popover-title">
-            {t('editor.headingOutline.title')}
-          </div>
-          <div className="heading-outline-navigation__popover-list">
-            {allHeadings.map((heading, index) => (
-              <button
-                key={`${heading.level}-${index}`}
-                type="button"
-                className={`heading-outline-navigation__popover-item${heading.element === activeElement ? ' is-active' : ''}`}
-                data-level={heading.level}
-                aria-current={heading.element === activeElement ? 'location' : undefined}
-                onClick={() => scrollToHeading(heading)}
-              >
-                {heading.text || `H${heading.level}`}
-              </button>
-            ))}
-          </div>
-        </div>
+        typeof document !== 'undefined' && createPortal(
+          <div
+            ref={popoverRef}
+            className="heading-outline-navigation__popover"
+            role="dialog"
+            aria-label={t('editor.headingOutline.fullOutlineAriaLabel')}
+            style={popoverPosition ? {
+              left: `${popoverPosition.left}px`,
+              top: `${popoverPosition.top}px`,
+              right: 'auto',
+              maxWidth: `${popoverPosition.maxWidth}px`,
+              maxHeight: `${popoverPosition.maxHeight}px`,
+              visibility: 'visible',
+            } : { visibility: 'hidden' }}
+          >
+            <div className="heading-outline-navigation__popover-title">
+              {t('editor.headingOutline.title')}
+            </div>
+            <div className="heading-outline-navigation__popover-list">
+              {allHeadings.map((heading, index) => (
+                <button
+                  key={`${heading.level}-${index}`}
+                  type="button"
+                  className={`heading-outline-navigation__popover-item${heading.element === activeElement ? ' is-active' : ''}`}
+                  data-level={heading.level}
+                  aria-current={heading.element === activeElement ? 'location' : undefined}
+                  onClick={() => scrollToHeading(heading)}
+                >
+                  {heading.text || `H${heading.level}`}
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )
       )}
     </div>
   )

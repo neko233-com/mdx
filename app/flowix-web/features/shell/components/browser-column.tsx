@@ -202,7 +202,7 @@ export function BrowserColumn({
           resizeStartRef.current = { x: event.clientX, width };
           setIsResizing(true);
         }}
-        className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize focus-visible:outline-none focus-visible:bg-[var(--brand)]"
+        className="absolute inset-y-0 -left-[5px] z-20 w-[11px] cursor-col-resize focus-visible:outline-none focus-visible:bg-[var(--brand)]"
       />
       <BrowserColumnHeader
         tabs={tabs}

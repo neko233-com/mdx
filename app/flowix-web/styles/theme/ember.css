@@ -55,7 +55,7 @@
 	--foreground: oklch(0.30 0.008 var(--neutral-hue));
 	/* 卡片: L=0.996 + chroma 0.003 ── 几乎纯白, 比 bg 高 0.011, 形成
 	 * "飘渺浮起"层次, 比 v1 (ΔL=0.020) 更克制。 */
-	--card: oklch(0.996 0.003 var(--neutral-hue));
+	--card: #ffffff;
 	--list-bg: var(--card);
 
 	/* 浮层底: 纯白, v2 不变 ── 在近白底上 popover 仍是最白面 */
@@ -135,7 +135,6 @@
 	--editor-block-bg: oklch(0.982 0.004 var(--neutral-hue));
 	/* Agent conversation surfaces currently follow editor blocks; keep the
 	 * semantic token separate so they can evolve independently later. */
-	--agent-surface-bg: var(--editor-block-bg);
 
 	--floating-bg: oklch(0.32 0.014 var(--neutral-hue));
 	/* 浮层文字: 与 floating-bg 配对, 各主题统一柔和白, 避纯白在深底的眩光 */

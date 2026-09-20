@@ -41,6 +41,11 @@ import { cn } from '@/lib/utils';
 import { canUseNativeContextMenu, logNativeContextMenuError, popupNativeContextMenu } from '@platform/tauri/native-context-menu';
 import { loadNativeMenuIcons } from '@platform/tauri/native-menu-icons';
 import { buildConversationContextMenuItems } from '@features/agent/menus/conversation-context-menu';
+import {
+  readFavoriteConversationIds,
+  subscribeToFavoriteConversationChanges,
+  toggleFavoriteConversation,
+} from '@features/agent/conversation-favorites';
 import { useI18n } from '@/lib/i18n';
 import { OverlayScrollbar } from '@shared/ui/overlay-scrollbar';
 import {
@@ -156,24 +161,21 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
   const loadingMoreRef = useRef(false);
   const [filterType, setFilterType] = useState<AgentTypeKey | null>(null);
   const [showScrollTopHint, setShowScrollTopHint] = useState(false);
-  // 对话刚结束但用户还没点进去看过的 instanceId 集合 ── 用本地 Set 记录,
-  // 是会话级瞬态状态, 刷新即丢失 (需求里"前端状态"对应)。
-  // 灰色小圆点显示条件: !running && justEndedIds.has(instanceId)。
-  const [justEndedIds, setJustEndedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const latestCompletedRunIds = useAgentSessionStore((state) => state.latestCompletedRunIds);
+  const readThroughRunIds = useAgentSessionStore((state) => state.readThroughRunIds);
+  const markThreadRead = useAgentSessionStore((state) => state.markThreadRead);
   const [favoriteIds, setFavoriteIds] = useState<ReadonlySet<string>>(() => {
-    if (typeof window === 'undefined') return new Set();
-    try {
-      const stored = JSON.parse(window.localStorage.getItem('flowix:favorite-conversations') ?? '[]');
-      return new Set(Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string') : []);
-    } catch {
-      return new Set();
-    }
+    return readFavoriteConversationIds();
   });
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [newConversationMenuOpen, setNewConversationMenuOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<AgentConversationInstance | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [renameSaving, setRenameSaving] = useState(false);
+
+  useEffect(() => subscribeToFavoriteConversationChanges(() => {
+    setFavoriteIds(readFavoriteConversationIds());
+  }), []);
 
   useLayoutEffect(() => {
     if (isActive) return;
@@ -185,7 +187,6 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
     setRenameDraft('');
     setRenameSaving(false);
     setShowScrollTopHint(false);
-    setJustEndedIds((current) => (current.size === 0 ? current : new Set()));
   }, [isActive]);
 
   useEffect(() => {
@@ -200,13 +201,7 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
   }, [newConversationMenuOpen, refreshAgentRuntimeIfStale]);
 
   const toggleFavorite = useCallback((instanceId: string) => {
-    setFavoriteIds((current) => {
-      const next = new Set(current);
-      if (next.has(instanceId)) next.delete(instanceId);
-      else next.add(instanceId);
-      try { window.localStorage.setItem('flowix:favorite-conversations', JSON.stringify([...next])); } catch { /* storage is optional */ }
-      return next;
-    });
+    setFavoriteIds(toggleFavoriteConversation(instanceId));
     setOpenMenuId(null);
   }, []);
 
@@ -371,58 +366,11 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
       .filter((instance) => !instance.threadId || !threadTombstones[instance.threadId]);
   }, [conversationPage, currentNotebookId, filterType, instances, threadTombstones]);
 
-  // 跟踪每个 instanceId 上一帧的 running 状态 ── 用 ref 而不是 state, 避免
-  // 把上一帧值注入到 React 渲染链路后引发额外渲染。effect 在 commit 之后跑,
-  // 读 ref 不会破坏当前帧。
-  const previousRunningRef = useRef<ReadonlyMap<string, boolean>>(new Map());
-
-  // 监听 running 跳变: true → false 时把 instanceId 加进 justEndedIds;
-  // 但当前正在查看的对话不属于“待查看”。再次进入 running 时主动从 set
-  // 移除 (用户重启 agent, 不应该残留灰色 dot)。
   useEffect(() => {
-    const previous = previousRunningRef.current;
-    const currentIds = new Set<string>();
-    const nextJustEnded = new Set(justEndedIds);
-    let changed = false;
-    for (const instance of conversations) {
-      currentIds.add(instance.instanceId);
-      const isRunning = isAgentConversationRunning(instance, conversationRunIndex);
-      const wasRunning = previous.get(instance.instanceId) ?? false;
-      if (wasRunning && !isRunning) {
-        const isBeingViewed = conversationDetailOpen
-          && selectedInstanceId === instance.instanceId;
-        // 运行结束时如果详情页正打开，用户已经在看，不应产生待查看提示。
-        if (isBeingViewed) {
-          if (nextJustEnded.delete(instance.instanceId)) changed = true;
-        } else if (!nextJustEnded.has(instance.instanceId)) {
-          // 刚结束且未查看: 加入集合 (如果尚未存在)。
-          nextJustEnded.add(instance.instanceId);
-          changed = true;
-        }
-      } else if (!wasRunning && isRunning) {
-        // 重新运行: 清掉可能残留的灰色标记。
-        if (nextJustEnded.has(instance.instanceId)) {
-          nextJustEnded.delete(instance.instanceId);
-          changed = true;
-        }
-      }
-    }
-    // 整个列表已经见不到的 instanceId 不再保留其 justEnded 标记 ── 避免 set 无限增长。
-    for (const id of nextJustEnded) {
-      if (!currentIds.has(id)) {
-        nextJustEnded.delete(id);
-        changed = true;
-      }
-    }
-    if (changed) setJustEndedIds(nextJustEnded);
-    // 同步快照以备下一帧比较。
-    const snapshot = new Map<string, boolean>();
-    for (const instance of conversations) {
-      snapshot.set(instance.instanceId, isAgentConversationRunning(instance, conversationRunIndex));
-    }
-    previousRunningRef.current = snapshot;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversations, conversationDetailOpen, conversationRunIndex, selectedInstanceId]);
+    if (!conversationDetailOpen || !selectedInstanceId) return;
+    const selected = conversations.find((instance) => instance.instanceId === selectedInstanceId);
+    if (selected?.threadId) markThreadRead(selected.threadId);
+  }, [conversationDetailOpen, conversations, markThreadRead, selectedInstanceId]);
 
   // 按当前笔记本严格圈定对话列表 —— 只有归属当前笔记本的会话可见。
   // 未归属笔记本的历史数据不应出现在任何笔记本列表中；未选中笔记本时退化为全量。
@@ -582,17 +530,12 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
   }, []);
 
   const revealConversation = useCallback(async (instance: AgentConversationInstance) => {
-    // 第一次访问: 立即清掉该对话的"刚结束"灰色 dot, 做到"看见一次就消失"。
-    if (justEndedIds.has(instance.instanceId)) {
-      const next = new Set(justEndedIds);
-      next.delete(instance.instanceId);
-      setJustEndedIds(next);
-    }
+    if (instance.threadId) markThreadRead(instance.threadId);
 
     prepareConversation(instance);
 
     await selectAndOpenAgentConversation(instance.instanceId);
-  }, [justEndedIds, prepareConversation]);
+  }, [markThreadRead, prepareConversation]);
 
   const openConversationInBrowserColumn = useCallback((instance: AgentConversationInstance) => {
     prepareConversation(instance);
@@ -726,7 +669,7 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
                   disabled={!currentNotebookId}
                   aria-label={t('agent.chat.newThread')}
                   title={currentNotebookId ? t('agent.chat.newThread') : t('memo.list.selectNotebook')}
-                  className="group flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-transparent bg-[var(--primary)] p-0 text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="group flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-xl border border-transparent bg-[var(--primary)] p-0 text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <PlusIcon
                     className="h-4 w-4 transition-[filter] duration-150 group-hover:brightness-105"
@@ -858,7 +801,8 @@ export function AgentConversationList({ isActive = true }: AgentConversationList
                         {running ? (
                           // 绿色: agent 正在运行
                           <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--success)]" />
-                        ) : justEndedIds.has(instance.instanceId)
+                        ) : !!instance.threadId
+                          && latestCompletedRunIds[instance.threadId] !== readThroughRunIds[instance.threadId]
                           && !(conversationDetailOpen && selectedInstanceId === instance.instanceId) ? (
                           // 灰色: 刚跑完、本次会话内用户还没点进去过
                           <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--muted-foreground)]" />

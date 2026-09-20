@@ -555,7 +555,7 @@ export function MainLayout({
       <MarkdownFileDropOverlay />
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-col flex-1 overflow-hidden">
-          <div className="relative flex flex-1 h-full overflow-hidden rounded-b-[18px] shadow-[0_1px_0_var(--divider)]">
+          <div className="relative flex flex-1 h-full overflow-hidden rounded-b-[18px] border-b border-[var(--divider)]">
           <NoteNavigationDrawer
             phase={noteNavigationPhase}
             notebooks={notebooks}
@@ -628,9 +628,8 @@ export function MainLayout({
           </ListColumn>
           {/* List <-> Memo detail divider */}
           {!isMemoListHidden && (
-            <div className="relative w-[1px] h-full cursor-col-resize group z-10" onMouseDown={handleListDividerMouseDown}>
-              <div className="absolute inset-0 -translate-x-1/2 w-[12px] left-1/2 bg-transparent z-11" />
-              <div className={`w-[1px] h-full transition-colors ${isDraggingListDivider ? 'bg-transparent' : 'group-hover:bg-transparent bg-transparent'}`} />
+            <div className="relative z-10 h-full w-px shrink-0 cursor-col-resize bg-[var(--divider)]" onMouseDown={handleListDividerMouseDown}>
+              <div className="absolute inset-y-0 -left-[5px] w-[11px] bg-transparent" />
             </div>
           )}
           <div
@@ -639,7 +638,7 @@ export function MainLayout({
           >
           {/* Memo detail */}
             <div
-              className="h-full min-w-0 relative -left-px flex flex-col bg-[var(--document-bg)]"
+              className="relative h-full min-w-0 flex flex-col bg-[var(--document-bg)]"
               style={browserColumnVisible
                 ? {
                     minWidth: DOCUMENT_PANEL_MIN_WIDTH,
@@ -694,8 +693,8 @@ export function MainLayout({
               {(isDocumentTransitioning || navigationState.phase === 'loading') && (
                 <CenteredLoadingSpinner
                   className={workColumnLoadingTone === 'agent' || workColumnLoadingTone === 'media'
-                    ? 'absolute inset-0 z-40 bg-[var(--agent-surface-bg,var(--editor-block-bg,var(--document-bg)))]'
-                    : 'absolute inset-0 z-40 bg-[color-mix(in_oklch,var(--card)_78%,transparent)] backdrop-blur-[1px]'}
+                    ? 'absolute inset-0 z-40 bg-[var(--agent-bg,var(--document-bg))]'
+                    : 'absolute inset-0 z-40 bg-[var(--document-bg)]'}
                 />
               )}
             </div>

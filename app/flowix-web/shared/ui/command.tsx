@@ -105,6 +105,7 @@ const Command = React.forwardRef<
       ref={ref}
       className={cn(
         'flex h-full w-full flex-col overflow-hidden rounded-xl bg-[var(--popover)] text-[var(--popover-foreground)]',
+        keyboardPointerLock && 'is-keyboard-navigation',
         className,
       )}
       disablePointerSelection={disablePointerSelection || keyboardPointerLock}
@@ -112,6 +113,9 @@ const Command = React.forwardRef<
       onKeyDown={(event) => {
         onKeyDown?.(event);
         if (!event.defaultPrevented && isKeyboardSelectionKey(event)) {
+          // Keep keyboard navigation as the single selection source until the
+          // pointer actually moves, matching the slash menu behavior.
+          setKeyboardPointerLock(true);
           setKeyboardNavigationTick((tick) => tick + 1);
         }
       }}

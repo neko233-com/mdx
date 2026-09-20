@@ -112,6 +112,36 @@ describe('MarkdownEditor select all', () => {
     expect(editor!.getMarkdown()).toBe('Body paragraph');
   });
 
+  it('focuses the first body paragraph when the blank editor surface is clicked', async () => {
+    let editor: Editor | null = null;
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={'---\nflowix_key: abc12345\n---\n&nbsp;'}
+            header={<textarea data-testid="memo-title" defaultValue="File title" />}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    const surface = container.querySelector<HTMLElement>('.editor-content');
+    expect(surface).not.toBeNull();
+
+    await act(async () => {
+      surface!.dispatchEvent(new MouseEvent('mousedown', {
+        button: 0,
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(editor!.view.hasFocus()).toBe(true);
+    expect(editor!.state.selection.empty).toBe(true);
+    expect(editor!.state.selection.$from.parent.type.name).toBe('paragraph');
+  });
+
   it('does not show the paragraph placeholder at a selected block boundary', async () => {
     let editor: Editor | null = null;
     await act(async () => {

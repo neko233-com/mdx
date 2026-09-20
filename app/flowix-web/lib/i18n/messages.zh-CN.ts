@@ -863,7 +863,7 @@ const zhCN = {
     "memo.untitled": "未命名的笔记",
     "memo.empty.preview": "记录自己的想法",
     "memo.list.collapseMemoList": "折叠中间列",
-    "memo.list.collapseMemoListTooltip": "折叠中间列",
+    "memo.list.collapseMemoListTooltip": "折叠列表",
     "memo.list.viewToggle": "中间列视图",
     "memo.list.viewNotes": "笔记",
     "memo.list.viewConversations": "会话",

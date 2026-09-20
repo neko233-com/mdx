@@ -169,7 +169,7 @@ export function ListColumn({
                 'border border-[var(--border-popup)] bg-[var(--list-bg)]',
                 'shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]',
               )
-            : 'relative h-full w-full overflow-hidden border-r border-[var(--divider)] bg-[var(--list-bg)]',
+            : 'relative h-full w-full overflow-hidden bg-[var(--list-bg)]',
         )}
         style={previewVisible && noteNavigationPhase === 'open'
           ? { left: 'calc(var(--flowix-note-navigation-drawer-width) + 0.25rem)' }

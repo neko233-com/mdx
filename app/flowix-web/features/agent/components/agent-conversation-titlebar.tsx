@@ -1,11 +1,14 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
 import {
   ArchiveIcon,
   FileTextIcon,
   LinkBreakIcon,
+  PencilSimpleIcon,
+  SquareSplitHorizontalIcon,
+  StarIcon,
   TrashSimpleIcon,
 } from '@phosphor-icons/react';
 
@@ -29,12 +32,31 @@ import { getResolvedExternalSessionId } from '@features/agent/services/external-
 import { createRuntimeInfoRequester } from '@features/agent/thread-card/runtime/runtime-info-requester';
 import { toast } from '@/lib/toast';
 import { WorkColumnTitlebarShell } from '@features/shell/components/work-column-titlebar-shell';
+import { openBrowserColumnAgentConversation } from '@features/workspace/use-cases/browser-column-navigation';
+import {
+  isFavoriteConversation,
+  subscribeToFavoriteConversationChanges,
+  toggleFavoriteConversation,
+} from '@features/agent/conversation-favorites';
+import { buildConversationContextMenuItems } from '@features/agent/menus/conversation-context-menu';
+import {
+  canUseNativeContextMenu,
+  logNativeContextMenuError,
+  nativeMenuPositionBelowEnd,
+  popupNativeContextMenu,
+} from '@platform/tauri/native-context-menu';
+import { loadNativeMenuIcons } from '@platform/tauri/native-menu-icons';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@shared/ui/dropdown-menu';
+
+// Tauri expects LogicalPosition coordinates. On the Retina macOS window the
+// native menu is about 120 logical px wide (roughly 240 physical px); using
+// 200 here makes the right-aligned popup appear noticeably too far left.
+const CONVERSATION_NATIVE_MENU_WIDTH = 120;
 
 function AgentConversationHeader({ instanceId }: { instanceId: string }) {
   const { t } = useI18n();
@@ -47,6 +69,14 @@ function AgentConversationHeader({ instanceId }: { instanceId: string }) {
   const codexModel = useAgentSessionStore((state) => state.sessionMeta.settings.agentCodexModel);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
+  const [isFavorite, setIsFavorite] = useState(() => isFavoriteConversation(instanceId));
+
+  useEffect(() => {
+    setIsFavorite(isFavoriteConversation(instanceId));
+    return subscribeToFavoriteConversationChanges(() => {
+      setIsFavorite(isFavoriteConversation(instanceId));
+    });
+  }, [instanceId]);
 
   // archive/delete 由 store 端到端完成 (含 closeAgentConversation), instance
   // 消失时父级会立刻 unmount 这个组件; 不再渲染兜底空态、不再做"instance 缺
@@ -56,14 +86,9 @@ function AgentConversationHeader({ instanceId }: { instanceId: string }) {
     : null;
   const agent = getAgentType(instance?.agentType ?? DEFAULT_AGENT_TYPE_KEY);
   const productThreadId = instance?.threadId ?? '';
-  const externalThreadId = productThreadId
-    ? getResolvedExternalSessionId(productThreadId) ?? productThreadId
-    : '';
   const providerSessionId = instance?.sessionId ?? (
     productThreadId ? getResolvedExternalSessionId(productThreadId) : null
   );
-  const canArchive =
-    (agent.capabilities.supportsThreadArchive ?? false) && externalThreadId !== '';
 
   const badgeData = useMemo(() => computeAgentThreadCardBadgeData({
     threadState: projection ? {
@@ -75,34 +100,88 @@ function AgentConversationHeader({ instanceId }: { instanceId: string }) {
     typeKey: instance?.agentType ?? DEFAULT_AGENT_TYPE_KEY,
   }), [codexModel, instance?.agentType, projection]);
 
-  const onArchive = useCallback(async () => {
-    if (!productThreadId) return;
-    try {
-      await useAgentSessionStore.getState().archiveThread(
-        productThreadId,
-        () => toast.success(t('status.agent.archiveSuccess')),
-      );
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : t('status.agent.archiveFailed'),
-      );
-    }
-  }, [productThreadId, t]);
+  const onRemove = useCallback(async (
+    target: NonNullable<typeof instance>,
+    action: 'archive' | 'delete',
+  ) => {
+    if (action === 'delete' && !window.confirm(t('agent.chat.conversation.deleteConfirm'))) return;
 
-  const onDelete = useCallback(async () => {
-    if (!productThreadId) return;
-    if (!window.confirm(t('document.agent.deleteConfirm'))) return;
     try {
-      await useAgentSessionStore.getState().deleteThread(
-        productThreadId,
-        () => toast.success(t('status.agent.deleteSuccess')),
-      );
+      const session = useAgentSessionStore.getState();
+      if (target.threadId) {
+        await (action === 'archive'
+          ? session.archiveThread(target.threadId)
+          : session.deleteThread(target.threadId));
+      } else {
+        session.removeInstance(target.instanceId);
+      }
+      toast.success(t(action === 'archive' ? 'status.agent.archiveSuccess' : 'status.agent.deleteSuccess'));
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : t('status.agent.deleteFailed'),
+        error instanceof Error
+          ? error.message
+          : t(action === 'archive' ? 'status.agent.archiveFailed' : 'status.agent.deleteFailed'),
       );
     }
-  }, [productThreadId, t]);
+  }, [t]);
+
+  const onOpenInBrowserColumn = useCallback((target: NonNullable<typeof instance>) => {
+    void openBrowserColumnAgentConversation(target.instanceId).catch((error) => {
+      toast.error(error instanceof Error ? error.message : String(error));
+    });
+  }, []);
+
+  const onToggleFavorite = useCallback(() => {
+    const next = toggleFavoriteConversation(instanceId);
+    setIsFavorite(next.has(instanceId));
+  }, [instanceId]);
+
+  const onRename = useCallback((target: NonNullable<typeof instance>) => {
+    setTitleDraft(target.title?.trim() || '');
+    setIsEditingTitle(true);
+  }, []);
+
+  const showNativeMoreMenu = useCallback(async (event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (!instance) return;
+    const popupPosition = nativeMenuPositionBelowEnd(
+      event.currentTarget,
+      CONVERSATION_NATIVE_MENU_WIDTH,
+    );
+    const loadedIcons = await loadNativeMenuIcons([
+      'split', 'star', 'pencil', 'archive', 'delete',
+    ]);
+    await popupNativeContextMenu(event, buildConversationContextMenuItems({
+      instance,
+      favorite: isFavorite,
+      icons: {
+        split: loadedIcons.split!,
+        star: loadedIcons.star!,
+        pencil: loadedIcons.pencil!,
+        archive: loadedIcons.archive!,
+        delete: loadedIcons.delete!,
+      },
+      labels: {
+        openInBrowserColumn: t('workColumn.context.openInBrowserColumn'),
+        favorite: t('agent.chat.conversation.favorite'),
+        unfavorite: t('agent.chat.conversation.unfavorite'),
+        rename: t('agent.chat.conversation.rename'),
+        archive: t('document.agent.archiveConversation'),
+        delete: t('document.agent.deleteConversation'),
+      },
+      actions: {
+        openInBrowserColumn: onOpenInBrowserColumn,
+        toggleFavorite: onToggleFavorite,
+        rename: onRename,
+        remove: (target, action) => void onRemove(target, action),
+      },
+    }), popupPosition);
+  }, [instance, isFavorite, onOpenInBrowserColumn, onRemove, onRename, onToggleFavorite, t]);
+
+  useEffect(() => {
+    if (!canUseNativeContextMenu()) return;
+    void loadNativeMenuIcons(['split', 'star', 'pencil', 'archive', 'delete'])
+      .catch((error) => logNativeContextMenuError('agent conversation titlebar menu icons', error));
+  }, []);
 
   const onOpenSourceDocument = useCallback(() => {
     if (!instance || !presentation?.hasSourceDocument) return;
@@ -200,28 +279,48 @@ function AgentConversationHeader({ instanceId }: { instanceId: string }) {
               <LinkBreakIcon className="agent-thread-card__fullscreen-icon" aria-hidden="true" />
             </span>
           )}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button type="button" aria-label={t('document.agent.moreActions')} title={t('document.agent.moreActions')}
-              className={`${actionButtonClass} [-webkit-app-region:no-drag]`}>
-              <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-[162px] space-y-0.5 rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]">
-            {canArchive ? (
-              <DropdownMenuItem onClick={onArchive}
-                className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left text-[var(--foreground)] hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]">
-                <ArchiveIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span>{t('document.agent.archiveConversation')}</span>
+        {canUseNativeContextMenu() ? (
+          <button
+            type="button"
+            aria-label={t('document.agent.moreActions')}
+            title={t('document.agent.moreActions')}
+            onClick={(event) => {
+              void showNativeMoreMenu(event).catch((error) => {
+                logNativeContextMenuError('agent conversation titlebar', error);
+              });
+            }}
+            className={`${actionButtonClass} [-webkit-app-region:no-drag]`}
+          >
+            <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+          </button>
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" aria-label={t('document.agent.moreActions')} title={t('document.agent.moreActions')}
+                className={`${actionButtonClass} [-webkit-app-region:no-drag]`}>
+                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-[180px] space-y-0.5 rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]">
+              <DropdownMenuItem onClick={() => onOpenInBrowserColumn(instance)} className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]">
+                <SquareSplitHorizontalIcon className="h-4 w-4" /> {t('workColumn.context.openInBrowserColumn')}
               </DropdownMenuItem>
-            ) : null}
-            <DropdownMenuItem onClick={onDelete}
-              className="group h-7 items-center justify-start gap-2 rounded-lg px-2 py-0 text-left hover:bg-transparent hover:text-[var(--destructive)]">
-              <TrashSimpleIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>{t('document.agent.deleteConversation')}</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <DropdownMenuItem onClick={onToggleFavorite} className="group h-7 items-center gap-2 rounded-lg px-2 py-0 hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]">
+                <StarIcon className="h-4 w-4" weight={isFavorite ? 'fill' : 'regular'} />
+                {isFavorite ? t('agent.chat.conversation.unfavorite') : t('agent.chat.conversation.favorite')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onRename(instance)} className="group h-7 items-center gap-2 rounded-lg px-2 py-0 hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]">
+                <PencilSimpleIcon className="h-4 w-4" /> {t('agent.chat.conversation.rename')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void onRemove(instance, 'archive')} className="group h-7 items-center gap-2 rounded-lg px-2 py-0 hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]">
+                <ArchiveIcon className="h-4 w-4" /> {t('document.agent.archiveConversation')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void onRemove(instance, 'delete')} className="group h-7 items-center gap-2 rounded-lg px-2 py-0 hover:bg-transparent hover:text-[var(--destructive)]">
+                <TrashSimpleIcon className="h-4 w-4" /> {t('document.agent.deleteConversation')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
     </div>
   );

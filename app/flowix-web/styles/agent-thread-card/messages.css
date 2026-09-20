@@ -468,7 +468,7 @@
   padding-right: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--document-bg);
+  background: var(--card);
   color: var(--muted-foreground);
 }
 
@@ -530,6 +530,19 @@
   flex: 0 0 auto;
   color: var(--muted-foreground);
   animation: agent-thread-card-tool-group-running-loading 1s linear infinite;
+}
+
+/* The spinner is 12px visually, but its flex item must use the same 18px
+ * first-line track as the tool icon and label. Without this wrapper the
+ * spinner is aligned by its own box and appears a few pixels too high. */
+.markdown-editor .agent-thread-card__tool-group-running-loading-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  line-height: 18px;
 }
 
 .markdown-editor .agent-thread-card__tool-group-header-loading-icon {

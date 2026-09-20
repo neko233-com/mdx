@@ -199,6 +199,8 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
   private hydratingInstanceId: string | null = null;
   private releaseThreadInterest: (() => void) | null = null;
   private isFullscreen = false;
+  private isViewportVisible = false;
+  private visibilityObserver: IntersectionObserver | null = null;
   private fullscreenRestoreGeneration = 0;
   private fullscreenRestorePending = false;
   private fullscreenRestoreFrame: number | null = null;
@@ -274,8 +276,37 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
   private boundHandleOutsidePointerDown = (event: PointerEvent): void => {
     this.blurOwnedFocusForOutsidePointer(event);
   };
+  /**
+   * A fullscreen card remains a NodeView inside the outer ProseMirror DOM.
+   * The fixed positioning prevents most pointer interaction with the note,
+   * but it does not prevent the outer editor from receiving a caret when a
+   * browser/WebView delivers a focus or keyboard event there. Keep the guard
+   * at the document capture phase so the outer editor never gets a chance to
+   * create a selection. This deliberately does not call setEditable(false):
+   * external document updates (including agent edits) must keep working.
+   */
+  private boundHandleFullscreenPointerDown = (event: PointerEvent): void => {
+    if (!this.isFullscreen || !this.isOutsideFullscreenCardTarget(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.focusFullscreenSurface();
+  };
+  private boundHandleFullscreenKeyDown = (event: KeyboardEvent): void => {
+    if (!this.isFullscreen || !this.isOutsideFullscreenCardTarget(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.focusFullscreenSurface();
+  };
+  private boundHandleFullscreenFocusIn = (event: FocusEvent): void => {
+    if (!this.isFullscreen || !this.isOutsideFullscreenCardTarget(event.target)) return;
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && this.view.dom.contains(activeElement)) {
+      activeElement.blur();
+    }
+    this.focusFullscreenSurface();
+  };
   private boundHandleInputFocus = (): void => {
-    this.clearCardNodeSelection();
+    this.clearAgentThreadCardNodeSelection();
   };
   /** 当前 AppLanguage ── NodeView 不在 React 树里, 不能用 useI18n,
    *  走 user-settings-store 读最新值 (跨窗口同步跟 I18nProvider 一致)。 */
@@ -334,6 +365,16 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     });
 
     this.dom = domParts.dom;
+    if (typeof IntersectionObserver !== "undefined") {
+      this.visibilityObserver = new IntersectionObserver((entries) => {
+        const visible = entries.some((entry) => entry.isIntersecting);
+        this.isViewportVisible = visible;
+        if (visible && !this.isDestroyed) {
+          this.ackReadAfterVisibleRender(!this.collapsed || this.isFullscreen, false);
+        }
+      });
+      this.visibilityObserver.observe(this.dom);
+    }
     if (this.persistedFullscreen) {
       this.dom.classList.add(AGENT_THREAD_CARD_FULLSCREEN_RESTORE_CLASS);
     }
@@ -609,6 +650,21 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     document.addEventListener(
       "pointerdown",
       this.boundHandleOutsidePointerDown,
+      true,
+    );
+    document.addEventListener(
+      "pointerdown",
+      this.boundHandleFullscreenPointerDown,
+      true,
+    );
+    document.addEventListener(
+      "keydown",
+      this.boundHandleFullscreenKeyDown,
+      true,
+    );
+    document.addEventListener(
+      "focusin",
+      this.boundHandleFullscreenFocusIn,
       true,
     );
     this.runtime.subscribe();
@@ -1309,24 +1365,31 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     this.restoreScrollSnapshotAfterFocusChange(snapshot);
   }
 
-  private clearCardNodeSelection(): void {
+  /**
+   * A nested composer owns keyboard focus independently from the outer editor.
+   * Clear any outer agent-card NodeSelection when a composer receives focus,
+   * not only the NodeSelection belonging to this NodeView. A different card
+   * may still be selected from an earlier drag-handle/menu interaction while
+   * the user starts typing in this card.
+   */
+  private clearAgentThreadCardNodeSelection(): void {
     if (this.isDestroyed || this.view.isDestroyed) return;
-    const pos = this.getPos?.();
-    if (pos === undefined) return;
 
     const { doc, selection } = this.view.state;
     if (
       !(selection instanceof NodeSelection) ||
-      selection.from !== pos ||
       selection.node.type.name !== "agentThreadCard"
     ) {
       return;
     }
 
-    const afterPos = Math.min(pos + this.node.nodeSize, doc.content.size);
+    const afterPos = Math.min(
+      selection.from + selection.node.nodeSize,
+      doc.content.size,
+    );
     let nextSelection = TextSelection.near(doc.resolve(afterPos), 1);
     if (nextSelection instanceof NodeSelection) {
-      nextSelection = TextSelection.near(doc.resolve(pos), -1);
+      nextSelection = TextSelection.near(doc.resolve(selection.from), -1);
     }
 
     // A document containing only cards has no valid text cursor position.
@@ -1348,6 +1411,12 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
       if (!this.isFullscreen || this.isDestroyed) return;
       this.composerController.focus();
     });
+  }
+
+  private isOutsideFullscreenCardTarget(target: EventTarget | null): boolean {
+    return target instanceof Node &&
+      this.view.dom.contains(target) &&
+      !this.dom.contains(target);
   }
 
   private blurFullscreenSurface(): void {
@@ -1547,6 +1616,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
       isLoading: runtimeView.showLoadingIndicator,
       shouldRenderMessages,
     });
+    this.ackReadAfterVisibleRender(shouldRenderMessages, runtimeView.isBusy);
 
     // 标题恢复: 没有显式标题 (孤儿卡片 / 持久化失败 / threadId 漂移) 时,
     // 消息加载完成后从首条 user 消息现取标题。syncTitleText 在标题编辑态
@@ -1554,6 +1624,25 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     if (!this.chrome.hasExplicitTitle()) {
       this.chrome.syncTitleText();
     }
+  }
+
+  /**
+   * A document Card is an imperative NodeView, so it cannot use the React
+   * conversation-detail read effect. Ack only after a visible message render;
+   * this keeps completion notifications from being cleared by a collapsed or
+   * disconnected Card while avoiding any per-token store writes.
+   */
+  private ackReadAfterVisibleRender(shouldRenderMessages: boolean, isBusy: boolean): void {
+    if (!shouldRenderMessages || isBusy || !this.dom.isConnected) return;
+    if (document.visibilityState === "hidden") return;
+    const rect = this.dom.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    if (this.visibilityObserver && !this.isViewportVisible && !this.isFullscreen) return;
+    const threadId = this.renderThreadId;
+    if (!threadId) return;
+    const state = useAgentSessionStore.getState();
+    const completedRunId = state.latestCompletedRunIds[threadId];
+    if (completedRunId) state.markThreadRead(threadId, completedRunId);
   }
 
   private renderResolvedSessionMessages(
@@ -1571,6 +1660,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
       isLoading: false,
       shouldRenderMessages,
     });
+    this.ackReadAfterVisibleRender(shouldRenderMessages, false);
     // 同 renderThreadState: 外部 session (如 claude jsonl) 消息异步到位后,
     // 给孤儿卡片一次标题恢复机会。
     if (!this.chrome.hasExplicitTitle()) {
@@ -1899,6 +1989,17 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
 
   selectNode(): void {
     if (this.isFullscreen) return;
+    // Do not re-introduce the outer card highlight while a nested composer is
+    // the active editing surface. The focus handler normally clears the
+    // NodeSelection first; this guard also covers selection updates racing
+    // with streaming/doc transactions.
+    const activeElement = document.activeElement;
+    if (
+      activeElement instanceof HTMLElement &&
+      activeElement.closest(".agent-thread-card__composer")
+    ) {
+      return;
+    }
     this.dom.classList.add("ProseMirror-selectednode");
   }
 
@@ -1938,6 +2039,21 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
       this.boundHandleOutsidePointerDown,
       true,
     );
+    document.removeEventListener(
+      "pointerdown",
+      this.boundHandleFullscreenPointerDown,
+      true,
+    );
+    document.removeEventListener(
+      "keydown",
+      this.boundHandleFullscreenKeyDown,
+      true,
+    );
+    document.removeEventListener(
+      "focusin",
+      this.boundHandleFullscreenFocusIn,
+      true,
+    );
     this.setComposerRolePopoverOpen(false);
     this.isDestroyed = true;
     this.releaseThreadInterest?.();
@@ -1951,6 +2067,8 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     this.composerAddMenu.dispose();
     this.notebookAgentSettingsDialog.close();
     this.fullscreenLayout.dispose();
+    this.visibilityObserver?.disconnect();
+    this.visibilityObserver = null;
     this.composerImages.dispose();
   }
 }

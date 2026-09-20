@@ -160,11 +160,18 @@ export function createToolGroupElement(options: {
     element.classList.add("agent-thread-card__tool-group-running-tool");
     const loadingIcon = createToolRunningLoadingIcon();
     loadingIcon.setAttribute("aria-hidden", "true");
+    // Keep the spinner on the same 18px alignment track as the tool icon and
+    // first text line. The SVG itself is intentionally 12px, so inserting it
+    // directly into the flex row makes it sit higher than the other items.
+    const loadingIconWrap = document.createElement("span");
+    loadingIconWrap.className =
+      "agent-thread-card__tool-group-running-loading-wrap";
+    loadingIconWrap.append(loadingIcon);
     const toolName = element.querySelector(
       ".agent-thread-card__message-tool-name",
     );
-    if (toolName) toolName.before(loadingIcon);
-    else element.prepend(loadingIcon);
+    if (toolName) toolName.before(loadingIconWrap);
+    else element.prepend(loadingIconWrap);
     return element;
   };
 

@@ -91,7 +91,7 @@
 
 .agent-surface-titlebar .browser-column-tab-active,
 .media-surface-titlebar .browser-column-tab-active {
-	--browser-column-tab-surface: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
+	--browser-column-tab-surface: var(--agent-bg, var(--document-bg));
 }
 
 .browser-column-tab-active::before,
@@ -118,23 +118,20 @@
 }
 
 /* 全局搜索命令面板是带分组/搜索结果的特殊菜单。保留多行结果的内容高度，
- * 但单行项目以 h-7 为基线；选中态与第四列 tab 菜单统一使用主题色和反色文字。 */
+ * 但单行项目以 h-7 为基线；hover 与选中态统一使用 hover surface。 */
 .flowix-global-search-command [cmdk-item] {
 	min-height: 1.75rem;
 	padding: 0.125rem 0.5rem;
 	border-radius: 0.5rem;
 }
 
-.flowix-global-search-command [cmdk-item]:hover,
 .flowix-global-search-command [cmdk-item][data-selected='true'] {
-	background: var(--brand);
-	color: var(--primary-foreground);
+	background: var(--hover-bg);
+	color: var(--foreground);
 }
 
-.flowix-global-search-command [cmdk-item]:hover :is(span, div, svg, kbd),
-.flowix-global-search-command [cmdk-item][data-selected='true'] :is(span, div, svg, kbd) {
-	color: var(--primary-foreground);
-}
+/* hover 由 cmdk 的 data-selected 统一驱动；不要再叠加独立的 :hover 背景，
+ * 否则键盘选中项和鼠标所在项会同时显示为选中。 */
 
 .flowix-global-search-command [cmdk-input-wrapper] {
 	border-bottom-color: color-mix(in srgb, var(--border-popup) 60%, transparent);

@@ -55,7 +55,7 @@ function ImageResourcePreview({ filePath, notebookPath }: { filePath: string; no
   if (failed || !src) return <MediaUnavailable filePath={filePath} />;
 
   return (
-    <div className="flex h-full w-full items-center justify-center overflow-auto bg-[var(--agent-surface-bg,var(--editor-block-bg,var(--document-bg)))] p-6">
+    <div className="flex h-full w-full items-center justify-center overflow-auto bg-[var(--agent-bg,var(--document-bg))] p-6">
       <img
         src={src}
         alt={filenameFromPath(filePath)}
@@ -94,7 +94,7 @@ function VideoResourcePreview({ filePath, notebookPath }: { filePath: string; no
   }
 
   return (
-    <div className="flex h-full w-full items-center justify-center overflow-auto bg-[var(--agent-surface-bg,var(--editor-block-bg,var(--document-bg)))] p-6">
+    <div className="flex h-full w-full items-center justify-center overflow-auto bg-[var(--agent-bg,var(--document-bg))] p-6">
       <video
         src={src}
         controls
@@ -132,7 +132,7 @@ export function MediaResourceView({
   );
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-[var(--agent-surface-bg,var(--editor-block-bg,var(--document-bg)))]">
+    <div className="flex h-full min-w-0 flex-col bg-[var(--agent-bg,var(--document-bg))]">
       <div className="relative flex min-h-0 flex-1">
         <div className="min-w-0 flex-1">{preview}</div>
         {notebookPath && propertiesVisible && (

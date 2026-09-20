@@ -71,7 +71,11 @@ export const AgentThreadCard = Node.create({
   name: "agentThreadCard",
   group: "block",
   content: "",
-  selectable: true,
+  // The card owns a nested composer and must not become the outer editor's
+  // implicit NodeSelection when it is the first block or when a preceding
+  // paragraph is deleted. Explicit card actions (drag handle/context menu)
+  // still activate it through activateAgentThreadCard().
+  selectable: false,
   draggable: false,
 
   addAttributes() {

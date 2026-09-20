@@ -950,7 +950,7 @@ export function MemoActions({
           ? [{ text: t("memo.fileTree.loading"), enabled: false }]
           : orderedVersions.length > 0
           ? orderedVersions.map((version) => ({
-              text: `${formatVersionTime(version.createdAt, language)} · ${translate(language, VERSION_SOURCE_LABEL_KEYS[version.source] ?? "") || version.source} · ${version.title || version.filename} · ${formatVersionSize(version.size)}`,
+              text: `${formatVersionTime(version.createdAt, language)} · ${translate(language, VERSION_SOURCE_LABEL_KEYS[version.source] ?? "") || version.source} · ${formatVersionSize(version.size)}`,
               enabled: restoringVersionId !== version.id,
               action: () => setConfirmVersion(version),
             }))

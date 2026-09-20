@@ -15,7 +15,7 @@ export function SurfaceSuspenseHost({
   children,
 }: SurfaceSuspenseHostProps) {
   const fallbackClassName = loadingTone === 'agent' || loadingTone === 'media'
-    ? 'bg-[var(--agent-surface-bg,var(--editor-block-bg,var(--document-bg)))]'
+    ? 'bg-[var(--agent-bg,var(--document-bg))]'
     : '';
   return (
     <Suspense

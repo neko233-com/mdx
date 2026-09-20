@@ -138,6 +138,10 @@ export function AgentConversationDetail({
   const isCodexCommandStoppable =
     isCodexCommandRunning && isCodexGoalCommand(projection?.runs.codexCommand?.command);
   const isCommandRunning = isDshCommandRunning || isCodexCommandRunning;
+  const latestCompletedRunId = useAgentSessionStore((state) => (
+    threadId ? state.latestCompletedRunIds[threadId] ?? null : null
+  ));
+  const markThreadRead = useAgentSessionStore((state) => state.markThreadRead);
   const pendingSteeringMessages = useAgentSessionStore((state) =>
     threadId
       ? state.pendingSteeringMessages[threadId] ?? EMPTY_PENDING_CODEX_MESSAGES
@@ -805,6 +809,12 @@ export function AgentConversationDetail({
     composerControllerRef.current?.setSendButtonState();
     rolePickerRef.current?.refreshIcon();
   }, [isInitialHistoryLoading, isLoading, isCommandRunning, messages]);
+
+  useEffect(() => {
+    if (!threadId || !latestCompletedRunId || isLoading || isCommandRunning) return;
+    if (isInitialHistoryLoading || messages.length === 0) return;
+    markThreadRead(threadId, latestCompletedRunId);
+  }, [isCommandRunning, isInitialHistoryLoading, isLoading, latestCompletedRunId, markThreadRead, messages.length, threadId]);
 
   useEffect(() => {
     externalSettingsRef.current?.refreshEmptySettings();

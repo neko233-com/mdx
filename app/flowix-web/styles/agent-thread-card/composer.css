@@ -56,9 +56,11 @@
 /* 非全屏单行 composer 的外层高度基线。仅约束输入框容器，不改变
  * Tiptap 编辑器自身的内容高度；左右操作按钮以该容器为基准垂直居中。 */
 .markdown-editor
-  .agent-thread-card:not(.agent-thread-card--fullscreen)
+.agent-thread-card:not(.agent-thread-card--fullscreen)
   .agent-thread-card__composer {
   min-height: 42px;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 
 /* Codex background terminals sit in the small layer immediately above the
@@ -236,6 +238,18 @@
   border-radius: 0.85rem;
 }
 
+/* 非全屏态的 actions 也要建立自己的 flex 行。
+ * 如果保持默认 block 行盒，Add 按钮会按文字基线布局，视觉上贴在
+ * actions 的上沿；显式居中后，按钮始终在 actions 的内容高度内垂直居中。 */
+.markdown-editor
+  .agent-thread-card__composer:not(.agent-composer--expanded)
+  .agent-thread-card__composer-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.1rem;
+}
+
 .markdown-editor .agent-thread-card__composer-model {
   display: none;
 }
@@ -333,6 +347,12 @@
   transition:
     background-color 150ms ease,
     color 150ms ease;
+}
+
+.markdown-editor
+  .agent-composer--expanded
+  .agent-thread-card__composer-model {
+  max-width: 240px;
 }
 
 /* hover / open 态背景与 add (+) 按钮的默认背景 (var(--muted)) 对齐,
@@ -635,6 +655,16 @@
   margin-top: 0 !important;
   margin-bottom: 0 !important;
   white-space: pre-wrap;
+}
+
+/* WebKit 在拉伸后的全屏空 composer 段落中有时不会绘制原生 caret。
+ * 生成一个不可见占位字符，为空段落提供稳定的 inline caret 锚点；
+ * 输入真实文字后该伪元素自动消失，不会进入 ProseMirror 文档。 */
+.markdown-editor .agent-thread-card__composer-input > p:empty::before,
+.markdown-editor
+  .agent-thread-card__composer-input
+  > p:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: "\00a0";
 }
 
 /* 全局编辑器会给首个 ProseMirror block 增加 margin-top；composer 内的

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import type { AgentConversationInstance } from '@features/agent/store/agent-conversation-types';
 import { useAgentSessionStore } from '@features/agent/store/agent-session-store';
 import {
@@ -44,24 +44,21 @@ function conversationStatusEntries(
 
 /**
  * Compact status-bar entry for every running conversation and every
- * conversation that finished while it was not open. The component owns the
- * short-lived unread set because it is a view-state signal, not transcript
- * data; opening a conversation clears it immediately.
+ * conversation that finished while it was not open. Unread state is owned by
+ * the shared agent session store so this surface and the conversation list
+ * stay synchronized; opening a conversation clears it immediately.
  */
 export function AgentConversationStatusBar() {
   const { t } = useI18n();
   const instances = useAgentSessionStore((state) => state.conversationRegistry.instances);
   const runSignatures = useAgentSessionStore((state) => state.threadRunSignatures);
+  const latestCompletedRunIds = useAgentSessionStore((state) => state.latestCompletedRunIds);
+  const readThroughRunIds = useAgentSessionStore((state) => state.readThroughRunIds);
+  const markThreadRead = useAgentSessionStore((state) => state.markThreadRead);
   const selectedInstanceId = useWorkspaceRestoreStore(
     (state) => state.agentConversation.selectedInstanceId,
   );
   const detailOpen = useWorkspaceRestoreStore((state) => state.agentConversation.detailOpen);
-  const [unreadInstanceIds, setUnreadInstanceIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const previousStatusRef = useRef<ReadonlyMap<string, ConversationRunSummary['status']>>(
-    new Map(),
-  );
 
   const lifecycleEntries = useMemo(() => (
     Object.values(instances).map((instance) => ({
@@ -71,59 +68,33 @@ export function AgentConversationStatusBar() {
   ), [instances, runSignatures]);
 
   useEffect(() => {
-    const previous = previousStatusRef.current;
-    const current = new Map(
-      lifecycleEntries.map(({ instance, run }) => [instance.instanceId, run.status] as const),
-    );
     const selectedIsOpen = (instanceId: string) =>
       detailOpen && selectedInstanceId === instanceId;
 
-    setUnreadInstanceIds((existing) => {
-      const next = new Set(existing);
-      let changed = false;
-
-      for (const { instance, run } of lifecycleEntries) {
-        const wasRunning = previous.get(instance.instanceId) === 'running';
-        const ended = wasRunning && run.status !== 'running' && run.status !== null;
-        if (ended) {
-          if (selectedIsOpen(instance.instanceId)) {
-            changed = next.delete(instance.instanceId) || changed;
-          } else if (!next.has(instance.instanceId)) {
-            next.add(instance.instanceId);
-            changed = true;
-          }
-        } else if (run.status === 'running' || selectedIsOpen(instance.instanceId)) {
-          changed = next.delete(instance.instanceId) || changed;
-        }
+    for (const { instance } of lifecycleEntries) {
+      if (selectedIsOpen(instance.instanceId) && instance.threadId) {
+        markThreadRead(instance.threadId);
       }
-
-      for (const instanceId of next) {
-        if (!current.has(instanceId)) {
-          next.delete(instanceId);
-          changed = true;
-        }
-      }
-
-      return changed ? next : existing;
-    });
-    previousStatusRef.current = current;
-  }, [detailOpen, lifecycleEntries, selectedInstanceId]);
+    }
+  }, [detailOpen, lifecycleEntries, markThreadRead, selectedInstanceId]);
 
   const openConversation = useCallback((instance: AgentConversationInstance) => {
-    setUnreadInstanceIds((existing) => {
-      if (!existing.has(instance.instanceId)) return existing;
-      const next = new Set(existing);
-      next.delete(instance.instanceId);
-      return next;
-    });
+    if (instance.threadId) markThreadRead(instance.threadId);
     void selectAndOpenAgentConversation(instance.instanceId).catch((error) => {
       toast.error(error instanceof Error ? error.message : t('status.agent.conversationNotFound'));
     });
-  }, [t]);
+  }, [markThreadRead, t]);
 
   const entries = useMemo(
-    () => conversationStatusEntries(instances, runSignatures, unreadInstanceIds),
-    [instances, runSignatures, unreadInstanceIds],
+    () => conversationStatusEntries(
+      instances,
+      runSignatures,
+      new Set(Object.values(instances)
+      .filter((instance) => instance.threadId
+        && latestCompletedRunIds[instance.threadId] !== readThroughRunIds[instance.threadId])
+        .map((instance) => instance.instanceId)),
+    ),
+    [instances, latestCompletedRunIds, readThroughRunIds, runSignatures],
   );
 
   if (entries.length === 0) return null;
@@ -134,7 +105,8 @@ export function AgentConversationStatusBar() {
         const agent = getAgentType(instance.agentType);
         const title = instance.title?.trim() || t('common.untitled');
         const isRunning = run.status === 'running';
-        const isUnread = unreadInstanceIds.has(instance.instanceId);
+        const isUnread = !!instance.threadId
+          && latestCompletedRunIds[instance.threadId] !== readThroughRunIds[instance.threadId];
         return (
           <Tooltip key={instance.instanceId} content={title} side="top">
             <button

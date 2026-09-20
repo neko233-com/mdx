@@ -2823,6 +2823,63 @@ describe("AgentThreadCard NodeView streaming", () => {
     expect(editor.state.doc.child(1).type.name).toBe("agentThreadCard");
   });
 
+  it("clears a different card's node selection when a composer receives focus", async () => {
+    const { AgentThreadCard } =
+      await import("@features/agent/thread-card");
+    const host = document.createElement("div");
+    document.body.append(host);
+
+    editor = new Editor({
+      element: host,
+      extensions: [StarterKit, AgentThreadCard],
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "agentThreadCard",
+            attrs: {
+              threadId: "thread-card-focus-first",
+              title: "First",
+              typeKey: "deepseek-harness",
+              collapsed: false,
+            },
+          },
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "between" }],
+          },
+          {
+            type: "agentThreadCard",
+            attrs: {
+              threadId: "thread-card-focus-second",
+              title: "Second",
+              typeKey: "deepseek-harness",
+              collapsed: false,
+            },
+          },
+        ],
+      },
+    });
+
+    const cardPositions: number[] = [];
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === "agentThreadCard") cardPositions.push(pos);
+      return true;
+    });
+    expect(cardPositions).toHaveLength(2);
+
+    editor.commands.setNodeSelection(cardPositions[0]!);
+    const cards = [...host.querySelectorAll<HTMLElement>(".agent-thread-card")];
+    const secondInput = getComposerInput(cards[1]!);
+    expect(cards[0]!.classList.contains("ProseMirror-selectednode")).toBe(true);
+
+    secondInput.focus();
+
+    expect(document.activeElement).toBe(secondInput);
+    expect(editor.state.selection).not.toBeInstanceOf(NodeSelection);
+    expect(cards[0]!.classList.contains("ProseMirror-selectednode")).toBe(false);
+  });
+
   it("blurs a focused card input before outside pointer interactions", async () => {
     const { AgentThreadCard } =
       await import("@features/agent/thread-card");

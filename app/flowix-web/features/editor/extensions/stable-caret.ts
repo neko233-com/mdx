@@ -72,9 +72,19 @@ class StableCaretView {
 
   private render(): void {
     const { selection } = this.view.state;
+    // A thread-card composer is a nested contenteditable inside the document
+    // editor. EditorView.hasFocus() treats focus in that subtree as focus in
+    // the parent view, but the parent stable caret must not hide or compete
+    // with the composer's native caret.
+    const activeElement = document.activeElement;
+    const nestedEditableHasFocus = activeElement instanceof HTMLElement
+      && activeElement !== this.view.dom
+      && this.view.dom.contains(activeElement)
+      && activeElement.closest('[contenteditable="true"]') !== this.view.dom;
     if (
       !this.view.editable
       || !this.view.hasFocus()
+      || nestedEditableHasFocus
       || this.view.composing
       || !(selection instanceof TextSelection)
       || !selection.empty

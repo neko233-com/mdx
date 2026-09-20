@@ -10,7 +10,7 @@ import { ListItem } from '@tiptap/extension-list';
 import { Paragraph } from '@tiptap/extension-paragraph';
 import { Markdown } from '@tiptap/markdown';
 import Placeholder from '@tiptap/extension-placeholder';
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useCallback, type ReactNode } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useCallback, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { useShortcutScope, pushHandler } from '@features/shortcuts';
 import { AttachmentLink } from '@features/editor/extensions/attachment-link';
 import { TableBubbleMenu } from '@features/editor/extensions/table/table-bubble-menu';
@@ -460,6 +460,16 @@ function getEditableBodyStart(editor: Editor): EditableBodyStart {
   };
 }
 
+function isBlankEditorDocument(editor: Editor): boolean {
+  const { block, blockIndex } = getEditableBodyStart(editor);
+  return Boolean(
+    block &&
+    blockIndex === editor.state.doc.childCount - 1 &&
+    block.type.name === 'paragraph' &&
+    block.textContent.trim() === '',
+  );
+}
+
 function createEmptyParagraph(editor: Editor, text?: string): ProseMirrorNode {
   const paragraph = editor.state.schema.nodes.paragraph;
   return paragraph.create(null, text ? editor.state.schema.text(text) : undefined);
@@ -704,6 +714,28 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     // first editable position when a tags/property row is present.
     editor.commands.focus('start');
   }, []);
+
+  const handleEditorSurfaceMouseDown = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !editableRef.current) return;
+
+    const editor = editorRef.current;
+    const editorMount = editorMountRef.current;
+    if (!editor || editor.isDestroyed || !editorMount || !isBlankEditorDocument(editor)) {
+      return;
+    }
+
+    // ProseMirror owns clicks on its descendants and can place the caret from
+    // the pointer coordinates. For a blank document, handle the whole editor
+    // surface explicitly because a click below the empty paragraph can still
+    // produce no selection in WebKit/WebView.
+    const target = event.target;
+    if (target !== event.currentTarget && !(target instanceof Node && editorMount.contains(target))) {
+      return;
+    }
+
+    focusBodyStart();
+    event.preventDefault();
+  }, [focusBodyStart]);
 
   const moveTitleToBody = useCallback((trailingContent: string) => {
     const editor = editorRef.current;
@@ -1192,7 +1224,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         visible={searchPanelOpen}
         onClose={() => onSearchPanelOpenChangeRef.current?.(false)}
       />
-      <div ref={elementRef} className="editor-content">
+      <div
+        ref={elementRef}
+        className="editor-content"
+        onMouseDown={handleEditorSurfaceMouseDown}
+      >
         {editorInstance && <HeadingOutlineNavigation editor={editorInstance} />}
         {header}
         <div ref={editorMountRef} className="editor-document-body" />

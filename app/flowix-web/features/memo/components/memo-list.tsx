@@ -7,9 +7,8 @@ import {
   Check,
   LayoutList,
   ListFilter,
-  Search,
+  SquarePen,
 } from 'lucide-react';
-import { PencilSimpleLineIcon } from '@phosphor-icons/react';
 import {
   getVisibleCreateFilter,
   MEMO_COLOR_HEX,
@@ -67,10 +66,6 @@ import {
   useRunningAgentTypeIndex,
 } from './memo-list/running-agent-index';
 const logger = createLogger('memo-list');
-
-const HEADER_ICON_BTN_CLASS =
-  'h-7 w-7 justify-center rounded-xl p-0 border border-[var(--border)] ' +
-  'hover:bg-[var(--muted)] hover:text-[var(--primary)] text-[var(--foreground)]';
 
 // 先以 10 条验证动态虚拟化在真实列表中的行为，稳定后再提升到 50。
 const MEMO_VIRTUALIZATION_THRESHOLD = 10;
@@ -944,29 +939,17 @@ export function MemoList({
           </MemoNavigationDropdown>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Tooltip content={t("memo.list.searchTooltip")} shortcut="palette.search">
-            <Button
-              size="icon"
-              variant="outline"
-              className={cn(HEADER_ICON_BTN_CLASS, 'bg-[var(--card)]')}
-              onClick={() => window.dispatchEvent(new CustomEvent('flowix:open-palette'))}
-              aria-label={t("memo.list.search")}
-            >
-              <Search className="w-4 h-4" />
-            </Button>
-          </Tooltip>
           <Tooltip content={t("memo.list.newMemoTooltip")} shortcut="memo.create">
             <Button
               size="icon"
-              className="h-7 w-7 justify-center rounded-xl border border-transparent bg-[var(--primary)] p-0 text-[var(--primary-foreground)] hover:opacity-90"
+              className="h-[30px] w-[30px] justify-center rounded-xl border border-transparent bg-[var(--primary)] p-0 text-[var(--primary-foreground)] hover:opacity-90"
               onClick={() => {
                 if (memoListView === 'folders') handleRequestCreateNote();
                 else void handleCreateMemo();
               }}
             >
-              <PencilSimpleLineIcon
+              <SquarePen
                 className="h-4 w-4 text-[var(--primary-foreground)]"
-                weight="bold"
                 aria-hidden="true"
               />
             </Button>

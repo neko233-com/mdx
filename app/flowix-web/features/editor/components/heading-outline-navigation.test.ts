@@ -3,6 +3,7 @@ import {
   extractHeadings,
   filterHeadingsForOutline,
   getNavigationActiveElement,
+  calculateHeadingOutlinePopoverPosition,
   type HeadingItem,
 } from './heading-outline-navigation'
 
@@ -95,5 +96,36 @@ describe('filterHeadingsForOutline', () => {
     const allHeadings = [h2, h3, h4]
 
     expect(getNavigationActiveElement(allHeadings, [h2], h4.element)).toBe(h2.element)
+  })
+})
+
+describe('calculateHeadingOutlinePopoverPosition', () => {
+  it('keeps the popup inside the current editor surface', () => {
+    const position = calculateHeadingOutlinePopoverPosition(
+      { left: 0, right: 600, top: 50, bottom: 850, width: 600, height: 800 },
+      253,
+      400,
+      1000,
+      900,
+    )
+
+    expect(position.left).toBe(339)
+    expect(position.top).toBe(250)
+    expect(position.maxWidth).toBe(253)
+    expect(position.maxHeight).toBe(720)
+  })
+
+  it('repositions independently when the browser column owns the editor', () => {
+    const position = calculateHeadingOutlinePopoverPosition(
+      { left: 600, right: 1000, top: 50, bottom: 850, width: 400, height: 800 },
+      253,
+      400,
+      1000,
+      900,
+    )
+
+    expect(position.left).toBe(739)
+    expect(position.top).toBe(250)
+    expect(position.maxWidth).toBe(253)
   })
 })

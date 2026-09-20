@@ -22,11 +22,28 @@
 
 .markdown-editor .editor-content {
   position: relative;
+  display: flex;
+  flex-direction: column;
   box-sizing: border-box;
   height: 100%;
   overflow-y: auto;
   /* 固定滚动条 gutter 宽度, 避免 ProseMirror 内容区在滚动条出现/隐藏时抖动 */
   scrollbar-gutter: stable;
+}
+
+/* Keep the blank document surface clickable all the way to the bottom of the
+ * shared scroller. The body is a flex item so the title/property header keeps
+ * its natural height while the editor fills the remaining viewport. */
+.markdown-editor .editor-document-body {
+  display: flex;
+  min-height: 0;
+  width: 100%;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+
+.markdown-editor .editor-document-body > .ProseMirror {
+  flex: 1 0 auto;
 }
 
 .heading-outline-navigation-anchor {
@@ -63,11 +80,9 @@
 
 .heading-outline-navigation__popover {
   position: fixed;
-  top: 50%;
-  right: 8px;
   display: flex;
   width: 253px;
-  max-width: calc(100vw - 80px);
+  max-width: calc(100vw - 16px);
   height: 80vh;
   max-height: 80vh;
   flex-direction: column;
@@ -82,17 +97,17 @@
   font-size: 88%;
   pointer-events: auto;
   animation: heading-outline-popover-in 120ms ease-out both;
-  transform: translateY(-50%);
+  transform: none;
 }
 
 @keyframes heading-outline-popover-in {
   from {
     opacity: 0;
-    transform: translateY(-50%) scale(0.97);
+    transform: scale(0.97);
   }
   to {
     opacity: 1;
-    transform: translateY(-50%) scale(1);
+    transform: scale(1);
   }
 }
 
@@ -358,7 +373,9 @@
  * with the user's line-spacing preference. StableCaret draws a glyph-height
  * caret instead; keep the native caret available during IME composition. */
 .markdown-editor .ProseMirror.has-stable-caret,
-.markdown-editor .ProseMirror.has-stable-caret * {
+.markdown-editor .ProseMirror.has-stable-caret :where(
+  *:not(.agent-thread-card__composer-editor):not(.agent-thread-card__composer-editor *)
+) {
   caret-color: transparent !important;
 }
 
