@@ -205,7 +205,7 @@ export function DshSettingsSection({ autoUpdate = false }: { autoUpdate?: boolea
 function DshDevRuntimeNotice({ onContinue }: { onContinue: () => void }) {
   return (
     <div className="flex flex-1 items-start justify-center px-1 py-2">
-      <div className="flex h-[500px] w-full max-w-xl flex-col rounded-2xl border border-[var(--divider)] bg-[var(--card)] p-8 text-center shadow-sm">
+      <div className="flex h-[420px] w-full max-w-xl flex-col rounded-2xl border border-[var(--divider)] bg-[var(--card)] p-8 text-center shadow-sm">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[color-mix(in_oklch,var(--primary)_12%,transparent)] text-[var(--primary)]">
           <AgentIcon typeKey="deepseek-harness" alt="" className="h-8 w-8" />
         </div>
@@ -258,7 +258,7 @@ function DshInstallPage({
 
   return (
     <div className="flex flex-1 items-start justify-center px-1 py-2">
-      <div className="flex h-[500px] w-full max-w-xl flex-col rounded-2xl border border-[var(--divider)] bg-[var(--card)] p-8 text-center shadow-sm">
+      <div className="flex h-[420px] w-full max-w-xl flex-col rounded-2xl border border-[var(--divider)] bg-[var(--card)] p-8 text-center shadow-sm">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[color-mix(in_oklch,var(--primary)_12%,transparent)] text-[var(--primary)]">
           <AgentIcon typeKey="deepseek-harness" alt="" className="h-8 w-8" />
         </div>
