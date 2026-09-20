@@ -2,11 +2,13 @@ import { useCallback, useRef, type ComponentProps } from 'react';
 import { DocumentContainer } from '@features/document/components/document-container';
 import { useWorkColumnStore } from '@features/workspace/store/work-column-store';
 import { openExternalTarget } from '@features/workspace/use-cases/workspace-navigation';
+import { openMediaTarget } from '@features/workspace/use-cases/workspace-navigation';
 import { openBrowserColumnTarget } from '@features/workspace/use-cases/browser-column-navigation';
 import { FileBrowserView } from './file-browser-view';
 import type { FileBrowserContext } from '@features/workspace/store/file-browser-target';
 import { toast } from '@/lib/toast';
 import { useI18n } from '@/lib/i18n';
+import { resourceKindFromPath } from '@features/editor/public/code-file';
 
 export function WorkFileBrowserView({ props }: { props: ComponentProps<typeof DocumentContainer> }) {
   const target = useWorkColumnStore((state) => state.navigation.target);
@@ -35,7 +37,17 @@ export function WorkFileBrowserView({ props }: { props: ComponentProps<typeof Do
       // Do not let a delayed save override a newer navigation intent.
       const current = useWorkColumnStore.getState().navigation;
       if (current.phase === 'loading' || current.target.kind !== 'external' || current.target.path !== target.path) return;
-      await openExternalTarget(path, { destination: 'main-third', scopePath: context.scopePath, fileBrowser: context });
+      const resourceKind = resourceKindFromPath(path);
+      if ((resourceKind === 'image' || resourceKind === 'video') && context.scopePath) {
+        await openMediaTarget({
+          filePath: path,
+          notebookId: context.notebookId,
+          notebookPath: context.scopePath,
+          resourceKind,
+        });
+      } else {
+        await openExternalTarget(path, { destination: 'main-third', scopePath: context.scopePath, fileBrowser: context });
+      }
     } catch {
       toast.error(t('tabWindow.switchFailed'));
     }

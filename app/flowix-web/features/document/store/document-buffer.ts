@@ -17,8 +17,32 @@ export interface DocumentBuffer {
   content: string;
   lastSavedContent: string;
   pendingContent: string | null;
+  /** Latest user content revision captured in this buffer. */
+  editRevision: number;
+  /** Highest editor revision published to the buffer. */
+  capturedRevision: number;
+  /** Highest revision known to be recoverable from disk or recovery storage. */
+  durableRevision: number;
+  /** Highest revision confirmed in the canonical document file. */
+  savedRevision: number;
+  /** Revision currently being written to the canonical file. */
+  savingRevision: number | null;
+  /** Latest revision waiting behind an in-flight write. */
+  pendingRevision: number | null;
+  saveState: 'clean' | 'dirty' | 'saving' | 'protected' | 'conflict' | 'error';
 }
 
 export function emptyDocumentBuffer(): DocumentBuffer {
-  return { content: '', lastSavedContent: '', pendingContent: null };
+  return {
+    content: '',
+    lastSavedContent: '',
+    pendingContent: null,
+    editRevision: 0,
+    capturedRevision: 0,
+    durableRevision: 0,
+    savedRevision: 0,
+    savingRevision: null,
+    pendingRevision: null,
+    saveState: 'clean',
+  };
 }

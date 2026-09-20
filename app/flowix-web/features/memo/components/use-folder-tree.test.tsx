@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DocTreeItem } from '@platform/tauri/client';
 import {
+  flattenLoadedTree,
   flattenVisibleTree,
   useFolderTree,
   type FolderTreeState,
@@ -155,6 +156,46 @@ describe('useFolderTree', () => {
     expect(lastState?.nodes.get(right)?.children?.map((item) => item.name)).toEqual(['right-note.md']);
     expect(lastState?.nodes.get(parent)?.children?.map((item) => item.name)).toContain('moved.md');
   });
+
+  it('刷新目录时移除已删除子项及其缓存子树', async () => {
+    const parent = '/root/parent';
+    const removedFolder = `${parent}/removed`;
+    getTreeMock.mockResolvedValue([dir(parent, 'parent')]);
+    getDirChildrenMock.mockImplementation(async (path) => {
+      if (path === parent) return [dir(removedFolder, 'removed')];
+      if (path === removedFolder) return [file(`${removedFolder}/old.md`, 'old.md')];
+      return [];
+    });
+    mount('/root');
+    await vi.waitFor(() => expect(lastState?.loading).toBe(false));
+
+    act(() => lastState?.toggle(parent));
+    await vi.waitFor(() => expect(lastState?.nodes.has(removedFolder)).toBe(true));
+    act(() => lastState?.toggle(removedFolder));
+    await vi.waitFor(() => expect(lastState?.nodes.has(`${removedFolder}/old.md`)).toBe(true));
+
+    getDirChildrenMock.mockImplementation(async () => []);
+    await act(async () => { await lastState?.refresh(parent); });
+
+    expect(lastState?.nodes.has(removedFolder)).toBe(false);
+    expect(lastState?.nodes.has(`${removedFolder}/old.md`)).toBe(false);
+  });
+
+  it('刷新根目录时移除已删除根节点及其缓存子树', async () => {
+    const removedFolder = '/root/removed';
+    getTreeMock.mockResolvedValue([dir(removedFolder, 'removed')]);
+    getDirChildrenMock.mockResolvedValue([file(`${removedFolder}/old.md`, 'old.md')]);
+    mount('/root');
+    await vi.waitFor(() => expect(lastState?.loading).toBe(false));
+    act(() => lastState?.toggle(removedFolder));
+    await vi.waitFor(() => expect(lastState?.nodes.has(`${removedFolder}/old.md`)).toBe(true));
+
+    getTreeMock.mockResolvedValue([]);
+    await act(async () => { await lastState?.refresh('/root'); });
+
+    expect(lastState?.nodes.has(removedFolder)).toBe(false);
+    expect(lastState?.nodes.has(`${removedFolder}/old.md`)).toBe(false);
+  });
 });
 
 describe('flattenVisibleTree', () => {
@@ -180,5 +221,22 @@ describe('flattenVisibleTree', () => {
       '/root/x.md',
     ]);
     expect(flattened[1].depth).toBe(1);
+  });
+});
+
+describe('flattenLoadedTree', () => {
+  it('uses loaded children when root folders are still placeholders', () => {
+    const rootFolder = dir('/root/sub', 'sub');
+    const loadedFolder = dir('/root/sub', 'sub', [file('/root/sub/note.md', 'note.md')]);
+
+    const flattened = flattenLoadedTree({
+      rootChildren: [rootFolder],
+      nodes: new Map([[rootFolder.fullPath, loadedFolder]]),
+    });
+
+    expect(flattened.map((item) => item.fullPath)).toEqual([
+      '/root/sub',
+      '/root/sub/note.md',
+    ]);
   });
 });

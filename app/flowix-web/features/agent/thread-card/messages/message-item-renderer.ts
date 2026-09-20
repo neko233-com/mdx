@@ -6,34 +6,27 @@ import { createLogger } from "@/lib/logger";
 import { agent } from "@platform/tauri/client";
 import type { ThreadState } from "@features/agent/store/thread-runtime-state";
 import {
-  agentMessageValueToText,
   createAgentMessageViewModel,
   shouldRenderAgentMessage,
 } from "@features/agent/message";
 import {
-  normalizeToolInput,
-  parseAgentCommandInput,
-} from "@features/agent/tool-display";
-import {
   attachAgentThreadCardMathCopyHandlers,
+  highlightAgentThreadCardCodeBlocks,
+  prepareAgentThreadCardCodeBlockLabels,
   prepareAgentThreadCardMath,
   renderAgentThreadCardMarkdownToHtml,
 } from "@features/agent/thread-card/agent-thread-card-markdown";
-import {
-  createAgentThreadCardCommandPreview,
-  createAgentThreadCardCommandList,
-  createAgentThreadCardMessageFallback,
-} from "@features/agent/thread-card/agent-thread-card-command-renderer";
+import { createAgentThreadCardMessageFallback } from "@features/agent/thread-card/agent-thread-card-command-renderer";
 import {
   applyMessageDisplayBudget,
   type MessageDisplayBudgetRole,
 } from "@features/agent/message/display-limits";
-import {
-  createChevronIcon,
-  createToolIcon,
-} from "@features/agent/thread-card/agent-thread-card-icons";
+import { createChevronIcon } from "@features/agent/thread-card/agent-thread-card-icons";
+import { registerMessageDisposer } from "@features/agent/thread-card/messages/message-lifecycle";
+import { createAgentThreadCardToolMessageParts } from "@features/agent/thread-card/messages/message-tool-renderer";
 
 type AgentMessage = ThreadState["messages"][number];
+export { disposeAgentThreadCardMessageTree } from "@features/agent/thread-card/messages/message-lifecycle";
 
 export interface AgentThreadCardMessageElementResult {
   element: HTMLElement;
@@ -159,6 +152,7 @@ export function attachMessageActions(
   copyButton.setAttribute("aria-label", copyButton.title);
   copyButton.append(createLucideIcon(Copy));
   let copyResetTimer: number | undefined;
+  let disposeForkConfirmation = () => undefined;
   copyButton.addEventListener("mousedown", (event) => event.stopPropagation());
   copyButton.addEventListener("click", async (event) => {
     event.stopPropagation();
@@ -194,6 +188,10 @@ export function attachMessageActions(
     forkButton.append(createLucideIcon(GitBranch));
     let activeConfirmation: HTMLSpanElement | null = null;
     function handleOutsidePointerDown(event: PointerEvent): void {
+      if (!actions.isConnected) {
+        closeConfirmation();
+        return;
+      }
       const target = event.target;
       if (activeConfirmation && !(target instanceof Node && actions.contains(target))) {
         closeConfirmation();
@@ -203,6 +201,9 @@ export function attachMessageActions(
       activeConfirmation?.remove();
       activeConfirmation = null;
       document.removeEventListener("pointerdown", handleOutsidePointerDown, true);
+    };
+    disposeForkConfirmation = () => {
+      closeConfirmation();
     };
     forkButton.addEventListener("mousedown", (event) => event.stopPropagation());
     forkButton.addEventListener("click", (event) => {
@@ -279,6 +280,15 @@ export function attachMessageActions(
     actions.append(duration);
   }
   item.append(actions);
+  registerMessageDisposer(actions, () => {
+    if (copyResetTimer !== undefined) {
+      window.clearTimeout(copyResetTimer);
+      copyResetTimer = undefined;
+    }
+    if (typeof disposeForkConfirmation === "function") {
+      disposeForkConfirmation();
+    }
+  });
 }
 
 function getDisplayToggleLabel(
@@ -296,157 +306,6 @@ function directChildDisplayToggle(parent: HTMLElement): HTMLButtonElement | null
     }
   }
   return null;
-}
-
-function findNestedToolString(
-  input: unknown,
-  keys: readonly string[],
-  depth = 3,
-): string | undefined {
-  if (!input || depth < 0 || typeof input !== "object") return undefined;
-  if (Array.isArray(input)) {
-    for (const value of input) {
-      const nested = findNestedToolString(value, keys, depth - 1);
-      if (nested) return nested;
-    }
-    return undefined;
-  }
-
-  const record = input as Record<string, unknown>;
-  for (const key of keys) {
-    if (typeof record[key] === "string" && record[key].trim()) {
-      return record[key].trim();
-    }
-  }
-  for (const value of Object.values(record)) {
-    const nested = findNestedToolString(value, keys, depth - 1);
-    if (nested) return nested;
-  }
-  return undefined;
-}
-
-function getMcpToolName(message: AgentMessage): string | undefined {
-  if (message.toolName?.toLowerCase() !== "mcp_tool_call") return undefined;
-  return findNestedToolString(normalizeToolInput(message.toolInput), [
-    "tool",
-    "tool_name",
-    "name",
-  ]);
-}
-
-function getMcpToolSummary(summary: string, toolName: string): string {
-  const prefix = `${toolName} · `;
-  return summary.startsWith(prefix) ? summary.slice(prefix.length) : summary;
-}
-
-function createExpandableToolContent(options: {
-  message: AgentMessage;
-  text?: string;
-  language: AppLanguage;
-  getDisplayExpanded: (message: AgentMessage) => boolean;
-  setDisplayExpanded: (messageId: string, expanded: boolean) => void;
-  /** Optional DOM node whose overflow determines whether the toggle is shown. */
-  measureTarget?: HTMLElement;
-  /** Used for structured command content with a separate compact preview. */
-  alwaysShowToggle?: boolean;
-  /** Compact content rendered in the first row before the toggle. */
-  leadingContent?: HTMLElement;
-  /** Additional expanded content rendered below the first row. */
-  expandedContent?: HTMLElement;
-  /** Whether to render the generic tool input block. */
-  includeInput?: boolean;
-}): HTMLDivElement {
-  const {
-    message,
-    text,
-    language,
-    getDisplayExpanded,
-    setDisplayExpanded,
-  } = options;
-  const content = document.createElement("div");
-  content.className = "agent-thread-card__message-tool-content";
-
-  const row = document.createElement("div");
-  row.className = "agent-thread-card__message-tool-row";
-  content.append(row);
-
-  const summary = text === undefined ? null : document.createElement("span");
-  if (summary) {
-    summary.className = "agent-thread-card__message-tool-summary";
-    summary.textContent = text ?? "";
-    summary.title = text ?? "";
-    row.append(summary);
-  } else if (options.leadingContent) {
-    row.append(options.leadingContent);
-  }
-
-  if (options.expandedContent) content.append(options.expandedContent);
-  if (options.includeInput !== false) {
-    const fullInput = document.createElement("pre");
-    fullInput.className = "agent-thread-card__message-tool-input";
-    const inputText = agentMessageValueToText(message.toolInput);
-    fullInput.textContent = inputText || translate(language, "agent.tools.noInput");
-    content.append(fullInput);
-  }
-
-  let isExpanded = getDisplayExpanded(message);
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "agent-thread-card__message-tool-toggle";
-  toggle.append(createChevronIcon("down"));
-
-  const syncToggleVisibility = () => {
-    if (!content.isConnected) return;
-    // Measure the collapsed text with the button removed. Otherwise the
-    // button consumes width and can keep itself visible even when the full
-    // single-line text would fit without it.
-    if (!isExpanded && toggle.isConnected) toggle.remove();
-    const target = options.measureTarget ?? summary;
-    const shouldShow = Boolean(
-      isExpanded || options.alwaysShowToggle ||
-      (target && target.scrollWidth > target.clientWidth + 1),
-    );
-    if (shouldShow && !toggle.isConnected) row.append(toggle);
-    else if (!shouldShow && toggle.isConnected) toggle.remove();
-  };
-
-  const applyExpandedState = (expanded: boolean) => {
-    isExpanded = expanded;
-    content.classList.toggle(
-      "agent-thread-card__message-tool-content--expanded",
-      expanded,
-    );
-    toggle.setAttribute("aria-expanded", String(expanded));
-    const label = translate(
-      language,
-      expanded ? "agent.tool.collapse" : "agent.tool.expand",
-    );
-    toggle.setAttribute("aria-label", label);
-    toggle.title = label;
-    syncToggleVisibility();
-  };
-
-  toggle.addEventListener("click", (event) => {
-    event.stopPropagation();
-    const nextExpanded = !isExpanded;
-    setDisplayExpanded(message.id, nextExpanded);
-    applyExpandedState(nextExpanded);
-  });
-  toggle.addEventListener("mousedown", (event) => event.stopPropagation());
-  if (isExpanded) row.append(toggle);
-  applyExpandedState(isExpanded);
-  requestAnimationFrame(syncToggleVisibility);
-  if (typeof ResizeObserver !== "undefined") {
-    const observer = new ResizeObserver(() => {
-      if (!content.isConnected) {
-        observer.disconnect();
-        return;
-      }
-      syncToggleVisibility();
-    });
-    observer.observe(content);
-  }
-  return content;
 }
 
 /**
@@ -527,6 +386,7 @@ function injectMarkdownBlock(
   const html = renderAgentThreadCardMarkdownToHtml(text);
   if (!html) return;
   const fragment = parseHtmlFragment(html);
+  prepareAgentThreadCardCodeBlockLabels(fragment);
   prepareAgentThreadCardMath(fragment, mathCopyLabel);
   content.insertBefore(fragment, insertBefore);
 }
@@ -634,6 +494,9 @@ export function renderAgentThreadCardBudgetedMarkdown(options: {
     forceFinalize,
     translate(context.language, "editor.threadCard.copyLatex"),
   );
+  if (forceFinalize) {
+    void highlightAgentThreadCardCodeBlocks(content);
+  }
 
   let toggle = directChildDisplayToggle(toggleParent);
   if (!display.isOverBudget) {
@@ -744,56 +607,15 @@ export function createAgentThreadCardMessageElement(options: {
 
   try {
     if (message.role === "tool") {
-      const icon = createToolIcon(message.toolName, message.toolAgentType);
-      const iconWrap = document.createElement("span");
-      iconWrap.className = "agent-thread-card__message-tool-icon-wrap";
-      iconWrap.append(icon);
-      const name = document.createElement("span");
-      name.className = "agent-thread-card__message-tool-name";
-      name.textContent = messageView.toolLabel;
-      const command = parseAgentCommandInput(message.toolInput);
-      if (command) {
-        const preview = createAgentThreadCardCommandPreview(command);
-        const details = createAgentThreadCardCommandList(command, false, {
-          maxItems: Number.POSITIVE_INFINITY,
-          maxInlineArgs: Number.POSITIVE_INFINITY,
-          truncateArgs: false,
-        });
-        details.classList.add("agent-thread-card__command-list--details");
-        const content = createExpandableToolContent({
-          message,
+      item.append(...createAgentThreadCardToolMessageParts({
+        message,
+        messageView,
+        context: {
           language,
           getDisplayExpanded,
           setDisplayExpanded,
-          measureTarget: preview,
-          alwaysShowToggle: true,
-          leadingContent: preview,
-          expandedContent: details,
-          includeInput: false,
-        });
-        item.append(iconWrap, name, content);
-      } else {
-        const mcpToolName = getMcpToolName(message);
-        const toolText = mcpToolName
-          ? getMcpToolSummary(messageView.toolSummary, mcpToolName)
-          : messageView.toolSummary;
-        const content = createExpandableToolContent({
-          message,
-          text: toolText,
-          language,
-          getDisplayExpanded,
-          setDisplayExpanded,
-        });
-        if (mcpToolName) {
-          const concreteName = document.createElement("span");
-          concreteName.className =
-            "agent-thread-card__message-tool-concrete-name";
-          concreteName.textContent = mcpToolName;
-          item.append(iconWrap, name, concreteName, content);
-        } else {
-          item.append(iconWrap, name, content);
-        }
-      }
+        },
+      }));
     } else if (message.role === "end") {
       const content = document.createElement("div");
       content.className = "agent-thread-card__message-content";

@@ -12,6 +12,11 @@ import {
   PaperclipIcon,
   QuotesIcon,
   TableIcon,
+  TextHFourIcon,
+  TextHOneIcon,
+  TextHThreeIcon,
+  TextHTwoIcon,
+  TextTIcon,
   VideoCameraIcon,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
@@ -23,8 +28,14 @@ import {
 import { translate, type AppLanguage, type I18nKey } from '@/lib/i18n';
 import type { AgentTypeKey } from '@/types/agent';
 import { AgentIcon } from '@features/agent/components/agent-icon';
+import { Kbd } from '@shared/ui/shortcut-kbd';
 
 export type SlashMenuItemId =
+  | 'heading-1'
+  | 'heading-2'
+  | 'heading-3'
+  | 'heading-4'
+  | 'paragraph'
   | 'blockquote'
   | 'code-block'
   | 'table'
@@ -67,7 +78,7 @@ export interface SlashMenuItem {
   section?: string;
   /** i18n key ── 渲染时按当前语言翻译。 */
   sectionKey?: I18nKey;
-  /** 快捷键 actionId ── 保留给命令元数据与过滤逻辑, 紧凑菜单不展示副标题。 */
+  /** 快捷键 chord ── 使用与 drag context menu 相同的显示格式。 */
   shortcut?: string;
   /** Keep bundled agent entries visible while their runtime status is settling. */
   alwaysVisible?: boolean;
@@ -162,6 +173,70 @@ export const SLASH_MENU_ITEMS: SlashMenuItem[] = [
     sectionKey: 'editor.slash.section.agent',
   },
   {
+    id: 'heading-1',
+    label: '#',
+    keywords: ['heading', 'h1', 'title', 'yiji', '标题'],
+    icon: TextHOneIcon,
+    sectionKey: 'editor.slash.section.addBlock',
+    shortcut: 'Mod+1',
+  },
+  {
+    id: 'heading-2',
+    label: '##',
+    keywords: ['heading', 'h2', 'title', 'erji', '标题'],
+    icon: TextHTwoIcon,
+    sectionKey: 'editor.slash.section.addBlock',
+    shortcut: 'Mod+2',
+  },
+  {
+    id: 'heading-3',
+    label: '###',
+    keywords: ['heading', 'h3', 'title', 'sanji', '标题'],
+    icon: TextHThreeIcon,
+    sectionKey: 'editor.slash.section.addBlock',
+    shortcut: 'Mod+3',
+  },
+  {
+    id: 'heading-4',
+    label: '####',
+    keywords: ['heading', 'h4', 'title', 'siji', '标题'],
+    icon: TextHFourIcon,
+    sectionKey: 'editor.slash.section.addBlock',
+    shortcut: 'Mod+4',
+  },
+  {
+    id: 'paragraph',
+    labelKey: 'editor.block.paragraph',
+    keywords: ['paragraph', 'text', '正文', '文本'],
+    icon: TextTIcon,
+    sectionKey: 'editor.slash.section.addBlock',
+    shortcut: 'Mod+0',
+  },
+  {
+    id: 'bullet-list',
+    labelKey: 'editor.slash.label.bulletList',
+    keywords: ['bullet', 'list', 'unordered', 'wuxu', '列表'],
+    icon: ListBulletsIcon,
+    sectionKey: 'editor.slash.section.addBlock',
+    shortcut: 'Mod+Alt+8',
+  },
+  {
+    id: 'ordered-list',
+    labelKey: 'editor.slash.label.orderedList',
+    keywords: ['ordered', 'list', 'numbered', 'youxu', '列表'],
+    icon: ListNumbersIcon,
+    sectionKey: 'editor.slash.section.addBlock',
+    shortcut: 'Mod+Alt+7',
+  },
+  {
+    id: 'task-list',
+    labelKey: 'editor.slash.label.taskList',
+    keywords: ['task', 'todo', 'checkbox', 'daiban', '待办'],
+    icon: CheckSquareIcon,
+    sectionKey: 'editor.slash.section.addBlock',
+    shortcut: 'Mod+Alt+9',
+  },
+  {
     id: 'blockquote',
     labelKey: 'editor.slash.label.quote',
     keywords: ['quote', 'blockquote', 'yinyong', '引用'],
@@ -202,30 +277,6 @@ export const SLASH_MENU_ITEMS: SlashMenuItem[] = [
     keywords: ['divider', 'hr', 'horizontal', 'rule', 'fenge', '分割'],
     icon: MinusIcon,
     sectionKey: 'editor.slash.section.addBlock',
-  },
-  {
-    id: 'bullet-list',
-    labelKey: 'editor.slash.label.bulletList',
-    keywords: ['bullet', 'list', 'unordered', 'wuxu', '列表'],
-    icon: ListBulletsIcon,
-    sectionKey: 'editor.slash.section.addBlock',
-    shortcut: 'editor.toggleBulletList',
-  },
-  {
-    id: 'ordered-list',
-    labelKey: 'editor.slash.label.orderedList',
-    keywords: ['ordered', 'list', 'numbered', 'youxu', '列表'],
-    icon: ListNumbersIcon,
-    sectionKey: 'editor.slash.section.addBlock',
-    shortcut: 'editor.toggleOrderedList',
-  },
-  {
-    id: 'task-list',
-    labelKey: 'editor.slash.label.taskList',
-    keywords: ['task', 'todo', 'checkbox', 'daiban', '待办'],
-    icon: CheckSquareIcon,
-    sectionKey: 'editor.slash.section.addBlock',
-    shortcut: 'editor.toggleTaskList',
   },
   {
     id: 'image',
@@ -386,7 +437,7 @@ export const SlashMenuDropdown = ({
                     type="button"
                     role="option"
                     aria-selected={selected}
-                    className={`slash-menu-item${selected ? ' is-selected' : ''}`}
+                    className={`slash-menu-item group${selected ? ' is-selected' : ''}`}
                     onMouseMove={(event) => handleItemMouseMove(event, index)}
                     onMouseDown={(event) => {
                       event.preventDefault();
@@ -394,7 +445,15 @@ export const SlashMenuDropdown = ({
                     }}
                   >
                     {renderIcon}
-                    <span className="slash-menu-item-label">{displayLabel}</span>
+                    <span className="slash-menu-item-label min-w-0 flex-1">{displayLabel}</span>
+                    {item.shortcut && (
+                      <Kbd
+                        chord={item.shortcut}
+                        className={selected
+                          ? 'shrink-0 text-[var(--primary-foreground)]'
+                          : 'shrink-0 text-[var(--muted-foreground)] group-hover:text-[var(--primary-foreground)]'}
+                      />
+                    )}
                   </button>
                 </Fragment>
               );

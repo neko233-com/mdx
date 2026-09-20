@@ -7,19 +7,18 @@ import {
   Check,
   LayoutList,
   ListFilter,
-  Search,
+  SquarePen,
 } from 'lucide-react';
-import { PencilSimpleLineIcon } from '@phosphor-icons/react';
 import {
   getVisibleCreateFilter,
   MEMO_COLOR_HEX,
-  useMemoLibraryMetadataStore,
   useMemoStore,
-  useTagStore,
   type ColorFilterValue,
-  type MemoColor,
-  type MemoItem,
-} from '@features/memo';
+} from '@features/memo/store/memo-store';
+import { useMemoLibraryMetadataStore } from '@features/memo/store/memo-library-metadata-store';
+import { useCustomFilterStore } from '@features/memo/store/custom-filter-store';
+import { useTagStore } from '@features/memo/store/tag-store';
+import type { MemoColor, MemoItem } from '@/types/memo-item';
 import { resolveSelectedTagId } from '@features/memo/services/memo-list-metadata-service';
 import { useMemoInsertAnimation } from '@features/memo/hooks/use-memo-insert-animation';
 import { toast } from '@/lib/toast';
@@ -67,10 +66,6 @@ import {
   useRunningAgentTypeIndex,
 } from './memo-list/running-agent-index';
 const logger = createLogger('memo-list');
-
-const HEADER_ICON_BTN_CLASS =
-  'h-7 w-7 justify-center rounded-xl p-0 border border-[var(--border)] ' +
-  'hover:bg-[var(--muted)] hover:text-[var(--primary)] text-[var(--foreground)]';
 
 // 先以 10 条验证动态虚拟化在真实列表中的行为，稳定后再提升到 50。
 const MEMO_VIRTUALIZATION_THRESHOLD = 10;
@@ -121,8 +116,14 @@ export function MemoList({
   const refreshTrigger = useMemoStore((s) => s.refreshTrigger);
   const activeFilter = useMemoStore((s) => s.activeFilter);
   const activePluginId = useMemoStore((s) => s.activePluginId);
+  const activeCustomFilterId = useMemoStore((s) => s.activeCustomFilterId);
   const activeSort = useMemoStore((s) => s.activeSort);
   const colorFilter = useMemoStore((s) => s.colorFilter);
+  const activeCustomFilter = useCustomFilterStore((s) => (
+    activeCustomFilterId
+      ? s.filters.find((filter) => filter.id === activeCustomFilterId) ?? null
+      : null
+  ));
   const startupPhase = useMemoStore((s) => s.startupPhase);
   const startupError = useMemoStore((s) => s.startupError);
   const initialMemoQueryKey = useMemoStore((s) => s.initialMemoQueryKey);
@@ -166,7 +167,6 @@ export function MemoList({
       handleMemoCreated: s.handleMemoCreated,
     })),
   );
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [notebookDropdownOpen, setNotebookDropdownOpen] = useState(false);
   const [localNavigationDrawerOpen, setLocalNavigationDrawerOpen] = useState(false);
   const [colorSubmenuOpen, setColorSubmenuOpen] = useState(false);
@@ -273,6 +273,7 @@ export function MemoList({
     activeTagId,
     colorFilter,
     activePluginId,
+    activeCustomFilterId,
   );
   const showMemoListLoading = startupPhase === 'loading' || shouldShowMemoListLoading({
       selectedNotebookId,
@@ -300,6 +301,9 @@ export function MemoList({
           : activePluginId === 'webpage' ? '网页' : activePluginId,
         hasActiveFilter: true,
       };
+    }
+    if (activeFilter === 'custom' && activeCustomFilter) {
+      return { headerLabel: activeCustomFilter.name, hasActiveFilter: true };
     }
     // tag 保留 "#" 前缀; 其余筛选 (待办/对话/颜色/只看本周/只看本月) 仅展示文案,
     // 不带 "@" 前缀。
@@ -349,7 +353,7 @@ export function MemoList({
     filteredMemos.length > MEMO_VIRTUALIZATION_THRESHOLD;
   // ResizeObserver is required for dynamic rows. Older/non-browser test
   // environments gracefully keep the existing document-flow renderer.
-  const shouldVirtualizeMemos =
+  const canVirtualizeMemos =
     memoVirtualizationEnabled && typeof ResizeObserver !== 'undefined';
   const getMemoKey = useCallback((memo: MemoItem) => memo.id, []);
   const estimateMemoSize = useCallback(
@@ -360,18 +364,23 @@ export function MemoList({
     totalSize: virtualListTotalSize,
     virtualItems,
     getMeasureRef,
+    isVirtualizationReady,
     onScroll: handleVirtualListScroll,
   } = useDynamicVirtualList({
     items: renderedMemos,
     getKey: getMemoKey,
     estimateSize: estimateMemoSize,
     scrollerRef: listContainerRef,
-    enabled: shouldVirtualizeMemos,
-    resetKey: 'detailed',
-    keepAliveKeys: [selectedMemo?.id, openDropdown].filter(
+    enabled: canVirtualizeMemos,
+    resetKey: currentMemoListQueryKey,
+    keepAliveKeys: [selectedMemo?.id].filter(
       (id): id is string => Boolean(id),
     ),
   });
+  // A width change invalidates the prefix offsets, not just the visible row.
+  // The hook temporarily renders the loaded prefix in normal flow until the
+  // new geometry has been measured and the scroll anchor restored.
+  const shouldVirtualizeMemos = canVirtualizeMemos && isVirtualizationReady;
 
   // ─── row ref 缓存 ──────────────────────────────────────────────
   // 同一 memo.id 跨 render 拿到**稳定**的 ref 回调, 避免 React 在重渲时
@@ -459,9 +468,7 @@ export function MemoList({
             memo={memo}
             tagMap={tagMap}
             isSelected={selectedMemo?.id === memo.id}
-            isDropdownOpen={openDropdown === memo.id}
             runningAgentType={getRunningAgentTypeForMemo(memo) ?? undefined}
-            onOpenDropdown={setOpenDropdown}
             onSelect={handleSelectMemo}
             onOpenInWindow={handleOpenMemoWindow}
             onFavoriteToggle={handleFavoriteToggle}
@@ -706,7 +713,7 @@ export function MemoList({
     : t('memo.list.viewDetailed');
 
   return (
-    <div className="memo-list relative flex h-full min-w-0 select-none flex-col bg-[var(--card)]">
+    <div className="memo-list relative flex h-full min-w-0 select-none flex-col bg-[var(--list-bg)]">
       <MemoListDataLoader
         dataLoadingEnabled={dataLoadingEnabled}
         startupPhase={startupPhase}
@@ -718,6 +725,7 @@ export function MemoList({
         activeTagId={activeTagId}
         colorFilter={colorFilter}
         activePluginId={activePluginId}
+        activeCustomFilterId={activeCustomFilterId}
         refreshTrigger={refreshTrigger}
         loadedMemoListQueryKey={loadedMemoListQueryKey}
         loadMemos={loadMemos}
@@ -931,29 +939,17 @@ export function MemoList({
           </MemoNavigationDropdown>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Tooltip content={t("memo.list.searchTooltip")} shortcut="palette.search">
-            <Button
-              size="icon"
-              variant="outline"
-              className={cn(HEADER_ICON_BTN_CLASS, 'bg-[var(--card)]')}
-              onClick={() => window.dispatchEvent(new CustomEvent('flowix:open-palette'))}
-              aria-label={t("memo.list.search")}
-            >
-              <Search className="w-4 h-4" />
-            </Button>
-          </Tooltip>
           <Tooltip content={t("memo.list.newMemoTooltip")} shortcut="memo.create">
             <Button
               size="icon"
-              className="h-7 w-7 justify-center rounded-xl border border-transparent bg-[var(--primary)] p-0 text-[var(--primary-foreground)] hover:opacity-90"
+              className="h-[30px] w-[30px] justify-center rounded-xl border border-transparent bg-[var(--primary)] p-0 text-[var(--primary-foreground)] hover:opacity-90"
               onClick={() => {
                 if (memoListView === 'folders') handleRequestCreateNote();
                 else void handleCreateMemo();
               }}
             >
-              <PencilSimpleLineIcon
+              <SquarePen
                 className="h-4 w-4 text-[var(--primary-foreground)]"
-                weight="bold"
                 aria-hidden="true"
               />
             </Button>

@@ -123,7 +123,9 @@ export function getResourceSetiIcon(path: string, variant: SetiThemeVariant): Re
 
 function getSetiThemeVariant(): SetiThemeVariant {
   if (typeof document === 'undefined') return 'light';
-  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+  return document.documentElement.dataset.theme === 'dark'
+    ? 'dark'
+    : 'light';
 }
 
 function subscribeToSetiTheme(onStoreChange: () => void): () => void {

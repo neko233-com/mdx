@@ -111,6 +111,13 @@ function resetWorkspace() {
   });
 }
 
+async function waitForSelectionPaint() {
+  if (typeof requestAnimationFrame !== 'function') return;
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
 describe('workspace navigation transaction', () => {
   beforeEach(() => {
     resetWorkspace();
@@ -224,7 +231,7 @@ describe('workspace navigation transaction', () => {
     });
   });
 
-  it('allows the latest request to win when opens finish out of order', async () => {
+  it('lets the latest request win before a stale document open begins', async () => {
     const pending: Array<{
       params: { memoId: string; path: string };
       resolve: () => void;
@@ -247,9 +254,9 @@ describe('workspace navigation transaction', () => {
 
     const first = openMemoTarget({ memoId: 'first', path: '/notes/first.md', memo: memo('first') });
     const second = openMemoTarget({ memoId: 'second', path: '/notes/second.md', memo: memo('second') });
+    await waitForSelectionPaint();
+    expect(pending).toHaveLength(1);
     pending[0].resolve();
-    await Promise.resolve();
-    pending[1].resolve();
     await Promise.all([first, second]);
 
     expect(useWorkColumnStore.getState().navigation.target).toMatchObject({

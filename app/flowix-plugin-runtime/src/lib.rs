@@ -955,7 +955,7 @@ mod tests {
             "text"
         );
 
-        let memo_file = MemoFile::new(&config_dir);
+        let memo_file = MemoFile::new(config_dir.clone());
         memo_file
             .write_notebook_configs(&[NotebookConfig {
                 id: "work".into(),

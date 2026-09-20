@@ -8,7 +8,10 @@ import { useI18n, type I18nParams } from '@/lib/i18n';
 import { useShallow } from 'zustand/react/shallow';
 import {
   cloud,
+  files,
   listenToCloudStateChanges,
+  mediaResources,
+  memos,
   windows as tauriWindows,
   type CloudNotebook,
 } from '@platform/tauri/client';
@@ -26,9 +29,24 @@ import {
 } from '@features/workspace/use-cases/browser-column-navigation';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { joinNotebookMemoPath } from '@/lib/path';
 import { Kbd } from '@shared/ui/kbd';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@shared/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@shared/ui/select';
 import { LazyGlobalSearchCommand } from '@features/memo/components/lazy-global-search-command';
+import { subscribe } from '@platform/tauri/event-bus';
+import { externalDocuments } from '@platform/tauri/client';
+import { openNoteByTarget, resolveMemoById } from '@features/memo/use-cases/open-by-target';
+import {
+  openBrowserColumnMarkdown,
+  openBrowserColumnMemoById,
+} from '@features/workspace/use-cases/browser-column-navigation';
+import { openExternalTarget } from '@features/workspace/use-cases/workspace-navigation';
+import { setCurrentWorkspaceNotebook } from '@features/memo/public/workspace-api';
+import {
+  FLOWIX_EXTERNAL_MARKDOWN_OPEN_EVENT,
+  type ExternalMarkdownOpenRequest,
+} from '@platform/open-target/types';
 
 const LazyNotebookDialogs = lazy(() =>
   import('@features/memo/components/notebook-dialogs').then((module) => ({
@@ -38,6 +56,49 @@ const LazyNotebookDialogs = lazy(() =>
 
 function normalizeNotebookIconId(icon: string | null | undefined): string | null {
   return getNotebookIconOption(icon) ? icon! : null;
+}
+
+const NOTEBOOK_DESCRIPTION_START = '<notebook-description>';
+const NOTEBOOK_DESCRIPTION_END = '</notebook-description>';
+const NOTEBOOK_DESCRIPTION_BLOCK = /<notebook-description>[\s\S]*?<\/notebook-description>/;
+const FLOWIX_MANAGED_BLOCK = /<!-- flowix:instructions:start -->[\s\S]*?<!-- flowix:instructions:end -->/;
+
+interface MediaDeleteRequest {
+  filePath: string;
+  notebookPath: string;
+}
+
+function filenameFromPath(filePath: string): string {
+  return filePath.split(/[\\/]/).filter(Boolean).pop() ?? filePath;
+}
+
+function extractNotebookDescription(content: string): string {
+  const tagged = content.match(/<notebook-description>([\s\S]*?)<\/notebook-description>/);
+  if (tagged) return tagged[1].trim();
+
+  // Backward compatibility for descriptions written before the tagged block
+  // was introduced. Keep Flowix's generated instructions out of the editor.
+  return content.replace(FLOWIX_MANAGED_BLOCK, '').trim();
+}
+
+function notebookDescriptionBlock(description: string): string {
+  const normalized = description.trim();
+  return normalized
+    ? `${NOTEBOOK_DESCRIPTION_START}\n${normalized}\n${NOTEBOOK_DESCRIPTION_END}`
+    : `${NOTEBOOK_DESCRIPTION_START}\n${NOTEBOOK_DESCRIPTION_END}`;
+}
+
+function replaceNotebookDescription(existing: string, description: string): string {
+  const block = notebookDescriptionBlock(description);
+  if (NOTEBOOK_DESCRIPTION_BLOCK.test(existing)) {
+    return existing.replace(NOTEBOOK_DESCRIPTION_BLOCK, block);
+  }
+
+  // Migrate legacy untagged content into the new block. The managed Flowix
+  // section is retained outside it; all other old content was the former
+  // notebook-description field.
+  const managed = existing.match(FLOWIX_MANAGED_BLOCK)?.[0].trim() ?? '';
+  return managed ? `${managed}\n\n${block}\n` : `${block}\n`;
 }
 
 function DeleteDialogShortcuts({
@@ -78,6 +139,140 @@ function BlockingOperationStatus({ text, stacked }: { text: string; stacked: boo
         <span>{text}</span>
       </div>
     </div>
+  );
+}
+
+function ExternalMarkdownOpenDialog() {
+  const { t } = useI18n();
+  const selectedNotebook = useMemoStore((state) => state.selectedNotebook);
+  const notebooks = useMemoStore((state) => state.notebooks);
+  const [request, setRequest] = useState<ExternalMarkdownOpenRequest | null>(null);
+  const [notebookId, setNotebookId] = useState('');
+  const [opening, setOpening] = useState(false);
+
+  useEffect(() => {
+    const onRequest = (next: ExternalMarkdownOpenRequest) => {
+      if (!next?.filePaths?.length) return;
+      setRequest(next);
+      setNotebookId((current) => current || selectedNotebook?.id || notebooks[0]?.id || '');
+    };
+    const unlisten = subscribe<ExternalMarkdownOpenRequest>(FLOWIX_EXTERNAL_MARKDOWN_OPEN_EVENT, onRequest);
+    const onWindowRequest = (event: Event) => {
+      onRequest((event as CustomEvent<ExternalMarkdownOpenRequest>).detail);
+    };
+    window.addEventListener(FLOWIX_EXTERNAL_MARKDOWN_OPEN_EVENT, onWindowRequest);
+    return () => {
+      unlisten();
+      window.removeEventListener(FLOWIX_EXTERNAL_MARKDOWN_OPEN_EVENT, onWindowRequest);
+    };
+  }, [notebooks, selectedNotebook?.id]);
+
+  useEffect(() => {
+    if (!request) return;
+    setNotebookId((current) => (
+      notebooks.some((notebook) => notebook.id === current)
+        ? current
+        : selectedNotebook?.id || notebooks[0]?.id || ''
+    ));
+  }, [notebooks, request, selectedNotebook?.id]);
+
+  const close = useCallback(() => {
+    if (!opening) setRequest(null);
+  }, [opening]);
+
+  const open = useCallback(async () => {
+    if (!request || !notebookId) return;
+    setOpening(true);
+    try {
+      const imported: Array<{ id: string; resolved: NonNullable<Awaited<ReturnType<typeof resolveMemoById>>> }> = [];
+      for (const filePath of request.filePaths) {
+        const content = await externalDocuments.read(filePath, null);
+        const memo = await memos.importExternalDocumentToMemo(filePath, content, notebookId);
+        if (!memo) throw new Error('Import returned no note');
+        const resolved = await resolveMemoById(memo.id);
+        if (!resolved) throw new Error('Imported note could not be opened');
+        imported.push({ id: memo.id, resolved });
+      }
+      setRequest(null);
+      if (request.destination === 'browser-column') {
+        await setCurrentWorkspaceNotebook(notebookId);
+        for (const memo of imported) await openBrowserColumnMemoById(memo.id);
+      } else {
+        await openNoteByTarget(imported[imported.length - 1].resolved);
+      }
+    } catch (error) {
+      toast.error(`${t('memo.externalOpen.failed')}: ${String(error)}`);
+    } finally {
+      setOpening(false);
+    }
+  }, [notebookId, request, t]);
+
+  const openDirectly = useCallback(async () => {
+    if (!request) return;
+    setOpening(true);
+    try {
+      if (request.destination === 'browser-column') {
+        for (const filePath of request.filePaths) {
+          await openBrowserColumnMarkdown(filePath);
+        }
+      } else {
+        for (const filePath of request.filePaths) {
+          await openExternalTarget(filePath, {
+            destination: 'main-third',
+            scopePath: selectedNotebook?.path ?? null,
+          });
+        }
+      }
+      setRequest(null);
+    } catch (error) {
+      toast.error(`${t('memo.externalOpen.failed')}: ${String(error)}`);
+    } finally {
+      setOpening(false);
+    }
+  }, [request, selectedNotebook?.path, t]);
+
+  const filenames = request?.filePaths.map((path) => path.split(/[\\/]/).pop() || path) ?? [];
+  return (
+    <Dialog open={!!request} onOpenChange={(openState) => !openState && close()}>
+      <DialogContent showCloseButton={!opening}>
+        <DialogHeader>
+          <DialogTitle>{t('memo.externalOpen.title')}</DialogTitle>
+        </DialogHeader>
+        <div className="mt-3 max-h-24 overflow-auto rounded-lg border border-[var(--border)] px-3 py-2 text-xs text-[var(--muted-foreground)]">
+          {filenames.map((filename) => <div key={filename} className="truncate">{filename}</div>)}
+        </div>
+        <label className="mt-4 block text-sm text-[var(--foreground)]">
+          {t('memo.externalOpen.saveTo')}
+          <Select
+            value={notebookId}
+            onValueChange={setNotebookId}
+            disabled={opening}
+          >
+            <SelectTrigger className="mt-2 w-full">
+              <span className="min-w-0 flex-1 truncate text-left">
+                {notebooks.find((notebook) => notebook.id === notebookId)?.name ?? ''}
+              </span>
+            </SelectTrigger>
+            <SelectContent align="start" className="flowix-preferences-select-content w-72 max-w-[calc(100vw-2rem)]">
+              {notebooks.map((notebook) => (
+                <SelectItem key={notebook.id} value={notebook.id}>{notebook.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={close} disabled={opening} className="h-8 rounded-lg px-3 text-sm hover:bg-[var(--muted)]">
+            {t('dialog.cancel')}
+          </button>
+          <button type="button" onClick={() => void openDirectly()} disabled={opening} className="h-8 rounded-lg border border-[var(--border)] px-3 text-sm hover:bg-[var(--muted)] disabled:opacity-50">
+            {t('memo.externalOpen.openDirectly')}
+          </button>
+          <button type="button" onClick={() => void open()} disabled={opening || !notebookId} className="h-8 rounded-lg bg-[var(--primary)] px-4 text-sm text-[var(--primary-foreground)] disabled:opacity-50">
+            {opening ? t('memo.externalOpen.opening') : t('memo.externalOpen.save')}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -123,10 +318,12 @@ export function MemoListServicesHost({
   );
 
   const [deleteMemo, setDeleteMemo] = useState<MemoItem | null>(null);
+  const [deleteMedia, setDeleteMedia] = useState<MediaDeleteRequest | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPath, setNewPath] = useState('');
+  const [newDefaultPath, setNewDefaultPath] = useState('');
   const [newIcon, setNewIcon] = useState<string | null>(null);
   const [createMode, setCreateMode] = useState<'create' | 'cloud'>('create');
   const [remoteNotebooks, setRemoteNotebooks] = useState<CloudNotebook[]>([]);
@@ -137,6 +334,9 @@ export function MemoListServicesHost({
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState('');
   const [editIcon, setEditIcon] = useState<string | null>(null);
+  const [editNotebookDescription, setEditNotebookDescription] = useState('');
+  const [editNotebookDescriptionDirty, setEditNotebookDescriptionDirty] = useState(false);
+  const [editNotebookDescriptionLoading, setEditNotebookDescriptionLoading] = useState(false);
   const [editCloudSync, setEditCloudSync] = useState(false);
   const [originalEditCloudSync, setOriginalEditCloudSync] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
@@ -154,6 +354,7 @@ export function MemoListServicesHost({
     setCreateMode('create');
     setNewName('');
     setNewPath('');
+    setNewDefaultPath('');
     setNewIcon(null);
     setRemoteNotebooks([]);
     setRemoteLoading(false);
@@ -163,6 +364,7 @@ export function MemoListServicesHost({
   const openCreate = useCallback(() => {
     setNewName('');
     setNewPath('');
+    setNewDefaultPath('');
     setNewIcon(null);
     setCreateMode('create');
     setRemoteNotebooks([]);
@@ -170,6 +372,27 @@ export function MemoListServicesHost({
     setSyncingRemoteId(null);
     setCreateOpen(true);
   }, []);
+
+  useEffect(() => {
+    const name = newName.trim();
+    if (!createOpen || createMode !== 'create' || newPath.trim() || !name) {
+      setNewDefaultPath('');
+      return;
+    }
+
+    let cancelled = false;
+    void notebookRepository.getDefaultPath(name)
+      .then((path) => {
+        if (!cancelled) setNewDefaultPath(path);
+      })
+      .catch(() => {
+        if (!cancelled) setNewDefaultPath('');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [createMode, createOpen, newName, newPath]);
 
   useEffect(() => {
     if (notebookCreateRequest > 0) openCreate();
@@ -205,6 +428,44 @@ export function MemoListServicesHost({
     };
   }, [editOpen, editingNotebook]);
 
+  useEffect(() => {
+    if (!editOpen || !editingNotebook) {
+      setEditNotebookDescription('');
+      setEditNotebookDescriptionDirty(false);
+      setEditNotebookDescriptionLoading(false);
+      return;
+    }
+
+    const agentsPath = joinNotebookMemoPath(editingNotebook.path, 'AGENTS.md');
+    if (!agentsPath) {
+      setEditNotebookDescription('');
+      setEditNotebookDescriptionDirty(false);
+      setEditNotebookDescriptionLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setEditNotebookDescriptionLoading(true);
+    void files.read(agentsPath, editingNotebook.path)
+      .then((content) => {
+        if (cancelled) return;
+        setEditNotebookDescription(extractNotebookDescription(content ?? ''));
+        setEditNotebookDescriptionDirty(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setEditNotebookDescription('');
+        setEditNotebookDescriptionDirty(false);
+      })
+      .finally(() => {
+        if (!cancelled) setEditNotebookDescriptionLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editOpen, editingNotebook?.id, editingNotebook?.path]);
+
   useEffect(() => listenToCloudStateChanges((state) => {
     setCloudSyncAvailable(state.authenticated && state.enabled);
   }), []);
@@ -218,23 +479,32 @@ export function MemoListServicesHost({
       setEditingNotebook(notebook);
       setEditName(notebook.name);
       setEditIcon(normalizeNotebookIconId(notebook.icon));
+      setEditNotebookDescription('');
+      setEditNotebookDescriptionDirty(false);
+      setEditNotebookDescriptionLoading(true);
       setEditOpen(true);
     };
     const handleDeleteMemo = (event: Event) => {
       const memo = (event as CustomEvent<MemoItem>).detail;
       if (memo) setDeleteMemo(memo);
     };
+    const handleDeleteMedia = (event: Event) => {
+      const request = (event as CustomEvent<MediaDeleteRequest>).detail;
+      if (request?.filePath && request?.notebookPath) setDeleteMedia(request);
+    };
     const handleTogglePalette = () => setSearchOpen((open) => !open);
     const handleOpenPalette = () => setSearchOpen(true);
     window.addEventListener('flowix:open-create-notebook', handleOpenCreate);
     window.addEventListener('flowix:open-edit-notebook', handleOpenEdit as EventListener);
     window.addEventListener('flowix:request-delete-memo', handleDeleteMemo as EventListener);
+    window.addEventListener('flowix:request-delete-media', handleDeleteMedia as EventListener);
     window.addEventListener('flowix:toggle-palette', handleTogglePalette);
     window.addEventListener('flowix:open-palette', handleOpenPalette);
     return () => {
       window.removeEventListener('flowix:open-create-notebook', handleOpenCreate);
       window.removeEventListener('flowix:open-edit-notebook', handleOpenEdit as EventListener);
       window.removeEventListener('flowix:request-delete-memo', handleDeleteMemo as EventListener);
+      window.removeEventListener('flowix:request-delete-media', handleDeleteMedia as EventListener);
       window.removeEventListener('flowix:toggle-palette', handleTogglePalette);
       window.removeEventListener('flowix:open-palette', handleOpenPalette);
     };
@@ -296,6 +566,24 @@ export function MemoListServicesHost({
       toast.error(error instanceof Error ? error.message : String(error));
     });
   }, [deleteMemo, selectedMemo, setSelectedMemo, t, triggerRefresh]);
+
+  const handleMediaDeleteConfirm = useCallback(() => {
+    if (!deleteMedia) return;
+    const request = deleteMedia;
+    setDeleteMedia(null);
+    void (async () => {
+      const ok = await mediaResources.delete(request.filePath, request.notebookPath);
+      if (!ok) {
+        toast.error(t('media.fileTree.deleteFailed'));
+        return;
+      }
+      await clearWorkspaceDocument();
+      triggerRefresh();
+      toast.success(t('media.fileTree.deleted', { name: filenameFromPath(request.filePath) }));
+    })().catch((error) => {
+      toast.error(error instanceof Error ? error.message : String(error));
+    });
+  }, [deleteMedia, t, triggerRefresh]);
 
   const handleInvalidCloudSession = useCallback(async (error: unknown) => {
     if (!isInvalidRefreshTokenError(error)) return false;
@@ -372,19 +660,23 @@ export function MemoListServicesHost({
     setEditingNotebook(null);
     setEditName('');
     setEditIcon(null);
+    setEditNotebookDescription('');
+    setEditNotebookDescriptionDirty(false);
+    setEditNotebookDescriptionLoading(false);
     setEditCloudSync(false);
     setOriginalEditCloudSync(false);
     setEditSaving(false);
   }, [editSaving]);
 
   const confirmEdit = useCallback(async () => {
-    if (!editingNotebook || editSaving) return;
+    if (!editingNotebook || editSaving || editNotebookDescriptionLoading) return;
     const name = editName.trim();
     const icon = editIcon || null;
     const iconChanged = (icon ?? '') !== (normalizeNotebookIconId(editingNotebook.icon) ?? '');
     const metadataChanged = name !== editingNotebook.name || iconChanged;
     const cloudChanged = editCloudSync !== originalEditCloudSync;
-    if (!name || (!metadataChanged && !cloudChanged)) {
+    const descriptionChanged = editNotebookDescriptionDirty;
+    if (!name || (!metadataChanged && !cloudChanged && !descriptionChanged)) {
       closeEdit();
       return;
     }
@@ -395,6 +687,15 @@ export function MemoListServicesHost({
         : editingNotebook;
       if (!updated) throw new Error(t('memo.list.updateFailed'));
       if (cloudChanged) await cloud.setNotebookEnabled(editingNotebook.id, editCloudSync);
+      if (descriptionChanged) {
+        const agentsPath = joinNotebookMemoPath(editingNotebook.path, 'AGENTS.md');
+        if (!agentsPath) throw new Error(t('notebook.edit.agents.saveFailed'));
+        const existing = (await files.read(agentsPath, editingNotebook.path)) ?? '';
+        const next = replaceNotebookDescription(existing, editNotebookDescription);
+        if (!await files.write(agentsPath, next, false, editingNotebook.path)) {
+          throw new Error(t('notebook.edit.agents.saveFailed'));
+        }
+      }
       setNotebooks(useMemoStore.getState().notebooks.map((item) => item.id === updated.id ? updated : item));
       if (useMemoStore.getState().selectedNotebook?.id === updated.id) setSelectedNotebook(updated);
       if (cloudChanged && editCloudSync) {
@@ -402,16 +703,18 @@ export function MemoListServicesHost({
           toast.error(cloudSyncErrorMessage(error, t));
         });
       }
-      toast.success(t('memo.list.updated'));
+      toast.success(t(descriptionChanged ? 'notebook.edit.agents.saved' : 'memo.list.updated'));
       closeEdit();
     } catch (error) {
       toast.error(cloudSyncErrorMessage(error, t));
       setEditSaving(false);
     }
-  }, [closeEdit, editCloudSync, editIcon, editName, editSaving, editingNotebook, originalEditCloudSync, setNotebooks, setSelectedNotebook, t]);
+  }, [closeEdit, editCloudSync, editIcon, editName, editNotebookDescription, editNotebookDescriptionDirty, editNotebookDescriptionLoading, editSaving, editingNotebook, originalEditCloudSync, setNotebooks, setSelectedNotebook, t]);
 
   return (
     <>
+      <ExternalMarkdownOpenDialog />
+
       {(blockingLoadingText || cloudImporting) && (
         <BlockingOperationStatus
           text={cloudImporting ? t('notebook.cloudImport.syncing') : blockingLoadingText!}
@@ -420,6 +723,7 @@ export function MemoListServicesHost({
       )}
 
       {deleteMemo && <DeleteDialogShortcuts onCancel={() => setDeleteMemo(null)} onConfirm={handleDeleteConfirm} />}
+      {deleteMedia && <DeleteDialogShortcuts onCancel={() => setDeleteMedia(null)} onConfirm={handleMediaDeleteConfirm} />}
       <Dialog open={!!deleteMemo} onOpenChange={(open) => !open && setDeleteMemo(null)}>
         <DialogContent>
           <DialogHeader>
@@ -439,6 +743,24 @@ export function MemoListServicesHost({
           </div>
         </DialogContent>
       </Dialog>
+      <Dialog open={!!deleteMedia} onOpenChange={(open) => !open && setDeleteMedia(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('media.fileTree.deleteTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('media.fileTree.deleteDescription', { name: deleteMedia ? filenameFromPath(deleteMedia.filePath) : '' })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" onClick={() => setDeleteMedia(null)} className="h-8 rounded-lg px-3 text-sm hover:bg-[var(--muted)]">
+              {t('dialog.cancel')}
+            </button>
+            <button type="button" onClick={handleMediaDeleteConfirm} className="h-8 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 text-sm text-[var(--foreground)] hover:border-[var(--destructive)] hover:bg-transparent hover:text-[var(--destructive)]">
+              {t('dialog.delete')}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {(createOpen || editOpen) && (
         <Suspense fallback={null}>
@@ -448,6 +770,7 @@ export function MemoListServicesHost({
             newNotebookName={newName}
             onNewNotebookNameChange={setNewName}
             newNotebookPath={newPath}
+            newNotebookDefaultPath={newDefaultPath}
             onNewNotebookPathChange={setNewPath}
             newNotebookIcon={newIcon}
             onNewNotebookIconChange={setNewIcon}
@@ -472,6 +795,13 @@ export function MemoListServicesHost({
             onEditNotebookNameChange={setEditName}
             editNotebookIcon={editIcon}
             onEditNotebookIconChange={setEditIcon}
+            editNotebookDescription={editNotebookDescription}
+            onEditNotebookDescriptionChange={(description) => {
+              setEditNotebookDescription(description);
+              setEditNotebookDescriptionDirty(true);
+            }}
+            editNotebookDescriptionLoading={editNotebookDescriptionLoading}
+            editNotebookDescriptionChanged={editNotebookDescriptionDirty}
             editNotebookCloudSync={editCloudSync}
             onEditNotebookCloudSyncChange={setEditCloudSync}
             onEditNotebookCloudSyncUnavailable={() => {

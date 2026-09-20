@@ -18,6 +18,7 @@ export interface SettingsStore {
   memoListVisible: boolean;
   noteNavigationVisible: boolean;
   toolbarCollapsed: boolean;
+  propertiesVisible: boolean;
   setReasoningCollapsed: (collapsed: boolean) => void;
   toggleReasoningCollapsed: () => void;
   setAppViewMode: (mode: AppViewMode) => void;
@@ -27,6 +28,8 @@ export interface SettingsStore {
   setNoteNavigationVisible: (visible: boolean) => void;
   toggleNoteNavigationVisible: () => void;
   setToolbarCollapsed: (collapsed: boolean) => void;
+  setPropertiesVisible: (visible: boolean) => void;
+  togglePropertiesVisible: () => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -39,6 +42,7 @@ export const useSettingsStore = create<SettingsStore>()(
       memoListVisible: true,
       noteNavigationVisible: false,
       toolbarCollapsed: false,
+      propertiesVisible: true,
       setReasoningCollapsed: (collapsed) => set({ reasoningCollapsed: collapsed }),
       toggleReasoningCollapsed: () =>
         set((state) => ({ reasoningCollapsed: !state.reasoningCollapsed })),
@@ -54,6 +58,8 @@ export const useSettingsStore = create<SettingsStore>()(
       toggleNoteNavigationVisible: () =>
         set((state) => ({ noteNavigationVisible: !state.noteNavigationVisible })),
       setToolbarCollapsed: (collapsed) => set({ toolbarCollapsed: collapsed }),
+      setPropertiesVisible: (visible) => set({ propertiesVisible: visible }),
+      togglePropertiesVisible: () => set((state) => ({ propertiesVisible: !state.propertiesVisible })),
     }),
     {
       name: STORAGE_KEYS.SETTINGS,
@@ -63,6 +69,7 @@ export const useSettingsStore = create<SettingsStore>()(
         memoListVisible: state.memoListVisible,
         noteNavigationVisible: state.noteNavigationVisible,
         toolbarCollapsed: state.toolbarCollapsed,
+        propertiesVisible: state.propertiesVisible,
       }),
     }
   )

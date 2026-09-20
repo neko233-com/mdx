@@ -5,15 +5,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use serde::Serialize;
-use tauri::State;
+use tauri::{State, WebviewWindow};
 
 use crate::config::path_is_inside;
 use crate::lock_utils::read_lock;
-use flowix_core::memo_file::notebook_path_from_relative;
+use flowix_core::memo_file::{media_kind_for_path, notebook_path_from_relative, MemoColor};
 
 use super::helpers::{
-    can_access_scoped_file, is_agent_access_folder, is_registered_notebook_path,
-    start_security_bookmark_access,
+    can_access_document_path, can_access_scoped_file, is_agent_access_folder,
+    is_internal_notebook_path, is_registered_notebook_path, start_security_bookmark_access,
 };
 use crate::app::state::AppState;
 
@@ -36,6 +36,33 @@ pub struct DocTreeItem {
     /// Flowix 笔记的业务创建时间 (Unix epoch 毫秒)。对于已索引的笔记，
     /// 该值来自 memo index，不受原子替换文件导致的文件系统创建时间变化影响。
     pub memo_created_ms: Option<u64>,
+    pub memo_meta: Option<DocTreeMemoMeta>,
+    /// Resource classification for document nodes. Folders use `None`.
+    pub resource_kind: Option<DocTreeResourceKind>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DocTreeResourceKind {
+    Note,
+    Image,
+    Video,
+    Other,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocTreeMemoMeta {
+    pub id: String,
+    pub icon: Option<String>,
+    pub colors: Vec<MemoColor>,
+    pub favorited: bool,
+}
+
+#[derive(Debug, Clone)]
+struct MemoTreeMetadata {
+    created_ms: Option<u64>,
+    memo: DocTreeMemoMeta,
 }
 
 // ==================== 域内 helper ====================
@@ -85,24 +112,95 @@ fn created_time_ms(meta: &fs::Metadata) -> Option<u64> {
 /// 单层目录列举 ── 只列直接子项, folder 的 `children` 置空占位, 由前端
 /// 展开时再对子目录调 `get_dir_children` 惰性拉取 (VSCode 风格)。资料
 /// 文夹可能很大, 全量递归会卡首屏; 单层也天然规避符号链接循环。
+fn resource_kind_for_path(path: &Path) -> Option<DocTreeResourceKind> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    if matches!(extension.as_str(), "md" | "markdown") {
+        return Some(DocTreeResourceKind::Note);
+    }
+    if matches!(
+        extension.as_str(),
+        "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "webp"
+            | "bmp"
+            | "svg"
+            | "avif"
+            | "ico"
+            | "tif"
+            | "tiff"
+            | "heic"
+    ) {
+        return Some(DocTreeResourceKind::Image);
+    }
+    if matches!(
+        extension.as_str(),
+        "3gp"
+            | "avi"
+            | "flv"
+            | "m2ts"
+            | "m4v"
+            | "mkv"
+            | "mov"
+            | "mp4"
+            | "mpeg"
+            | "mpg"
+            | "mts"
+            | "webm"
+            | "wmv"
+    ) {
+        return Some(DocTreeResourceKind::Video);
+    }
+    Some(DocTreeResourceKind::Other)
+}
+
+/// Hide legacy media-property YAML files from the notebook tree. New media
+/// properties are stored in `.flowix/notebook.db`; this keeps old files from
+/// becoming visible after upgrading.
+fn is_media_properties_sidecar(path: &Path) -> bool {
+    let is_yaml = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("yaml"));
+    if !is_yaml {
+        return false;
+    }
+    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+        return false;
+    };
+    media_kind_for_path(Path::new(stem)).is_some()
+}
+
 fn canonical_path(path: &Path) -> std::path::PathBuf {
     dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// 读取目录所属笔记本的业务创建时间，按规范化物理路径建立索引。
+fn relative_memo_is_direct_child(relative_path: &Path, relative_directory: &Path) -> bool {
+    relative_path.parent().unwrap_or_else(|| Path::new("")) == relative_directory
+}
+
+/// 读取当前目录直接子项所需的笔记元数据。MemoFile 已缓存当前笔记本
+/// index；这里进一步只为当前目录的 Markdown 条目建立 path map，避免每次
+/// 展开小目录都为整个笔记本执行路径拼接与 canonicalize。
 /// 非笔记本目录返回 None，外部 Markdown 文件继续使用文件系统时间。
-fn memo_created_times_for_path(
-    scope_path: &Path,
+fn memo_tree_metadata_for_directory(
+    directory_path: &Path,
     state: &State<AppState>,
-) -> Option<HashMap<std::path::PathBuf, u64>> {
+) -> Option<HashMap<std::path::PathBuf, MemoTreeMetadata>> {
     let memo_file = read_lock(&state.memo_file, "memo_file");
-    let scope_path = canonical_path(scope_path);
+    let canonical_directory = canonical_path(directory_path);
     let config = memo_file
         .read_notebook_configs()
         .ok()?
         .into_iter()
-        .filter(|config| path_is_inside(&scope_path, Path::new(&config.path)))
+        .filter(|config| path_is_inside(&canonical_directory, Path::new(&config.path)))
         .max_by_key(|config| Path::new(&config.path).components().count())?;
+    let notebook_root = canonical_path(Path::new(&config.path));
+    let relative_directory = canonical_directory
+        .strip_prefix(&notebook_root)
+        .ok()?
+        .to_path_buf();
     let index = memo_file
         .read_index_for_notebook_id(Some(&config.id))
         .ok()??;
@@ -117,9 +215,23 @@ fn memo_created_times_for_path(
                 } else {
                     entry.relative_path
                 };
+                if !relative_memo_is_direct_child(Path::new(&relative_path), &relative_directory) {
+                    return None;
+                }
                 let path =
                     notebook_path_from_relative(Path::new(&config.path), &relative_path).ok()?;
-                Some((canonical_path(&path), u64::try_from(entry.created_at).ok()?))
+                Some((
+                    canonical_path(&path),
+                    MemoTreeMetadata {
+                        created_ms: u64::try_from(entry.created_at).ok(),
+                        memo: DocTreeMemoMeta {
+                            id: entry.id,
+                            icon: entry.icon,
+                            colors: entry.colors,
+                            favorited: entry.favorited,
+                        },
+                    },
+                ))
             })
             .collect(),
     )
@@ -127,7 +239,7 @@ fn memo_created_times_for_path(
 
 fn read_dir_single_level(
     dir_path: &Path,
-    memo_created_times: Option<&HashMap<std::path::PathBuf, u64>>,
+    memo_metadata: Option<&HashMap<std::path::PathBuf, MemoTreeMetadata>>,
     include_hidden_directories: bool,
 ) -> Vec<DocTreeItem> {
     let mut items = Vec::new();
@@ -143,6 +255,16 @@ fn read_dir_single_level(
                 continue;
             }
             let name = entry.file_name().to_string_lossy().to_string();
+
+            // .flowix is application-owned notebook data. It stays hidden
+            // even when the user opts into hidden directories.
+            if name == ".flowix" {
+                continue;
+            }
+
+            if is_media_properties_sidecar(&path) {
+                continue;
+            }
 
             // AGENTS.md is project-local Agent configuration, not a note or
             // a user-facing file-tree item. It remains on disk for native
@@ -169,8 +291,18 @@ fn read_dir_single_level(
             };
             let modified_ms = meta.as_ref().and_then(modified_time_ms);
             let created_ms = meta.as_ref().and_then(created_time_ms);
-            let memo_created_ms =
-                memo_created_times.and_then(|times| times.get(&canonical_path(&path)).copied());
+            let resource_kind = if is_dir {
+                None
+            } else {
+                resource_kind_for_path(&path)
+            };
+            // Only Markdown notes can have memo metadata. Images, videos,
+            // generic files and folders skip the canonicalize syscall.
+            let memo_metadata = if matches!(&resource_kind, Some(DocTreeResourceKind::Note)) {
+                memo_metadata.and_then(|items| items.get(&canonical_path(&path)))
+            } else {
+                None
+            };
             let item = DocTreeItem {
                 id: generate_stable_id(&path.to_string_lossy()),
                 full_path: path.to_string_lossy().to_string(),
@@ -185,7 +317,9 @@ fn read_dir_single_level(
                 size_bytes,
                 modified_ms,
                 created_ms,
-                memo_created_ms,
+                memo_created_ms: memo_metadata.and_then(|metadata| metadata.created_ms),
+                memo_meta: memo_metadata.map(|metadata| metadata.memo.clone()),
+                resource_kind,
             };
 
             items.push(item);
@@ -218,13 +352,16 @@ pub fn get_file_tree(
 ) -> Option<Vec<DocTreeItem>> {
     let path = Path::new(&space_path);
     start_security_bookmark_access(&state, path);
-    if !path.exists() || !is_browsable_scope(path, &state) {
+    if !path.exists()
+        || is_internal_notebook_path(path, &state)
+        || !is_browsable_scope(path, &state)
+    {
         return None;
     }
-    let memo_created_times = memo_created_times_for_path(path, &state);
+    let memo_metadata = memo_tree_metadata_for_directory(path, &state);
     Some(read_dir_single_level(
         path,
-        memo_created_times.as_ref(),
+        memo_metadata.as_ref(),
         include_hidden_directories.unwrap_or(false),
     ))
 }
@@ -237,13 +374,16 @@ pub fn get_dir_children(
 ) -> Vec<DocTreeItem> {
     let path = Path::new(&dir_path);
     start_security_bookmark_access(&state, path);
-    if !path.exists() || !is_browsable_scope(path, &state) {
+    if !path.exists()
+        || is_internal_notebook_path(path, &state)
+        || !is_browsable_scope(path, &state)
+    {
         return vec![];
     }
-    let memo_created_times = memo_created_times_for_path(path, &state);
+    let memo_metadata = memo_tree_metadata_for_directory(path, &state);
     read_dir_single_level(
         path,
-        memo_created_times.as_ref(),
+        memo_metadata.as_ref(),
         include_hidden_directories.unwrap_or(false),
     )
 }
@@ -252,7 +392,8 @@ pub fn get_dir_children(
 /// folder entry), 两者都要求 path 本身落在作用域内 (子目录随
 /// `path_is_inside` 一并放行)。
 fn is_browsable_scope(path: &Path, state: &State<AppState>) -> bool {
-    is_registered_notebook_path(path, state) || is_agent_access_folder(path, state)
+    !is_internal_notebook_path(path, state)
+        && (is_registered_notebook_path(path, state) || is_agent_access_folder(path, state))
 }
 
 #[tauri::command]
@@ -344,7 +485,11 @@ pub fn delete_folder(folder_path: String, space_path: String, state: State<AppSt
     // Never allow the notebook root itself to be removed. The folder command
     // is intentionally recursive because a notebook folder may contain notes
     // and nested folders.
-    if !path_is_inside(folder, scope) || folder == scope || !is_browsable_scope(scope, &state) {
+    if !path_is_inside(folder, scope)
+        || folder == scope
+        || is_internal_notebook_path(folder, &state)
+        || !is_browsable_scope(scope, &state)
+    {
         eprintln!(
             "[delete_folder] refused out-of-scope or notebook-root path: {}",
             folder_path
@@ -412,6 +557,148 @@ pub fn rename_file(
     Ok(target.to_string_lossy().into_owned())
 }
 
+/// Move a regular file within the caller's notebook/access-folder scope.
+/// Indexed notes use the memo move command; this command handles images,
+/// videos, and other unindexed resources.
+#[tauri::command]
+pub fn move_file(
+    file_path: String,
+    target_directory_path: String,
+    space_path: String,
+    state: State<AppState>,
+) -> Result<String, String> {
+    let source = Path::new(&file_path);
+    let target_directory = Path::new(&target_directory_path);
+    let scope = Path::new(&space_path);
+    if !is_browsable_scope(scope, &state)
+        || !can_access_scoped_file(source, Some(&space_path), &state)
+        || !can_access_scoped_file(target_directory, Some(&space_path), &state)
+    {
+        return Err("FILE_PERMISSION_DENIED".to_string());
+    }
+    start_security_bookmark_access(&state, source);
+    start_security_bookmark_access(&state, target_directory);
+    if !fs::symlink_metadata(source)
+        .map_err(file_mutation_error)?
+        .is_file()
+    {
+        return Err("SOURCE_NOT_REGULAR_FILE".to_string());
+    }
+    if !fs::symlink_metadata(target_directory)
+        .map_err(file_mutation_error)?
+        .is_dir()
+    {
+        return Err("TARGET_NOT_DIRECTORY".to_string());
+    }
+    let file_name = source.file_name().ok_or("INVALID_FILE_PATH")?;
+    let target = target_directory.join(file_name);
+    if !can_access_scoped_file(&target, Some(&space_path), &state) {
+        return Err("FILE_PERMISSION_DENIED".to_string());
+    }
+    if source == target {
+        return Ok(source.to_string_lossy().into_owned());
+    }
+    if fs::symlink_metadata(&target).is_ok() {
+        return Err(file_mutation_error(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "target already exists",
+        )));
+    }
+    read_lock(&state.memo_file, "memo_file")
+        .rename_file(source, &target)
+        .map_err(file_mutation_error)?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
+/// Copy a supported external resource into the caller's notebook scope.
+/// External drag-and-drop is intentionally an import, so the source remains
+/// unchanged and only the new notebook path is returned to the tree.
+#[tauri::command]
+pub async fn import_file(
+    window: WebviewWindow,
+    file_path: String,
+    target_directory_path: String,
+    space_path: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let source = Path::new(&file_path);
+    let target_directory = Path::new(&target_directory_path);
+    let scope = Path::new(&space_path);
+    if !is_browsable_scope(scope, &state)
+        || !can_access_scoped_file(target_directory, Some(&space_path), &state)
+    {
+        return Err("FILE_PERMISSION_DENIED".to_string());
+    }
+    // WebView2 can invoke this command just before Tauri's Drop RunEvent has
+    // recorded the exact external path in DocumentAccess. Wait briefly for
+    // that capability handoff; never authorize the caller-supplied path here.
+    let mut source_allowed = can_access_document_path(source, window.label(), &state)
+        || can_access_scoped_file(source, Some(&space_path), &state);
+    for _ in 0..20 {
+        if source_allowed {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        source_allowed = can_access_document_path(source, window.label(), &state)
+            || can_access_scoped_file(source, Some(&space_path), &state);
+    }
+    if !source_allowed {
+        return Err("FILE_PERMISSION_DENIED".to_string());
+    }
+    start_security_bookmark_access(&state, source);
+    start_security_bookmark_access(&state, target_directory);
+    if !fs::symlink_metadata(source)
+        .map_err(file_mutation_error)?
+        .is_file()
+    {
+        return Err("SOURCE_NOT_REGULAR_FILE".to_string());
+    }
+    if !matches!(
+        resource_kind_for_path(source),
+        Some(DocTreeResourceKind::Note | DocTreeResourceKind::Image | DocTreeResourceKind::Video)
+    ) {
+        return Err("UNSUPPORTED_IMPORT_FILE".to_string());
+    }
+    if !fs::symlink_metadata(target_directory)
+        .map_err(file_mutation_error)?
+        .is_dir()
+    {
+        return Err("TARGET_NOT_DIRECTORY".to_string());
+    }
+    let file_name = source.file_name().ok_or("INVALID_FILE_PATH")?;
+    let target = target_directory.join(file_name);
+    if !can_access_scoped_file(&target, Some(&space_path), &state) {
+        return Err("FILE_PERMISSION_DENIED".to_string());
+    }
+    if source == target {
+        return Ok(target.to_string_lossy().into_owned());
+    }
+    if fs::symlink_metadata(&target).is_ok() {
+        return Err(file_mutation_error(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "target already exists",
+        )));
+    }
+
+    let source = source.to_path_buf();
+    let target = target.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let mut input = fs::File::open(&source).map_err(file_mutation_error)?;
+        let mut output = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&target)
+            .map_err(file_mutation_error)?;
+        if let Err(error) = std::io::copy(&mut input, &mut output) {
+            let _ = fs::remove_file(&target);
+            return Err(file_mutation_error(error));
+        }
+        Ok(target.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|error| format!("FILE_OPERATION_FAILED: {error}"))?
+}
+
 #[tauri::command]
 pub fn rename_folder(
     folder_path: String,
@@ -431,6 +718,8 @@ pub fn rename_folder(
     if source == scope
         || !path_is_inside(source, scope)
         || !path_is_inside(&target, scope)
+        || is_internal_notebook_path(source, &state)
+        || is_internal_notebook_path(&target, &state)
         || !is_browsable_scope(scope, &state)
     {
         return Err("FILE_PERMISSION_DENIED".to_string());
@@ -463,6 +752,7 @@ pub fn create_folder(
     let target_path = Path::new(&space_path).join(&name);
     if !is_browsable_scope(Path::new(&space_path), &state)
         || !path_is_inside(&target_path, Path::new(&space_path))
+        || is_internal_notebook_path(&target_path, &state)
     {
         eprintln!(
             "[create_folder] refused out-of-scope path: {}",
@@ -484,6 +774,8 @@ pub fn create_folder(
         modified_ms: None,
         created_ms: None,
         memo_created_ms: None,
+        memo_meta: None,
+        resource_kind: None,
     })
 }
 
@@ -503,6 +795,7 @@ pub fn create_document(
     let target_path = Path::new(&space_path).join(&file_name);
     if !is_browsable_scope(Path::new(&space_path), &state)
         || !path_is_inside(&target_path, Path::new(&space_path))
+        || is_internal_notebook_path(&target_path, &state)
     {
         eprintln!(
             "[create_document] refused out-of-scope path: {}",
@@ -526,6 +819,8 @@ pub fn create_document(
         modified_ms: None,
         created_ms: None,
         memo_created_ms: None,
+        memo_meta: None,
+        resource_kind: Some(DocTreeResourceKind::Note),
     })
 }
 
@@ -537,15 +832,81 @@ mod tests {
     fn directory_listing_preserves_regular_files_and_folders() {
         let directory = tempfile::tempdir().unwrap();
         fs::write(directory.path().join("note.md"), "body").unwrap();
+        fs::write(directory.path().join("photo.png.yaml"), "title: Reference").unwrap();
         fs::write(directory.path().join("AGENTS.md"), "agent rules").unwrap();
         fs::create_dir(directory.path().join("folder")).unwrap();
         fs::create_dir(directory.path().join(".flowix")).unwrap();
         fs::write(directory.path().join(".hidden.md"), "hidden").unwrap();
         let items = read_dir_single_level(directory.path(), None, false);
         assert_eq!(items.len(), 2);
+        assert!(items.iter().all(|item| item.name != "photo.png.yaml"));
         assert!(items.iter().all(|item| item.name != "AGENTS.md"));
         assert_eq!(items[0].name, "folder");
         assert_eq!(items[1].name, "note.md");
+
+        let hidden_items = read_dir_single_level(directory.path(), None, true);
+        assert!(hidden_items.iter().all(|item| item.name != ".flowix"));
+    }
+
+    #[test]
+    fn only_media_property_sidecars_are_hidden_from_directory_listing() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("photo.png.yaml"), "title: Reference").unwrap();
+        fs::write(directory.path().join("video.mp4.yml"), "kind: demo").unwrap();
+        fs::write(directory.path().join("config.yaml"), "enabled: true").unwrap();
+
+        let items = read_dir_single_level(directory.path(), None, false);
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["config.yaml", "video.mp4.yml"]
+        );
+    }
+
+    #[test]
+    fn directory_listing_attaches_indexed_memo_metadata() {
+        let directory = tempfile::tempdir().unwrap();
+        let note_path = directory.path().join("note.md");
+        fs::write(&note_path, "body").unwrap();
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            canonical_path(&note_path),
+            MemoTreeMetadata {
+                created_ms: Some(42),
+                memo: DocTreeMemoMeta {
+                    id: "memo-1".to_string(),
+                    icon: Some("flashlight".to_string()),
+                    colors: vec![MemoColor::Blue],
+                    favorited: true,
+                },
+            },
+        );
+
+        let items = read_dir_single_level(directory.path(), Some(&metadata), false);
+        assert_eq!(items[0].memo_created_ms, Some(42));
+        let memo = items[0].memo_meta.as_ref().expect("indexed memo metadata");
+        assert_eq!(memo.id, "memo-1");
+        assert_eq!(memo.icon.as_deref(), Some("flashlight"));
+        assert_eq!(memo.colors, vec![MemoColor::Blue]);
+        assert!(memo.favorited);
+    }
+
+    #[test]
+    fn memo_metadata_scope_only_matches_direct_directory_children() {
+        assert!(relative_memo_is_direct_child(
+            Path::new("root.md"),
+            Path::new("")
+        ));
+        assert!(relative_memo_is_direct_child(
+            Path::new("projects/note.md"),
+            Path::new("projects")
+        ));
+        assert!(!relative_memo_is_direct_child(
+            Path::new("projects/archive/note.md"),
+            Path::new("projects")
+        ));
     }
 
     #[test]

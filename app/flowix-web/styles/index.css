@@ -21,6 +21,7 @@
 @import './editor-bubble-menus.css';
 @import './editor-attachment-link.css';
 @import './code-editor.css';
+@import './pdf-print.css';
 
 /* 自定义滚动条 ── 全局 webkit 滚动条 + .overlay-scrollbar-* 组件样式。
  * 非 Mac 平台门控在文件内部, 详见 overlay-scrollbar.css 顶部注释。 */
@@ -30,7 +31,7 @@
 @import './agent-icon.css';
 
 /* 主题色板单一真源在 css/theme, JS 只通过 data-theme 切换;
- * 5 个主题 import 在 @layer base 之外, 保证 [data-theme="..."]
+ * 各主题 import 在 @layer base 之外, 保证 [data-theme="..."]
  * 选择器特异性优先于 tailwind base。 */
 @import './theme/light.css';
 @import './theme/dark.css';
@@ -47,7 +48,6 @@
 }
 
 @import "shadcn/tailwind.css";
-
 
 /* shadcn/ui variable convention: --[role]-[property]
  * Roles: background, foreground, primary, secondary, muted, accent, border, ring */
@@ -89,8 +89,9 @@
 	border-top-right-radius: var(--browser-column-tab-radius);
 }
 
-.agent-surface-titlebar .browser-column-tab-active {
-	--browser-column-tab-surface: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
+.agent-surface-titlebar .browser-column-tab-active,
+.media-surface-titlebar .browser-column-tab-active {
+	--browser-column-tab-surface: var(--agent-bg, var(--document-bg));
 }
 
 .browser-column-tab-active::before,
@@ -117,23 +118,20 @@
 }
 
 /* 全局搜索命令面板是带分组/搜索结果的特殊菜单。保留多行结果的内容高度，
- * 但单行项目以 h-7 为基线；选中态与第四列 tab 菜单统一使用主题色和反色文字。 */
+ * 但单行项目以 h-7 为基线；hover 与选中态统一使用 hover surface。 */
 .flowix-global-search-command [cmdk-item] {
 	min-height: 1.75rem;
 	padding: 0.125rem 0.5rem;
 	border-radius: 0.5rem;
 }
 
-.flowix-global-search-command [cmdk-item]:hover,
 .flowix-global-search-command [cmdk-item][data-selected='true'] {
-	background: var(--brand);
-	color: var(--primary-foreground);
+	background: var(--hover-bg);
+	color: var(--foreground);
 }
 
-.flowix-global-search-command [cmdk-item]:hover :is(span, div, svg, kbd),
-.flowix-global-search-command [cmdk-item][data-selected='true'] :is(span, div, svg, kbd) {
-	color: var(--primary-foreground);
-}
+/* hover 由 cmdk 的 data-selected 统一驱动；不要再叠加独立的 :hover 背景，
+ * 否则键盘选中项和鼠标所在项会同时显示为选中。 */
 
 .flowix-global-search-command [cmdk-input-wrapper] {
 	border-bottom-color: color-mix(in srgb, var(--border-popup) 60%, transparent);
@@ -234,15 +232,58 @@
 	right: var(--folder-file-tree-drop-right);
 	bottom: 0;
 	left: var(--folder-file-tree-drop-left);
+	z-index: 2;
 	border-radius: 0.5rem;
 	background: color-mix(in oklch, var(--brand) 15%, transparent);
 	content: '';
 	pointer-events: none;
 }
 
+/* The notebook tree uses a flat virtual row model. Its drop background is a
+ * separate absolute range spanning the target folder and loaded descendants,
+ * so the legacy nested-group pseudo element must not paint the first row a
+ * second time. The generic FolderFileTree keeps the nested behavior above. */
+.notebook-file-tree__virtual-items
+	.folder-file-tree__group[data-drag-over='true']::before {
+	display: none;
+}
+
 .folder-file-tree__group[data-drag-over='true'] > .folder-file-tree__item,
 .folder-file-tree__group[data-drag-over='true'] > .folder-file-tree__subtree {
 	z-index: 1;
+}
+
+.notebook-file-tree__item--moving {
+	opacity: 0.62;
+}
+
+.notebook-file-tree__item--move-success {
+	animation: notebook-file-tree-move-success 420ms ease-out both;
+}
+
+.notebook-file-tree__moving-indicator {
+	display: block;
+	width: 0.75rem;
+	height: 0.75rem;
+	border: 1.5px solid color-mix(in srgb, var(--brand) 34%, transparent);
+	border-top-color: var(--brand);
+	border-radius: 999px;
+	animation: notebook-file-tree-move-spin 700ms linear infinite;
+}
+
+@keyframes notebook-file-tree-move-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@keyframes notebook-file-tree-move-success {
+	from {
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 28%, transparent);
+	}
+	to {
+		box-shadow: 0 0 0 0 transparent;
+	}
 }
 
 .folder-file-tree__subtree-inner {
@@ -322,6 +363,16 @@
 	.folder-file-tree__subtree[data-expanded='true'] > .folder-file-tree__subtree-inner::before {
 		transition-duration: 0ms;
 	}
+
+	.notebook-file-tree__moving-indicator {
+		animation: none;
+		opacity: 0.7;
+	}
+
+	.notebook-file-tree__item--move-success {
+		animation: none;
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 20%, transparent);
+	}
 }
 
 :root {
@@ -361,8 +412,18 @@
 		 * 保持同步。由 useApplyFontSettings 运行时覆盖。 */
 		--app-font-family: var(--font-sans);
 		--app-font-size: 15px;
-		--app-line-height: 1.6;
+		--app-line-height: 1.8;
 		--app-document-width: 700px;
+
+		/* Shared code typography for rendered code blocks and CodeMirror. */
+		--code-font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+		--code-font-size: 14px;
+		--code-line-height: 1.8;
+		/* Shared overlay geometry: the collapsed list preview uses this value
+		 * to sit beside the note-navigation drawer instead of behind it. */
+		--flowix-note-navigation-drawer-width: min(240px, calc(100vw - 16px));
+		--flowix-note-navigation-motion-duration: 150ms;
+		--flowix-note-navigation-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
 
 		/* Agent 面板等宽字体 — 非颜色, 不参与主题 */
 		--agent-font: 'Anonymous Pro', 'PingFang SC', 'Microsoft YaHei', 'Inter', -apple-system, monospace;
@@ -403,12 +464,33 @@
 
 @layer components {
 
-	/* 文本选区色统一收口到 var(--brand), 跟随 light / dark / rock 三主题
+	/* 文本选区色统一收口到 var(--brand), 跟随各主题
 	 * 自动取色 (在 .markdown-editor 内被 .ProseMirror ::selection 覆盖, 强
 	 * 度更高用于"块内文本被选中"场景)。这里保持 22% 透明度做非编辑器区
 	 * (侧边栏 / 命令面板 / 输入框) 的默认选区色。 */
 	::selection {
 		background: color-mix(in oklch, var(--brand) 22%, transparent) !important;
+		color: inherit !important;
+	}
+
+	/* CodeMirror deliberately forces selection on a focused nested editing host
+	 * to the system Highlight color. The source title is such a host, so this
+	 * focused selector must be more specific than CodeMirror's runtime rule. */
+	.code-editor .cm-editor .cm-content .cm-source-header .memo-title-editor:focus::selection,
+	.code-editor .memo-title-editor::selection,
+	.source-memo-title-row .memo-title-editor::selection,
+	.memo-title-editor::selection {
+		background: color-mix(in oklch, var(--brand) 26%, transparent) !important;
+		background-color: color-mix(in oklch, var(--brand) 26%, transparent) !important;
+		color: inherit !important;
+	}
+
+	.code-editor .cm-editor .cm-content .cm-source-header .memo-title-editor:focus::-moz-selection,
+	.code-editor .memo-title-editor::-moz-selection,
+	.source-memo-title-row .memo-title-editor::-moz-selection,
+	.memo-title-editor::-moz-selection {
+		background: color-mix(in oklch, var(--brand) 26%, transparent) !important;
+		background-color: color-mix(in oklch, var(--brand) 26%, transparent) !important;
 		color: inherit !important;
 	}
 
@@ -471,54 +553,9 @@
 		animation: flowix-fade-out 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
 	}
 
-	/* 侧栏折叠态 hover 展开按钮 1s 后弹出的笔记列表浮层 ── 进场从左侧
-	   滑入 + 轻微 scale, 出场反向滑出。 全部用 keyframe + animation, 组件
-	   只挂/卸 className, 不参与动画状态机。 timing 函数沿用仓库统一的
-	   cubic-bezier(0.16, 1, 0.3, 1)。 进场 200ms, 出场 160ms。 */
-	@keyframes flowix-hover-preview-in {
-		from {
-			opacity: 0;
-			transform: translate3d(-12px, 0, 0) scale(0.98);
-		}
-		to {
-			opacity: 1;
-			transform: translate3d(0, 0, 0) scale(1);
-		}
-	}
-
-	@keyframes flowix-hover-preview-out {
-		from {
-			opacity: 1;
-			transform: translate3d(0, 0, 0) scale(1);
-		}
-		to {
-			opacity: 0;
-			transform: translate3d(-12px, 0, 0) scale(0.98);
-		}
-	}
-
-	.flowix-hover-preview-enter {
-		animation: flowix-hover-preview-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
-	}
-
-	.flowix-hover-preview-leave {
-		animation: flowix-hover-preview-out 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
-	}
-
-	/* The note-navigation drawer is a small, bounded overlay. Keep the blur on
-	 * that surface only: backdrop-filter is compositor-backed in the desktop
-	 * WebView, unlike a duplicated/blurred page layer. Browsers without it keep
-	 * the fully opaque card surface for legibility and zero filter cost. */
-	.flowix-note-navigation-drawer-surface {
-		background: var(--card);
-	}
-
-	@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-		.flowix-note-navigation-drawer-surface {
-			background: color-mix(in oklch, var(--card) 64%, transparent);
-			backdrop-filter: blur(8px);
-			-webkit-backdrop-filter: blur(8px);
-		}
+	.flowix-note-navigation-motion {
+		transition-duration: var(--flowix-note-navigation-motion-duration);
+		transition-timing-function: var(--flowix-note-navigation-motion-easing);
 	}
 
 	/* Popover presence lifecycle: mount invisibly, position before paint, then
@@ -658,9 +695,6 @@
 	[data-theme="dark"] {
 		--tag-icon-hover: oklch(1 0 0);
 	}
-	[data-theme="dark"] .memo-list {
-		background: var(--memo-list-bg);
-	}
 	[data-tag-icon][aria-expanded="true"] .tag-expand-indicator,
 	[data-tag-icon]:hover .tag-expand-indicator,
 	[data-tag-icon]:focus-visible .tag-expand-indicator {
@@ -729,6 +763,27 @@
 /* agent-* 元素的样式已合并到组件 className (Tailwind 工具类);
  * 关键帧由 animate-[<name>_<duration>_<timing>] arbitrary value 引用,
  * 必须保留 CSS。 */
+
+@keyframes notebookAgentSettingsDialogIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.notebook-agent-settings-dialog {
+  animation: notebookAgentSettingsDialogIn 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notebook-agent-settings-dialog {
+    animation: none;
+  }
+}
 
 @keyframes agentThinkingDot {
 	0%, 100% {
@@ -867,11 +922,28 @@
   }
 }
 
-/* The list grows in stable batches to preserve dynamic-height card state.
- * Skip layout/paint work for retained cards that are far outside the viewport. */
+/* Dynamic-height memo virtualization owns row visibility and measurement.
+ * Do not add content-visibility here: browser-level intrinsic placeholders
+ * would create a second, independent height model for the same row. */
 .memo-card {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 88px;
+  overflow: hidden;
+  padding-left: calc(0.5rem + 4px);
+}
+
+.memo-card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--brand);
+  content: '';
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.memo-card--selected::before {
+  opacity: 1;
 }
 
 .memo-card__running-agent-icon {

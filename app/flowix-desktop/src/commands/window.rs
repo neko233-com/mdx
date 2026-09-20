@@ -13,7 +13,7 @@ static MAIN_WINDOW_FOCUS_CONSUMED: AtomicBool = AtomicBool::new(false);
 // required for Tauri to apply the traffic-light inset on overlay title bars.
 #[cfg(target_os = "macos")]
 const MACOS_TRAFFIC_LIGHT_POSITION: tauri::LogicalPosition<f64> =
-    tauri::LogicalPosition::new(18.0, 25.0);
+    tauri::LogicalPosition::new(15.0, 25.0);
 
 fn preferences_navigation_script(hash: &str) -> Result<String, String> {
     serde_json::to_string(hash)
@@ -118,4 +118,10 @@ pub async fn open_preferences_window(
 pub fn apply_window_theme(theme: Theme, app: tauri::AppHandle) -> Result<(), String> {
     crate::window_chrome::apply_theme_background_all(&app, theme);
     Ok(())
+}
+
+/// Keep the native application menu in sync with the frontend language.
+#[tauri::command]
+pub fn apply_menu_language(language: String, app: tauri::AppHandle) -> Result<(), String> {
+    crate::app::native_menu::set_language(&app, &language).map_err(|error| error.to_string())
 }

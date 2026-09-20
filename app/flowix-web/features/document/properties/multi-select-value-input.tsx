@@ -1,18 +1,20 @@
 /**
- * Multi-select value input. Stores its value as a YAML array on disk —
- * functionally identical to the legacy `Tags` row type (which is why
- * they round-trip through the same `convertRowValue` path), but
- * explicitly typed as `MultiSelect` so the dialog UI distinguishes
- * "tag chips" from "preset-bound keyword list" cleanly.
+ * Array-value input shared by MultiSelect, Tag, and Note Tags rows.
+ * With options it renders a preset-bound multi-select menu; without options
+ * it renders free-form chips. The row's semantic type remains owned by the
+ * property model, not by this reusable input component.
  */
 
 import { useState } from 'react';
+import { Check, ChevronDown } from 'lucide-react';
 import { useI18n, translate } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { useComposingValue } from '@shared/hooks/use-composing-value';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@shared/ui/dropdown-menu';
 
 interface MultiSelectValueInputProps {
   value: string;
+  options?: readonly string[];
   disabled?: boolean;
   onChange: (next: string) => void;
 }
@@ -26,6 +28,7 @@ function tagsFromValue(value: string): string[] {
 
 export function MultiSelectValueInput({
   value,
+  options = [],
   disabled = false,
   onChange,
 }: MultiSelectValueInputProps) {
@@ -46,6 +49,59 @@ export function MultiSelectValueInput({
   const removeTag = (tag: string) => {
     onChange(tags.filter((item) => item !== tag).join(', '));
   };
+
+  const toggleOption = (option: string) => {
+    const next = tags.includes(option)
+      ? tags.filter((item) => item !== option)
+      : [...tags, option];
+    onChange(next.join(', '));
+  };
+
+  if (options.length > 0) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            disabled={disabled}
+            className={cn(
+              'flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-2 text-left text-sm',
+              'hover:bg-[var(--muted)]/40 focus-visible:border-[var(--primary)] focus-visible:outline-none',
+              disabled && 'pointer-events-none opacity-50',
+            )}
+          >
+            <span className="min-w-0 flex-1 truncate">
+              {tags.length > 0 ? tags.join(', ') : t('document.properties.select.placeholder')}
+            </span>
+            <ChevronDown className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          className="min-w-[200px] rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]"
+        >
+          {options.map((option) => {
+            const selected = tags.includes(option);
+            return (
+              <button
+                key={option}
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => toggleOption(option)}
+                className={cn(
+                  'flex h-7 w-full items-center justify-between gap-2 rounded-lg px-2 text-left text-sm',
+                  'hover:bg-[var(--hover-bg)] focus-visible:bg-[var(--hover-bg)] focus-visible:outline-none',
+                )}
+              >
+                <span className="min-w-0 truncate">{option}</span>
+                {selected && <Check className="h-4 w-4 shrink-0 text-[var(--brand)]" aria-hidden="true" />}
+              </button>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
 
   return (
     <div

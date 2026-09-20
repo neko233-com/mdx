@@ -7,6 +7,7 @@ import {
   type DocumentTitlebarProps,
   type DocumentState,
   ExternalTitlebarBadge,
+  MediaActions,
   MemoActions,
   DOCUMENT_TITLEBAR_ICON_BUTTON_MAC,
   AgentThreadCardFullscreenExitButton,
@@ -25,13 +26,12 @@ const ICON_BTN = DOCUMENT_TITLEBAR_ICON_BUTTON_MAC;
 
 export function DocumentTitlebarMac({
   reserveWindowsControls: _reserveWindowsControls = true,
+  surfaceChrome = 'document',
   document: { currentMemo, externalFilePath = null },
   sidebar: {
     hidden: isSidebarHidden,
     noteNavigationVisible,
     onToggle: onToggleSidebar,
-    onPreviewTriggerEnter,
-    onPreviewTriggerLeave,
   },
   navigation: {
     canNavigateBack,
@@ -53,12 +53,17 @@ export function DocumentTitlebarMac({
     onExportMarkdown,
     onSaveAsTemplate,
     onExportWord,
+    onExportPdf,
     onRequestDeleteMemo,
     onColorsChange,
+    editorMode,
+    onToggleEditorMode,
   },
+  mediaActions,
 }: DocumentTitlebarProps) {
   const { t } = useI18n();
   const isAgentThreadCardFullscreen = useAgentThreadCardFullscreenActive();
+  const isMediaSurface = surfaceChrome === 'media';
   const documentState: DocumentState = currentMemo
     ? 'memo'
     : externalFilePath
@@ -69,8 +74,12 @@ export function DocumentTitlebarMac({
       <WorkColumnTitlebarShell
       isWindows={false}
       showTrafficLightSpacer={isSidebarHidden && !noteNavigationVisible}
-      className={isAgentThreadCardFullscreen ? 'agent-surface-titlebar' : ''}
-      style={isAgentThreadCardFullscreen ? undefined : { backgroundImage: WORK_COLUMN_TITLEBAR_GRADIENT }}
+      className={isAgentThreadCardFullscreen
+        ? 'agent-surface-titlebar'
+        : isMediaSurface
+          ? 'media-surface-titlebar'
+          : ''}
+      style={isAgentThreadCardFullscreen || isMediaSurface ? undefined : { backgroundImage: WORK_COLUMN_TITLEBAR_GRADIENT }}
     >
       <div className="flex shrink-0 items-center gap-1">
         {isSidebarHidden && (
@@ -78,8 +87,6 @@ export function DocumentTitlebarMac({
             <button
               type="button"
               onClick={onToggleSidebar}
-              onMouseEnter={onPreviewTriggerEnter}
-              onMouseLeave={onPreviewTriggerLeave}
               aria-label={t("document.titlebar.showSidebar")}
               title={t("document.titlebar.showSidebarTooltip")}
               className="w-5 h-5 flex items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--foreground)] rounded-xl transition-colors"
@@ -136,12 +143,23 @@ export function DocumentTitlebarMac({
             onExportMarkdown={onExportMarkdown}
             onSaveAsTemplate={onSaveAsTemplate}
             onExportWord={onExportWord}
+            onExportPdf={onExportPdf}
             onRequestDeleteMemo={onRequestDeleteMemo}
             onColorsChange={onColorsChange ?? (() => {})}
+            editorMode={editorMode}
+            onToggleEditorMode={onToggleEditorMode}
             canCopyFullText={canCopyFullText}
             canExportContent={canExportContent}
             canSaveAsTemplate={canSaveAsTemplate}
             canViewVersionHistory={canViewVersionHistory}
+          />
+        )}
+        {isMediaSurface && mediaActions && (
+          <MediaActions
+            iconButtonClass={ICON_BTN}
+            onCopyLink={mediaActions.onCopyLink}
+            onRevealInFileManager={mediaActions.onRevealInFileManager}
+            onRequestDelete={mediaActions.onRequestDelete}
           />
         )}
       </div>

@@ -19,6 +19,98 @@ import {
   type DocumentIdentity,
 } from '@features/document/store/document-identity';
 import { canonicalPath } from '@/lib/path';
+import { persistRecoveryDraft } from '@features/document/store/recovery-draft-store';
+
+const RECOVERY_DRAFT_WRITE_TIMEOUT_MS = 3_000;
+
+type DocumentCapture = () => string | null;
+interface RegisteredDocumentCapture {
+  hostId?: string;
+  capture: DocumentCapture;
+}
+const documentCaptures = new Map<string, Set<RegisteredDocumentCapture>>();
+
+/** Register a mounted editor capable of publishing its latest content. */
+export function registerDocumentCapture(
+  identity: DocumentIdentity,
+  capture: DocumentCapture,
+  hostId?: string,
+): () => void {
+  const key = documentIdentityKey(identity);
+  const registration = { hostId, capture } satisfies RegisteredDocumentCapture;
+  const captures = documentCaptures.get(key) ?? new Set<RegisteredDocumentCapture>();
+  captures.add(registration);
+  documentCaptures.set(key, captures);
+  return () => {
+    captures.delete(registration);
+    if (captures.size === 0) documentCaptures.delete(key);
+  };
+}
+
+/** Publish all mounted surfaces before the save barrier reads the buffer. */
+export function captureLatestDocumentContent(identity: DocumentIdentity, hostId?: string): void {
+  const captures = documentCaptures.get(documentIdentityKey(identity));
+  if (!captures) return;
+  for (const registration of [...captures]) {
+    if (hostId !== undefined && registration.hostId !== hostId) continue;
+    registration.capture();
+  }
+}
+
+export async function protectDocumentDraft(
+  identity: DocumentIdentity,
+  path: string,
+  reason: 'autosave' | 'save-timeout' | 'save-error' | 'shutdown',
+): Promise<boolean> {
+  const buffer = getOrCreateBuffer(identity);
+  if (!hasUnsavedLocalChanges(identity)) return true;
+  const protectedByDraft = await waitWithTimeout(persistRecoveryDraft({
+    identity,
+    originalPath: canonicalPath(path),
+    revision: buffer.capturedRevision,
+    content: buffer.content,
+    baseContent: buffer.lastSavedContent,
+    reason,
+  }), RECOVERY_DRAFT_WRITE_TIMEOUT_MS);
+  if (protectedByDraft !== true) return false;
+  buffer.durableRevision = Math.max(buffer.durableRevision, buffer.capturedRevision);
+  if (buffer.savedRevision < buffer.capturedRevision) buffer.saveState = 'protected';
+  notifyDocumentBufferChanged(identity, 'save_settled');
+  return true;
+}
+
+export function applyRecoveryDraftContent(
+  identity: DocumentIdentity,
+  content: string,
+  revision: number,
+): DocumentBuffer {
+  const buffer = getOrCreateBuffer(identity);
+  buffer.content = content;
+  buffer.pendingContent = content;
+  buffer.editRevision = Math.max(buffer.editRevision, revision);
+  buffer.capturedRevision = Math.max(buffer.capturedRevision, revision);
+  buffer.durableRevision = Math.max(buffer.durableRevision, revision);
+  buffer.pendingRevision = buffer.capturedRevision;
+  buffer.saveState = 'protected';
+  notifyDocumentBufferChanged(identity, 'loaded');
+  return buffer;
+}
+
+function waitWithTimeout(promise: Promise<boolean>, timeoutMs: number): Promise<boolean | 'timeout'> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => resolve('timeout'), timeoutMs);
+    void promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        window.clearTimeout(timer);
+        resolve(false);
+      },
+    );
+  });
+}
 
 
 interface DocumentDraftSnapshot {
@@ -133,14 +225,25 @@ export function getDocumentDraft(
  */
 export function recordDocumentEdit(identity: DocumentIdentity, content: string): DocumentEditResult {
   const buffer = getOrCreateBuffer(identity);
+  if (content === buffer.content) {
+    return { changed: !isDocumentContentEqual(identity, content, buffer.lastSavedContent), buffer };
+  }
+  buffer.editRevision += 1;
+  buffer.capturedRevision = buffer.editRevision;
   if (isDocumentContentEqual(identity, content, buffer.lastSavedContent)) {
     buffer.content = content;
     buffer.pendingContent = null;
+    buffer.pendingRevision = null;
+    buffer.savedRevision = buffer.capturedRevision;
+    buffer.durableRevision = buffer.capturedRevision;
+    buffer.saveState = 'clean';
     notifyDocumentBufferChanged(identity, 'edited');
     return { changed: false, buffer };
   }
   buffer.content = content;
   buffer.pendingContent = content;
+  buffer.pendingRevision = buffer.capturedRevision;
+  buffer.saveState = 'dirty';
   notifyDocumentBufferChanged(identity, 'edited');
   return { changed: true, buffer };
 }
@@ -165,8 +268,7 @@ export async function saveDocumentContent({
   const buffer = getOrCreateBuffer(identity);
 
   if (content !== buffer.content) {
-    buffer.content = content;
-    buffer.pendingContent = content;
+    recordDocumentEdit(identity, content);
   }
 
   return flushDocument(identity, path, { key, channel, scopePath, force, ...callbacks });
@@ -177,7 +279,56 @@ export function flushDocumentPath(
   path: string,
   scopePath: string | null = null,
 ): Promise<boolean> {
-  return flushDocument(identity, path, { scopePath });
+  return prepareDocumentLeave(identity, path, scopePath);
+}
+
+/**
+ * Capture the outgoing editor and make its latest revision durable without
+ * putting canonical disk/index latency on the navigation critical path.
+ * Canonical saves continue in the background; a small recovery draft is the
+ * only bounded, non-destructive navigation barrier.
+ */
+export async function prepareDocumentLeave(
+  identity: DocumentIdentity,
+  path: string,
+  scopePath: string | null = null,
+): Promise<boolean> {
+  captureLatestDocumentContent(identity);
+  const buffer = getOrCreateBuffer(identity);
+  if (!hasUnsavedLocalChanges(identity)) return true;
+
+  const revision = buffer.capturedRevision;
+  const content = buffer.content;
+  const baseContent = buffer.lastSavedContent;
+  const save = flushDocument(identity, path, { scopePath });
+  if (buffer.durableRevision >= revision) {
+    // The revision is already recoverable. Keep the canonical write alive,
+    // but do not make navigation wait for it again.
+    void save;
+    return true;
+  }
+
+  // Preserve the exact captured snapshot immediately. Waiting for the full
+  // memo write here can include filesystem, index and watcher latency and used
+  // to freeze every document switch for up to five seconds.
+  const protectedByDraft = await waitWithTimeout(persistRecoveryDraft({
+    identity,
+    originalPath: canonicalPath(path),
+    revision,
+    content,
+    baseContent,
+    reason: 'autosave',
+  }), RECOVERY_DRAFT_WRITE_TIMEOUT_MS);
+  if (protectedByDraft !== true) return false;
+
+  // The canonical save may have won the race while the draft was being
+  // persisted. Do not regress an already-clean buffer back to `protected`.
+  if (buffer.savedRevision >= revision) return true;
+
+  buffer.durableRevision = Math.max(buffer.durableRevision, revision);
+  buffer.saveState = 'protected';
+  notifyDocumentBufferChanged(identity, 'save_settled');
+  return true;
 }
 
 export function getDocumentBuffer(identity: DocumentIdentity): DocumentBuffer {

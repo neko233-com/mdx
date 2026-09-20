@@ -31,7 +31,7 @@ const testState = vi.hoisted(() => ({
   )),
 }));
 
-vi.mock('@features/memo', () => ({
+vi.mock('@features/memo/store/memo-store', () => ({
   useMemoStore: {
     getState: () => ({
       selectedMemo: testState.selectedMemo,
@@ -41,7 +41,7 @@ vi.mock('@features/memo', () => ({
   },
 }));
 
-vi.mock('@features/document', () => ({
+vi.mock('@features/document/store/document-store', () => ({
   useDocumentStore: {
     getState: () => ({
       activeMemoSession: testState.activeMemoSession,

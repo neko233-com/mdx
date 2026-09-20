@@ -3,7 +3,7 @@
 import type { ComponentType } from 'react';
 import { CheckCircleIcon, InfoIcon, WarningCircleIcon, XCircleIcon } from '@phosphor-icons/react';
 import { toast as sonnerToast } from 'sonner';
-import { TOAST_BG, TOAST_COLORS, TOAST_DURATION_MS, TOAST_SHADOW } from '@/lib/constants';
+import { TOAST_DURATION_MS, TOAST_SHADOW } from '@/lib/constants';
 
 /** Toast 视觉 tone */
 export type ToastTone = 'success' | 'error' | 'info' | 'warning';
@@ -43,6 +43,13 @@ const TONE_ICONS: Record<
   warning: WarningCircleIcon,
 };
 
+const TONE_COLORS: Record<ToastTone, string> = {
+  success: 'var(--success)',
+  error: 'var(--destructive)',
+  info: 'var(--info)',
+  warning: 'var(--warning)',
+};
+
 /**
  * 实际渲染的胶囊提示框。
  *
@@ -54,12 +61,16 @@ const TONE_ICONS: Record<
  */
 function ToastPill({ tone, message }: { tone: ToastTone; message: string }) {
   const Icon = TONE_ICONS[tone];
-  const color = TOAST_COLORS[tone];
+  const color = TONE_COLORS[tone];
   return (
     <div className="flex w-[var(--width)] justify-center">
       <div
-        className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-white"
-        style={{ backgroundColor: TOAST_BG, boxShadow: TOAST_SHADOW }}
+        className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium"
+        style={{
+          backgroundColor: 'var(--floating-bg)',
+          color: 'var(--floating-foreground)',
+          boxShadow: TOAST_SHADOW,
+        }}
       >
         <Icon className="h-4 w-4" style={{ color }} weight="fill" />
         <span>{message}</span>

@@ -13,7 +13,7 @@
 	box-sizing: border-box;
 	color: var(--document-foreground, var(--foreground, #1f2937));
 	background: transparent;
-	font-size: 13px;
+	font-size: var(--code-editor-font-size, var(--code-font-size, 14px));
 }
 
 .code-editor > .cm-editor.cm-focused {
@@ -29,16 +29,89 @@
 	overflow-y: auto;
 	position: relative;
 	z-index: 0;
-	font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-	line-height: 1.65;
+	font-family: var(--code-editor-font-family, var(--code-font-family));
+	line-height: var(--code-editor-line-height, var(--code-line-height, 1.8));
 	overflow-anchor: none;
+}
+
+/* A memo's source title is a block widget inside `.cm-content`. Keep the
+ * CodeMirror scroller's native flex layout intact so its content geometry,
+ * absolute layers, and virtual viewport continue to share one coordinate
+ * system. */
+.code-editor {
+	--code-editor-font-family: var(--code-font-family);
+	--code-editor-font-size: var(--code-font-size);
+	--code-editor-line-height: var(--code-line-height);
+	--code-editor-active-surface-bg: color-mix(in oklch, var(--muted, #f3f4f6) 58%, transparent);
+	--code-editor-source-header-height: 54px;
+	--code-editor-line-padding-left: 10px;
+	--code-editor-line-padding-right: 20px;
+	--code-editor-content-padding-top: 14px;
+	--code-editor-content-padding-bottom: 28px;
+}
+
+.code-editor.code-editor--with-scroll-header .cm-source-header {
+	display: block;
+	width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
+	font-family: var(--code-editor-font-family, var(--code-font-family));
+	font-size: var(--code-editor-font-size, var(--code-font-size, 14px));
+	line-height: var(--code-editor-line-height, var(--code-line-height, 1.8));
+	color: var(--document-foreground, var(--foreground, #1f2937));
+	white-space: normal;
+}
+
+.code-editor .source-memo-title-row {
+	box-sizing: border-box;
+	width: 100%;
+	min-width: 0;
+	--source-memo-title-font-size: 16px;
+	/* Keep the former separator-height footprint while reducing the space
+	 * below the title to a fixed rem-based spacing. */
+	padding-bottom: calc(0.1rem + 0.0625rem);
+}
+
+/* The source title is a separate editing host inside the CodeMirror widget.
+ * Put the active surface on the widget's full-width header rather than on the
+ * text-sized title row. This keeps the title aligned with a full `.cm-line`
+ * background while leaving the actual text selection on the title to the
+ * shared brand-colored `::selection` rule. */
+.code-editor[data-source-header-focused] .cm-source-header {
+	background-color: var(--code-editor-active-surface-bg);
+	border-radius: 4px;
+}
+
+/* The editor's normal top padding supplies the space above the title widget,
+ * so the title and source lines remain in one measured CodeMirror surface. */
+.code-editor.code-editor--with-scroll-header .cm-content {
+	padding-top: var(--code-editor-content-padding-top, 14px) !important;
+}
+
+.code-editor .source-memo-title-row .memo-title-shell {
+	width: 100%;
+}
+
+.code-editor .source-memo-title-row .memo-title-editor {
+	box-sizing: border-box;
+	min-height: calc(var(--source-memo-title-font-size, 16px) * var(--code-editor-line-height, 1.65));
+	padding: 0 var(--code-editor-line-padding-right, 20px) 0 var(--code-editor-line-padding-left, 10px);
+	user-select: text;
+	-webkit-user-select: text;
+	font-family: inherit;
+	font-size: var(--source-memo-title-font-size, 16px);
+	font-weight: 600;
+	line-height: inherit;
+	white-space: pre-wrap;
+	word-break: break-word;
+	overflow-wrap: anywhere;
 }
 
 .code-editor .cm-content {
 	display: block;
 	min-height: 100%;
 	margin: 0;
-	padding: 14px 0 28px;
+	padding: var(--code-editor-content-padding-top, 14px) 0 var(--code-editor-content-padding-bottom, 28px);
 	box-sizing: border-box;
 	flex-grow: 2;
 	flex-shrink: 0;
@@ -78,7 +151,7 @@
 .code-editor .cm-line {
 	display: block;
 	max-width: 100%;
-	padding: 0 20px 0 10px;
+	padding: 0 var(--code-editor-line-padding-right, 20px) 0 var(--code-editor-line-padding-left, 10px);
 	color: var(--document-foreground, var(--foreground, #1f2937));
 }
 
@@ -87,6 +160,7 @@
 	height: 100%;
 	box-sizing: border-box;
 	border: 0;
+	position: relative;
 	color: var(--muted-foreground, #6b7280);
 	background: var(--document-bg, #fff);
 }
@@ -98,6 +172,8 @@
 	box-sizing: border-box;
 	min-height: 100%;
 	overflow: hidden;
+	position: relative;
+	z-index: 1;
 }
 
 .code-editor .cm-gutterElement {
@@ -134,13 +210,90 @@
  * them visible in the installed app. */
 .code-editor .cm-activeLine,
 .code-editor .cm-activeLineGutter {
-	background-color: color-mix(in oklch, var(--muted, #f3f4f6) 58%, transparent);
+	background-color: var(--code-editor-active-surface-bg);
+}
+
+/* A title focus or a non-empty CodeMirror range already has its own visual
+ * selection affordance. Hide the competing current-line background while
+ * keeping CodeMirror's selection state untouched. `:has()` is already used
+ * throughout the application and is supported by the app's WebKit/WebView2
+ * targets. */
+.code-editor[data-source-header-focused] .cm-activeLine,
+.code-editor[data-source-header-focused] .cm-activeLineGutter,
+.code-editor > .cm-editor[data-has-range-selection] .cm-activeLine,
+.code-editor > .cm-editor[data-has-range-selection] .cm-activeLineGutter {
+	background-color: transparent;
+}
+
+/* A block widget lives in `.cm-content`, so CodeMirror has no gutter line
+ * marker for the title itself. The editor adds this dedicated layer as a
+ * real gutter child to keep the title surface continuous across the line
+ * number column. The gutter's text stays above this layer. */
+.code-editor .cm-source-header-gutter-background {
+	display: block;
+	position: absolute;
+	inset-inline: 0;
+	top: var(--code-editor-source-header-top, var(--code-editor-content-padding-top, 14px));
+	height: var(--code-editor-source-header-height, 54px);
+	border-radius: 4px 0 0 4px;
+	background-color: var(--code-editor-active-surface-bg);
+	pointer-events: none;
+	z-index: 0;
+}
+
+.code-editor .cm-source-mode-toggle {
+	display: flex;
+	position: absolute;
+	top: var(--code-editor-source-header-top, var(--code-editor-content-padding-top, 14px));
+	left: 0;
+	width: 100%;
+	height: var(--code-editor-source-header-height, 54px);
+	box-sizing: border-box;
+	align-items: center;
+	justify-content: flex-end;
+	padding: 0 15px 0 3px;
+	border: 0;
+	border-radius: 4px;
+	color: color-mix(in oklch, var(--muted-foreground, #6b7280) 72%, transparent);
+	background: transparent;
+	font-family: var(--code-editor-font-family, var(--code-font-family));
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: -0.04em;
+	line-height: 1;
+	cursor: pointer;
+	z-index: 2;
+	transition: color 120ms ease, background-color 120ms ease;
+}
+
+.code-editor .cm-source-mode-toggle svg {
+	display: block;
+	width: 14px;
+	height: 14px;
+}
+
+.code-editor .cm-source-mode-toggle:hover,
+.code-editor .cm-source-mode-toggle:focus-visible {
+	color: var(--foreground, #1f2937);
+	outline: none;
+}
+
+.code-editor:not([data-source-header-focused]) .cm-source-header-gutter-background {
+	visibility: hidden;
 }
 
 .code-editor .cm-selectionBackground,
 .code-editor .cm-editor.cm-focused .cm-selectionBackground,
 .code-editor ::selection {
-	background-color: color-mix(in oklch, var(--primary, #7c3aed) 24%, transparent);
+	background-color: color-mix(in oklch, var(--brand, var(--primary, #7c3aed)) 26%, transparent);
+	color: inherit;
+}
+
+/* CodeMirror's default focused-selection rule is more specific than the
+ * broad fallback above. Match its selection-layer path so the focused state
+ * keeps the same themed background as the unfocused state. */
+.code-editor > .cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
+	background-color: color-mix(in oklch, var(--brand, var(--primary, #7c3aed)) 26%, transparent);
 }
 
 .code-editor .cm-panels {

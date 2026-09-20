@@ -50,6 +50,23 @@ function resolveDocumentSurface(document: DocumentSurfaceContext): WorkColumnSur
   return document.markdown;
 }
 
+function resolveMediaTargetContent(
+  target: Extract<WorkColumnTarget, { kind: 'media' }>,
+): WorkColumnContentPresentation {
+  const filePath = target.filePath.trim();
+  if (!filePath || !target.notebookPath?.trim()) {
+    return emptyContent('媒体资源上下文无效', 'invalid-target');
+  }
+  return surfaceContent({
+    kind: 'media',
+    instanceKey: `media:${filePath}`,
+    filePath,
+    notebookId: target.notebookId,
+    notebookPath: target.notebookPath,
+    resourceKind: target.resourceKind,
+  });
+}
+
 function resolveArtifactTargetContent(
   target: Extract<WorkColumnTarget, { kind: 'artifact' }>,
   emptyMessage: string,
@@ -149,6 +166,8 @@ function resolveWorkColumnTarget(
     }
     case 'artifact':
       return resolveArtifactTargetContent(target, input.emptyMessage);
+    case 'media':
+      return resolveMediaTargetContent(target);
     case 'memo':
       return input.document && isMemoDocumentContext(target, input.document)
         ? surfaceContent(resolveDocumentSurface(input.document))

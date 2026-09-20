@@ -6,7 +6,7 @@ import { applyLoadedDocumentContent, recordDocumentEdit } from '../../store/docu
 import { subscribeDocumentBufferChanges, getBuffer } from '../../store/buffer-registry';
 
 const save = vi.hoisted(() => vi.fn().mockResolvedValue(true));
-vi.mock('@features/document', async (importOriginal) => ({
+vi.mock('@features/document/store/document-session-service', async (importOriginal) => ({
   ...await importOriginal<Record<string, unknown>>(),
   saveDocumentContent: save,
 }));

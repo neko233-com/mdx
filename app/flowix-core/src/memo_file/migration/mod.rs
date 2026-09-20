@@ -68,6 +68,11 @@ impl MemoFile {
                 internal.warnings.join("; ")
             )));
         }
+        // Reconcile media rows after the internal directory migration so files
+        // copied into the notebook are available to the media surface without
+        // being opened first. Existing media properties remain in the local
+        // database and are preserved by this reconciliation.
+        self.reconcile_media_resources(notebook_id)?;
         Ok(internal.moved_files)
     }
 

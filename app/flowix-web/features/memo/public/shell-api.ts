@@ -3,7 +3,10 @@ export { useMemoListHoverPreview } from '@features/memo/components/use-memo-list
 export { MemoListTitlebarWin } from '@features/memo/components/memo-list-titlebar-win';
 export { MemoListTitlebarMac } from '@features/memo/components/memo-list-titlebar-mac';
 export { NoteNavigationPanel } from '@features/memo/components/note-navigation-panel';
-export { NoteNavigationDrawer } from '@features/memo/components/note-navigation-drawer';
+export {
+  NoteNavigationDrawer,
+  type NoteNavigationDrawerPhase,
+} from '@features/memo/components/note-navigation-drawer';
 export { MemoListServicesHost } from '@features/memo/components/memo-list-services-host';
 export { useNotebookTodoCount } from '@features/memo/components/use-notebook-todo-count';
 export {

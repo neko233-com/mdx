@@ -15,6 +15,11 @@ import {
 import { BrowserColumnHeader } from './browser-column-header';
 import { useI18n } from '@/lib/i18n';
 import {
+  captureLatestDocumentContent,
+  getDocumentEditorMode,
+  setDocumentEditorMode,
+} from '@features/document/public/shell-api';
+import {
   BrowserColumnSurfaceHost,
   getBrowserColumnSurfaceDefinition,
   type BrowserColumnFlushRegistration,
@@ -108,6 +113,22 @@ export function BrowserColumn({
       closeAllBrowserColumnTabs({ discardChanges })
     ))
   ), [closeWithDiscardFallback]);
+  const handleToggleMemoEditorMode = useCallback((tabId: string) => {
+    const tab = tabs.find((candidate) => candidate.id === tabId);
+    if (tab?.target.kind !== 'memo') return;
+
+    const identity = { kind: 'memo' as const, id: tab.target.memoId };
+    // Publish the latest CodeMirror / rich-text content before replacing the
+    // editor subtree. The browser-column host keeps this isolated from a
+    // possible copy of the same memo in the main work column.
+    captureLatestDocumentContent(identity, 'browser-column');
+    const currentMode = getDocumentEditorMode('browser-column', identity);
+    setDocumentEditorMode(
+      'browser-column',
+      identity,
+      currentMode === 'source' ? 'rich' : 'source',
+    );
+  }, [tabs]);
   const handleContextMenuOpenChange = useCallback((tabId: string, open: boolean) => {
     setContextMenuTabId((current) => {
       if (open) return tabId;
@@ -181,7 +202,7 @@ export function BrowserColumn({
           resizeStartRef.current = { x: event.clientX, width };
           setIsResizing(true);
         }}
-        className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize focus-visible:outline-none focus-visible:bg-[var(--brand)]"
+        className="absolute inset-y-0 -left-[5px] z-20 w-[11px] cursor-col-resize focus-visible:outline-none focus-visible:bg-[var(--brand)]"
       />
       <BrowserColumnHeader
         tabs={tabs}
@@ -192,6 +213,7 @@ export function BrowserColumn({
         onCloseOtherTabs={handleCloseOtherTabs}
         onCloseTabsToRight={handleCloseTabsToRight}
         onCloseAllTabs={handleCloseAllTabs}
+        onToggleMemoEditorMode={handleToggleMemoEditorMode}
         onOpenTabInWorkColumn={(tabId) => { void openBrowserColumnTabInMainWorkColumn(tabId); }}
         onReorderTab={reorderBrowserColumnTab}
         isTabMenuOpen={isTabMenuOpen}

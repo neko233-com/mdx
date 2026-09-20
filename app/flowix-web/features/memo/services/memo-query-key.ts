@@ -7,13 +7,16 @@ export function getMemoQueryKey(
   tagId: string | null,
   colorFilter: ColorFilterValue,
   pluginId?: string | null,
+  customFilterId?: string | null,
 ): string {
-  return [
+  const parts = [
     notebookId ?? '',
     filter,
     sort,
     filter === 'tagged' ? tagId ?? '' : '',
     filter === 'color' ? colorFilter : '',
     pluginId ?? '',
-  ].join(':');
+  ];
+  if (filter === 'custom') parts.push(customFilterId ?? '');
+  return parts.join(':');
 }

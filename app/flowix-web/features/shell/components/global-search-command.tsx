@@ -11,7 +11,6 @@ import {
 import {
   CalendarCheck,
   FadersHorizontalIcon,
-  HashStraightIcon,
   ListChecks,
   NotebookIcon as NotebookPhosphorIcon,
   PencilSimpleLineIcon,
@@ -57,6 +56,7 @@ import {
 import { ShortcutKbd } from '@shared/ui/shortcut-kbd';
 import { useI18n } from '@/lib/i18n';
 import { createLogger } from '@/lib/logger';
+import { TagSvgIcon } from '@shared/ui/tag-icon';
 
 const logger = createLogger('global-search');
 
@@ -638,7 +638,7 @@ function StaticGroups({ onClose }: StaticGroupsProps) {
               value={tag.id}
               onSelect={() => handleTagSelect(tag.id)}
             >
-              <HashStraightIcon />
+              <TagSvgIcon className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
               <span>{tag.name}</span>
             </CommandItem>
           ))

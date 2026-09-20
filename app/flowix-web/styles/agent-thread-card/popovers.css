@@ -239,11 +239,7 @@
 
 .agent-thread-card__access-avatar--icon {
   background: var(--muted);
-  color: #3f3f46;
-}
-
-[data-theme="dark"] .agent-thread-card__access-avatar--icon {
-  color: #fff;
+  color: var(--secondary-foreground);
 }
 
 .agent-thread-card__access-avatar--icon svg {

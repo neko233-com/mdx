@@ -34,6 +34,7 @@ export const STORAGE_KEYS = {
   SETTINGS: 'flowix-settings',
   TAG: 'flowix-tag',
   MEMO: 'flowix-memo-storage',
+  CUSTOM_FILTER: 'flowix-custom-filter-storage',
   BROWSER_COLUMN: 'flowix-browser-column-storage',
   WORKSPACE_RESTORE: 'flowix-workspace-restore-storage',
 } as const;
@@ -53,8 +54,6 @@ export interface PersonalizeConfig {
   responseLength: string;
   preferredLanguage: string;
   selectedTags: string[];
-  /** Whether the conversations entry is shown in the main navigation sidebar. */
-  showConversationEntry: boolean;
 }
 
 export interface FormatConfig {
@@ -71,13 +70,15 @@ export interface FormatConfig {
 
 export type PropertyFieldType =
   | 'Text'
+  | 'Boolean'
   | 'Number'
   | 'Date'
-  | 'URL'
   | 'Icon'
   | 'Select'
   | 'MultiSelect'
-  | 'List';
+  | 'Tag'
+  | 'Tags'
+  | 'Color';
 
 export interface PropertyFieldConfig {
   key: string;
@@ -226,13 +227,12 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     responseLength: 'standard',
     preferredLanguage: 'Simplified Chinese',
     selectedTags: [],
-    showConversationEntry: true,
   },
   format: {
     fontFamily: FONT_FAMILY_OPTIONS[0].value,
     fontId: FONT_FAMILY_OPTIONS[0].id,
     fontSize: 15,
-    lineHeight: 1.6,
+    lineHeight: 1.8,
     documentWidth: DOCUMENT_WIDTH_DEFAULT,
   },
   // 默认值收敛到 lib/theme/DEFAULT_THEME_ID — 改默认值改一处即可。
@@ -265,19 +265,6 @@ export const DEFAULT_REQUEST_TIMEOUT = 600000;
 /** 单条 toast 默认展示时长 (ms) */
 export const TOAST_DURATION_MS = 1600;
 
-/** Toast 背景色 */
-export const TOAST_BG = '#2d2f35';
-
 /** Toast 阴影 (用于内联 box-shadow) */
 export const TOAST_SHADOW =
   '0 16px 40px rgba(15,18,25,0.22), 0 3px 10px rgba(15,18,25,0.18)';
-
-/** Toast 4 种 tone 对应的图标颜色 */
-export const TOAST_COLORS = {
-  success: '#22C55E',
-  error:   '#FF8A8A',
-  info:    '#7CB9FF',
-  warning: '#FFC56B',
-} as const;
-
-export type ToastColorKey = keyof typeof TOAST_COLORS;

@@ -1,10 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { getCurrentWindow } from '@platform/tauri/window';
 
-import {
-  hasDocumentUnsavedChanges,
-  type DocumentIdentity,
-} from '@features/document';
+import { hasDocumentUnsavedChanges } from '@features/document/store/document-session-service';
+import type { DocumentIdentity } from '@features/document/store/document-identity';
 import { translate } from '@/lib/i18n';
 import { getCurrentAppLanguage } from '@features/preferences/public/runtime-api';
 import { toast } from '@/lib/toast';

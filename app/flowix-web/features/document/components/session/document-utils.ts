@@ -1,4 +1,5 @@
-import type { MemoItem, MemoStore } from '@features/memo';
+import type { MemoItem } from '@/types/memo-item';
+import type { MemoStore } from '@features/memo/store/memo-store';
 
 // Re-exported for callers that import DocumentBuffer from this module.
 // The canonical definition lives in lib/store/document-buffer.ts so that
@@ -6,7 +7,7 @@ import type { MemoItem, MemoStore } from '@features/memo';
 export type { DocumentBuffer } from '@features/document/store/document-buffer';
 
 export function extractBodyContent(content: string): string {
-  return content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
+  return content.replace(/^\uFEFF?(?:[ \t]*\r?\n)*---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
 }
 
 export function countTextUnits(content: string): number {

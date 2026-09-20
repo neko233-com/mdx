@@ -131,7 +131,7 @@ function parseMarkdownNoteLinkAtStart(src: string): ParsedMarkdownNoteLink | nul
   if (closeBracket < 0 || src[closeBracket + 1] !== '(') return null;
 
   const destination = readMarkdownLinkDestination(src, closeBracket + 1);
-  if (!destination || (!FLOWIX_MEMO_URL_RE.test(destination.url) && !isRelativeNoteDestination(destination.url))) return null;
+  if (!destination || !FLOWIX_MEMO_URL_RE.test(destination.url)) return null;
 
   return {
     raw: src.slice(0, destination.end + 1),
@@ -349,7 +349,6 @@ class NoteReferenceView implements ProseMirrorNodeView {
     // mount 时异步校验: 用 memoId 反查最新 title / notebookName / 路径,
     // 与 markdown 里缓存的旧值对比, 变化则写回 doc attrs;
     // 解析失败 → 落 stale.
-    void this.refreshMemoAttrs();
   }
 
   private createCard(): HTMLElement {
@@ -572,7 +571,6 @@ class NoteReferenceView implements ProseMirrorNodeView {
     this.refreshCard();
     // update 触发场景: 文档被外部修改 / 切换 memo / undo-redo,
     // 节点 attrs 可能刚被改过, 仍跑一次异步校验兜底.
-    void this.refreshMemoAttrs();
     return true;
   }
 
@@ -586,7 +584,7 @@ class NoteReferenceView implements ProseMirrorNodeView {
    */
   private refreshPromise: Promise<void> | null = null;
 
-  private refreshMemoAttrs(): Promise<void> {
+  refreshMemoAttrs(): Promise<void> {
     if (this.refreshPromise) return this.refreshPromise;
 
     const initialAttrs = this.node.attrs as NoteReferenceAttrs;
@@ -754,8 +752,7 @@ export const NoteReference = Node.create({
       const noteIndex = src.indexOf('<note ');
       const linkHrefIndex = src.indexOf('(flowix://memo/');
       const wikiIndex = src.indexOf('[[');
-      const markdownIndex = /\[[^\]\n]+\]\((?![a-z][a-z0-9+.-]*:)[^)\n]*(?:\.md|%20)[^)\n]*\)/i.exec(src)?.index ?? -1;
-      const indexes = [noteIndex, linkHrefIndex < 0 ? -1 : Math.max(0, src.lastIndexOf('[', linkHrefIndex)), wikiIndex, markdownIndex]
+      const indexes = [noteIndex, linkHrefIndex < 0 ? -1 : Math.max(0, src.lastIndexOf('[', linkHrefIndex)), wikiIndex]
         .filter(index => index >= 0);
       if (indexes.length === 0) return -1;
       return Math.min(...indexes);
@@ -787,7 +784,7 @@ export const NoteReference = Node.create({
       return { type: 'noteReference', attrs: attrsFromWikiNoteLink(wiki) };
     }
     const href = String(token.href ?? '');
-    if (FLOWIX_MEMO_URL_RE.test(href) || isRelativeNoteDestination(href)) {
+    if (FLOWIX_MEMO_URL_RE.test(href)) {
       return {
         type: 'noteReference',
         attrs: attrsFromMarkdownNoteLink(String(token.text ?? ''), href),

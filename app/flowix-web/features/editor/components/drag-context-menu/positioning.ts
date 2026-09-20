@@ -1,5 +1,9 @@
 import type { Editor } from '@tiptap/core'
-import { getCurrentBlockInfo, type CurrentBlockInfo } from '@features/editor/components/drag-context-menu/block-info'
+import {
+  getBlockInfoForInteraction,
+  getFocusedAgentThreadCardInfo,
+  type CurrentBlockInfo,
+} from '@features/editor/components/drag-context-menu/block-info'
 import { getYOffset } from '@features/editor/components/drag-context-menu/style'
 
 /**
@@ -7,8 +11,10 @@ import { getYOffset } from '@features/editor/components/drag-context-menu/style'
  * current selection? Pure function of editor state + DOM rects.
  *
  * The X axis is fixed (18px from the proseMirror container's left edge).
- * The Y axis follows the visible block ancestor's top, plus a per-type
- * Y offset (see ./style.ts).
+ * For headings, the Y axis follows ProseMirror's first text-line coordinate;
+ * this is important because heading spacing is implemented as padding and is
+ * therefore part of the element's border box. Other blocks retain the
+ * visible-block-top plus per-type offset fallback (see ./style.ts).
  */
 
 export interface HandlePosition {
@@ -31,6 +37,13 @@ const BLOCK_SELECTOR =
 
 const HANDLE_X_OFFSET = 18
 
+/** Small visual nudge for the larger heading glyphs. */
+const HEADING_HANDLE_NUDGE: Record<number, number> = {
+  1: 4,
+  2: 3,
+  3: 2,
+}
+
 /** Resolve the current handle position. Returns `{ visible: false }` when
  *  the editor has no usable focus / no resolvable block (callers typically
  *  use this to hide the handle entirely).
@@ -47,11 +60,17 @@ export function computeHandlePosition(
   requireFocus = true,
 ): HandlePosition | HandleHidden | null {
   const view = editor.view
-  if (!view || (requireFocus && !view.hasFocus())) return null
+  if (!view) return null
+
+  // AgentThreadCard owns a nested ProseMirror composer. The outer editor is
+  // intentionally blurred while the composer is active, but the card still
+  // needs its block handle for moving the card itself.
+  const focusedAgentThreadCard = getFocusedAgentThreadCardInfo(editor)
+  if (requireFocus && !view.hasFocus() && !focusedAgentThreadCard) return null
 
   const editorDom = view.dom as HTMLElement
   const editorContent = editorDom.closest('.editor-content') as HTMLElement | null
-  const info = getCurrentBlockInfo(editor)
+  const info = focusedAgentThreadCard ?? getBlockInfoForInteraction(editor)
   if (!info || !editorContent) return null
 
   // Anchor the handle on the visible block element. Table node DOM may be the
@@ -69,12 +88,13 @@ export function computeHandlePosition(
   // In particular, subtracting ProseMirror's top loses the height of any
   // non-ProseMirror header (the memo title) and shifts every handle upward.
   const x = nodeContentX(proseMirrorRect.left, contentRect.left, editorContent.scrollLeft)
-  const y = nodeContentY(
-    nodeRect.top,
-    contentRect.top,
-    editorContent.scrollTop,
-    getYOffset(info, fontSize, lineHeight),
-  )
+  const y = headingContentY(view, info, contentRect.top, editorContent.scrollTop) ??
+    nodeContentY(
+      nodeRect.top,
+      contentRect.top,
+      editorContent.scrollTop,
+      getYOffset(info, fontSize, lineHeight),
+    )
 
   return { visible: true, x, y, blockInfo: info }
 }
@@ -96,7 +116,40 @@ export function nodeContentY(
   return nodeTop - scrollContainerTop + scrollTop + visualOffset
 }
 
+/**
+ * Resolve a heading's first rendered text-line top in the same content
+ * coordinate system as the absolutely-positioned handle.
+ *
+ * `EditorView.coordsAtPos` includes the browser's actual heading padding,
+ * font metrics and line-height. Keeping this measurement in the DOM/PM
+ * layout layer avoids duplicating the H1–H6 CSS values in TypeScript. Empty
+ * headings still have a valid position (`info.pos + 1`), while malformed or
+ * stale selections are handled by returning null and using the normal
+ * block-top fallback.
+ */
+export function headingContentY(
+  view: Editor['view'],
+  info: CurrentBlockInfo,
+  scrollContainerTop: number,
+  scrollTop: number,
+): number | null {
+  if (info.typeName !== 'heading') return null
+
+  try {
+    const textCoords = view.coordsAtPos(info.pos + 1)
+    const level = info.attrs.level
+    const nudge = typeof level === 'number' ? HEADING_HANDLE_NUDGE[level] ?? 0 : 0
+    return textCoords.top - scrollContainerTop + scrollTop + nudge
+  } catch {
+    // The view can be destroyed between selectionUpdate and the RAF callback.
+    return null
+  }
+}
+
 function getVisibleBlockElement(info: CurrentBlockInfo): HTMLElement | null {
+  if (info.typeName === 'image' || info.typeName === 'videoAttachment') return info.dom
+  if (info.typeName === 'agentThreadCard') return info.dom
+
   if (info.typeName === 'table') {
     if (info.dom.matches('table, .tableWrapper')) return info.dom
     const table = info.dom.querySelector('table')

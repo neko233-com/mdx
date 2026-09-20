@@ -11,6 +11,7 @@ interface BlockActionMenuProps {
   style: CSSProperties
   onHover: (index: number) => void
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
+  ariaLabel?: string
 }
 
 export function BlockActionMenu({
@@ -21,6 +22,7 @@ export function BlockActionMenu({
   style,
   onHover,
   onKeyDown,
+  ariaLabel = 'Block actions',
 }: BlockActionMenuProps) {
   const { scrollerRef, itemRefs } = useSelectedItemScroll({
     items: actions,
@@ -39,8 +41,10 @@ export function BlockActionMenu({
     <div
       ref={menuRef}
       role="menu"
-      aria-label="Block actions"
+      aria-label={ariaLabel}
       tabIndex={-1}
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
       onKeyDown={onKeyDown}
       className="fixed z-[150] rounded-xl border border-[var(--border-popup)] bg-[var(--card)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]"
       style={{ ...style, outline: 'none' }}
@@ -59,10 +63,7 @@ export function BlockActionMenu({
                 type="button"
                 role="menuitem"
                 onMouseMove={(event) => handleItemMouseMove(event, index)}
-                onMouseDown={(event) => {
-                  event.preventDefault()
-                  action.onSelect()
-                }}
+                onClick={action.onSelect}
                 className={`group relative flex h-7 min-h-7 w-full items-center justify-start gap-3 rounded-lg px-2 py-0 text-left text-sm text-[var(--foreground)] transition-colors${mouseHoverEnabled ? ' hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]' : ''}${index === selectedIndex ? ' bg-[var(--brand)] text-[var(--primary-foreground)]' : ''}`}
                 style={{ outline: 'none', boxShadow: 'none' }}
               >
@@ -73,6 +74,13 @@ export function BlockActionMenu({
                     chord={action.shortcut}
                     className={`shrink-0 ${index === selectedIndex ? 'text-[var(--primary-foreground)]' : 'text-[var(--muted-foreground)] group-hover:text-[var(--primary-foreground)]'}`}
                   />
+                )}
+                {action.trailingIcon && (
+                  <span
+                    className={`ml-auto shrink-0 ${index === selectedIndex ? 'text-[var(--primary-foreground)]' : 'text-[var(--brand)] group-hover:text-[var(--primary-foreground)]'}`}
+                  >
+                    {action.trailingIcon}
+                  </span>
                 )}
               </button>
             </Fragment>

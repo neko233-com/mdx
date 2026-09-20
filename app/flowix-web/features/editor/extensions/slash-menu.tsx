@@ -2,7 +2,7 @@ import { Extension, type Editor } from '@tiptap/core';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 import { createRoot, type Root } from 'react-dom/client';
-import { useMemoStore } from '@features/memo';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import { openNoteMention, invalidateMentionNotes } from '@features/editor/extensions/note-mention';
 import {
   SLASH_MENU_ITEMS,
@@ -569,10 +569,15 @@ function handleSelect(item: SlashMenuItem): void {
     return;
   }
 
-  // 块级切换 (引用 / 列表 / 分割线) ── 与 insertTable 同源: 先 deleteRange
+  // 块级切换 (标题 / 正文 / 引用 / 列表 / 分割线) ── 与 insertTable 同源: 先 deleteRange
   // 抹掉 "/query" 让光标停在空块首, 再 toggle/set 把当前空段落换成目标块。
   // 这样不会出现 "/引用" 这种残留字符, 也避免选中既有段落内容被误改。
   const blockToggleById: Partial<Record<SlashMenuItem['id'], () => void>> = {
+    'heading-1': () => editor.chain().focus().toggleHeading({ level: 1 }).run(),
+    'heading-2': () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
+    'heading-3': () => editor.chain().focus().toggleHeading({ level: 3 }).run(),
+    'heading-4': () => editor.chain().focus().toggleHeading({ level: 4 }).run(),
+    'paragraph': () => editor.chain().focus().setParagraph().run(),
     'blockquote': () => editor.chain().focus().toggleBlockquote().run(),
     'code-block': () => editor.chain().focus().toggleCodeBlock().run(),
     'bullet-list': () => editor.chain().focus().toggleBulletList().run(),

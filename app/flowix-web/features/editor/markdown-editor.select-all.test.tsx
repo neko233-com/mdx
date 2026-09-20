@@ -1,4 +1,4 @@
-import { act, createRef } from 'react';
+﻿import { act, createRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { Editor } from '@tiptap/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,6 +30,35 @@ function pressSelectAll(editor: Editor, modifier: 'command' | 'control' = 'comma
   }));
 }
 
+function pasteClipboard(editor: Editor, text: string, html = ''): ClipboardEvent {
+  const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      types: html ? ['text/plain', 'text/html'] : ['text/plain'],
+      files: [],
+      getData(type: string) {
+        if (type === 'text/plain') return text;
+        if (type === 'text/html') return html;
+        return '';
+      },
+    },
+  });
+  editor.view.dom.dispatchEvent(event);
+  return event;
+}
+
+function pressUndo(editor: Editor): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', {
+    key: 'z',
+    code: 'KeyZ',
+    metaKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  editor.view.dom.dispatchEvent(event);
+  return event;
+}
+
 describe('MarkdownEditor select all', () => {
   beforeEach(() => {
     reactActEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
@@ -42,11 +71,23 @@ describe('MarkdownEditor select all', () => {
     });
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
     vi.stubGlobal('ResizeObserver', ResizeObserverStub);
+    vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+    Object.defineProperties(Range.prototype, {
+      getClientRects: {
+        configurable: true,
+        value: () => [],
+      },
+      getBoundingClientRect: {
+        configurable: true,
+        value: () => ({ bottom: 0, height: 0, left: 0, right: 0, top: 0, width: 0 }),
+      },
+    });
   });
 
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     reactActEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
   });
@@ -69,6 +110,189 @@ describe('MarkdownEditor select all', () => {
     expect(title?.parentElement?.classList.contains('editor-content')).toBe(true);
     expect(editor!.view.dom.contains(title)).toBe(false);
     expect(editor!.getMarkdown()).toBe('Body paragraph');
+  });
+
+  it('focuses the first body paragraph when the blank editor surface is clicked', async () => {
+    let editor: Editor | null = null;
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={'---\nflowix_key: abc12345\n---\n&nbsp;'}
+            header={<textarea data-testid="memo-title" defaultValue="File title" />}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    const surface = container.querySelector<HTMLElement>('.editor-content');
+    expect(surface).not.toBeNull();
+
+    await act(async () => {
+      surface!.dispatchEvent(new MouseEvent('mousedown', {
+        button: 0,
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(editor!.view.hasFocus()).toBe(true);
+    expect(editor!.state.selection.empty).toBe(true);
+    expect(editor!.state.selection.$from.parent.type.name).toBe('paragraph');
+  });
+
+  it('does not show the paragraph placeholder at a selected block boundary', async () => {
+    let editor: Editor | null = null;
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content="Existing"
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      editor!.commands.setContent({
+        type: 'doc',
+        content: [
+          { type: 'paragraph' },
+          {
+            type: 'videoAttachment',
+            attrs: { src: 'https://example.com/video.mp4' },
+          },
+          { type: 'paragraph' },
+        ],
+      });
+      editor!.commands.setNodeSelection(2);
+    });
+
+    const paragraphs = editor!.view.dom.querySelectorAll('p');
+    expect(paragraphs[0]?.classList.contains('is-empty')).toBe(true);
+    expect(paragraphs[0]?.getAttribute('data-placeholder')).toBe('');
+
+    paragraphs[1]?.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    }));
+    expect(editor!.state.selection.empty).toBe(true);
+    expect(editor!.state.selection.$from.parent.type.name).toBe('paragraph');
+  });
+
+  it('drops paragraph alignment while preserving inline formatting across markdown reloads', async () => {
+    let editor: Editor | null = null;
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={'Existing'}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      editor!.commands.setContent(
+        '<p style="text-align: start">Normal <strong>bold</strong> text</p>',
+        { contentType: 'html' },
+      );
+    });
+
+    const markdown = editor!.getMarkdown();
+    expect(markdown).toBe('Normal **bold** text');
+    expect(markdown).not.toContain('<p');
+    expect(editor!.getHTML()).toBe('<p>Normal <strong>bold</strong> text</p>');
+
+    act(() => {
+      editor!.commands.setContent(markdown, { contentType: 'markdown' });
+    });
+
+    expect(editor!.getHTML()).toBe('<p>Normal <strong>bold</strong> text</p>');
+  });
+
+  it('reloads bold Chinese text when punctuation before the closing marker is followed without whitespace', async () => {
+    let editor: Editor | null = null;
+    const sourceHtml = '<p><strong>规则划定的是行为底线，公共文明则需要每个人主动守护。</strong>铁路部门不妨以此为契机。</p>';
+
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={'Existing'}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      editor!.commands.setContent(sourceHtml, { contentType: 'html' });
+    });
+
+
+    const markdown = editor!.getMarkdown();
+    expect(markdown).toBe(
+      '<strong>规则划定的是行为底线，公共文明则需要每个人主动守护。</strong>铁路部门不妨以此为契机。',
+    );
+
+    act(() => {
+      editor!.commands.setContent(markdown, { contentType: 'markdown' });
+    });
+
+    expect(editor!.getHTML()).toBe(sourceHtml);
+  });
+
+  it('reads legacy ambiguous bold markdown and migrates it to portable inline HTML on save', async () => {
+    let editor: Editor | null = null;
+    const legacyMarkdown = '**规则划定的是行为底线。**铁路部门';
+
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={legacyMarkdown}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    expect(editor!.getHTML()).toBe('<p><strong>规则划定的是行为底线。</strong>铁路部门</p>');
+    expect(editor!.getMarkdown()).toBe('<strong>规则划定的是行为底线。</strong>铁路部门');
+  });
+
+  it.each(['$', '©', '😀'])('uses portable HTML when bold text ends with the symbol %s', async (symbol) => {
+    let editor: Editor | null = null;
+    const sourceHtml = `<p><strong>文本${symbol}</strong>后续</p>`;
+
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={'Existing'}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      editor!.commands.setContent(sourceHtml, { contentType: 'html' });
+    });
+
+    const markdown = editor!.getMarkdown();
+    expect(markdown).toBe(`<strong>文本${symbol}</strong>后续`);
+
+    act(() => {
+      editor!.commands.setContent(markdown, { contentType: 'markdown' });
+    });
+
+    expect(editor!.getHTML()).toBe(sourceHtml);
   });
 
   it('keeps focus and selects the current editable document', async () => {
@@ -94,6 +318,62 @@ describe('MarkdownEditor select all', () => {
     expect(editor!.state.selection.from).toBe(0);
     expect(editor!.state.selection.to).toBe(editor!.state.doc.content.size);
 
+  });
+
+  it('undoes content pasted directly into the document with Command+Z', async () => {
+    let editor: Editor | null = null;
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content="Before"
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      editor!.commands.setTextSelection(editor!.state.doc.content.size - 1);
+      editor!.view.focus();
+      pasteClipboard(editor!, ' pasted');
+    });
+    expect(editor!.getMarkdown()).toBe('Before pasted');
+
+    act(() => {
+      const event = pressUndo(editor!);
+      expect(event.defaultPrevented).toBe(true);
+    });
+    expect(editor!.getMarkdown()).toBe('Before');
+  });
+
+  it.each([
+    ['markdown blocks', '\n\n## Pasted heading\n\nPasted body', ''],
+    ['rich HTML', 'Bold paste', '<p><strong>Bold paste</strong></p>'],
+  ])('undoes %s handled by managed paste rules with Command+Z', async (_label, text, html) => {
+    let editor: Editor | null = null;
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content="Before"
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      editor!.commands.setTextSelection(editor!.state.doc.content.size - 1);
+      editor!.view.focus();
+      pasteClipboard(editor!, text, html);
+    });
+    expect(editor!.getMarkdown()).not.toBe('Before');
+
+    act(() => {
+      pressUndo(editor!);
+    });
+    expect(editor!.getMarkdown()).toBe('Before');
   });
 
   it('normalizes multiple empty task placeholders without invalid positions', async () => {
@@ -210,7 +490,7 @@ describe('MarkdownEditor select all', () => {
         root.render(
           <ShortcutsProvider overrides={{}}>
             <MarkdownEditor
-              content={'---\nkey: buvbaqmc\n---\n# First\n\nSecond'}
+              content={'---\nflowix_key: buvbaqmc\n---\n# First\n\nSecond'}
               onBeforeCreate={(instance) => { editor = instance; }}
             />
           </ShortcutsProvider>,
@@ -238,7 +518,7 @@ describe('MarkdownEditor select all', () => {
         <ShortcutsProvider overrides={{}}>
           <MarkdownEditor
             ref={handle}
-            content={'---\nkey: abc12345\ntags: [work]\n---\nExisting body'}
+            content={'---\nflowix_key: abc12345\ntags: [work]\n---\nExisting body'}
             onBeforeCreate={(instance) => { editor = instance; }}
           />
         </ShortcutsProvider>,
@@ -260,7 +540,7 @@ describe('MarkdownEditor select all', () => {
         <ShortcutsProvider overrides={{}}>
           <MarkdownEditor
             ref={handle}
-            content={'---\nkey: abc12345\n---\nExisting body'}
+            content={'---\nflowix_key: abc12345\n---\nExisting body'}
             onBeforeCreate={(instance) => { editor = instance; }}
           />
         </ShortcutsProvider>,
@@ -278,7 +558,7 @@ describe('MarkdownEditor select all', () => {
       root.render(
         <ShortcutsProvider overrides={{}}>
           <MarkdownEditor
-            content={'---\nkey: abc12345\ntags: [work]\n---\nFirst line\n\nRemaining'}
+            content={'---\nflowix_key: abc12345\ntags: [work]\n---\nFirst line\n\nRemaining'}
             onBeforeCreate={(instance) => { editor = instance; }}
           />
         </ShortcutsProvider>,
@@ -306,7 +586,49 @@ describe('MarkdownEditor select all', () => {
       root.render(
         <ShortcutsProvider overrides={{}}>
           <MarkdownEditor
-            content={'---\nkey: abc12345\n---\nFirst line'}
+            content={'---\nflowix_key: abc12345\n---\nFirst line'}
+            onFocusTitle={onFocusTitle}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    const frontmatter = editor!.state.doc.firstChild!;
+    act(() => {
+      editor!.commands.setTextSelection(frontmatter.nodeSize + 1);
+      editor!.view.dom.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'ArrowUp',
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(onFocusTitle).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the latest editable state for body-to-title navigation', async () => {
+    let editor: Editor | null = null;
+    const onFocusTitle = vi.fn();
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={'---\nflowix_key: abc12345\n---\nFirst line'}
+            editable={false}
+            onFocusTitle={onFocusTitle}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={'---\nflowix_key: abc12345\n---\nFirst line'}
+            editable
             onFocusTitle={onFocusTitle}
             onBeforeCreate={(instance) => { editor = instance; }}
           />
@@ -334,7 +656,7 @@ describe('MarkdownEditor select all', () => {
       root.render(
         <ShortcutsProvider overrides={{}}>
           <MarkdownEditor
-            content={'---\nkey: abc12345\ntags: [work]\n---\nFirst line\n\nRemaining'}
+            content={'---\nflowix_key: abc12345\ntags: [work]\n---\nFirst line\n\nRemaining'}
             onAppendToTitle={onAppendToTitle}
             onBeforeCreate={(instance) => { editor = instance; }}
           />
@@ -364,7 +686,7 @@ describe('MarkdownEditor select all', () => {
       root.render(
         <ShortcutsProvider overrides={{}}>
           <MarkdownEditor
-            content={'---\nkey: abc12345\ntags: [work]\n---\n&nbsp;\n\nRemaining'}
+            content={'---\nflowix_key: abc12345\ntags: [work]\n---\n&nbsp;\n\nRemaining'}
             onFocusTitle={onFocusTitle}
             onBeforeCreate={(instance) => { editor = instance; }}
           />

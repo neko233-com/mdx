@@ -2,18 +2,22 @@ import { WorkFileBrowserView } from './work-file-browser-view';
 'use client';
 
 import {
-  lazy,
-  Suspense,
   type ComponentType,
   type ReactNode,
 } from 'react';
 import { DocumentContainer } from '@features/document/components/document-container';
+import { MediaResourceView } from './media-resource-view';
 import { LazyAgentConversationDetail } from '@features/agent/components/lazy-agent-conversation-detail';
-import { useI18n } from '@/lib/i18n';
+import {
+  LazyPluginDocumentView,
+  LazyPluginWorkbench,
+} from '@features/plugin/public/surface-api';
+import { SurfaceSuspenseHost } from '@shared/ui/surface-suspense-host';
 import { WorkspaceEmptyState } from '@shared/ui/workspace-empty-state';
 import type {
   AgentConversationSurface,
   MarkdownSurface,
+  MediaResourceSurface,
   PluginArtifactSurfaceBase,
   PluginWorkbenchSurface,
   WorkColumnContentPresentation,
@@ -25,26 +29,6 @@ import type {
 } from './types';
 
 type SurfaceOfKind<K extends WorkColumnSurfaceKind> = Extract<WorkColumnSurface, { kind: K }>;
-
-const PluginDocumentView = lazy(() =>
-  import('@features/plugin/plugin-document-view').then((module) => ({
-    default: module.PluginDocumentView,
-  })),
-);
-const PluginWorkbench = lazy(() =>
-  import('@features/plugin/plugin-workbench').then((module) => ({
-    default: module.PluginWorkbench,
-  })),
-);
-
-function SurfaceLoadingFallback() {
-  const { t } = useI18n();
-  return (
-    <div className="flex h-full items-center justify-center text-sm text-[var(--muted-foreground)]">
-      {t('memo.navigation.loading')}
-    </div>
-  );
-}
 
 export interface WorkColumnSurfaceDefinition {
   chrome: WorkColumnSurfaceChrome;
@@ -80,28 +64,24 @@ function MarkdownSurfaceView({ surface }: { surface: MarkdownSurface }) {
   return surface.props.isExternalDocument ? <WorkFileBrowserView props={surface.props} /> : <DocumentContainer {...surface.props} />;
 }
 
+function MediaResourceSurfaceView({ surface }: { surface: MediaResourceSurface }) {
+  return <MediaResourceView
+    filePath={surface.filePath}
+    notebookPath={surface.notebookPath}
+    resourceKind={surface.resourceKind}
+  />;
+}
+
 function PluginArtifactSurfaceView({ surface }: { surface: PluginArtifactSurfaceBase }) {
-  return (
-    <Suspense fallback={<SurfaceLoadingFallback />}>
-      <PluginDocumentView {...surface.props} />
-    </Suspense>
-  );
+  return <LazyPluginDocumentView {...surface.props} />;
 }
 
 function AgentConversationSurfaceView({ surface }: { surface: AgentConversationSurface }) {
-  return (
-    <Suspense fallback={<SurfaceLoadingFallback />}>
-      <LazyAgentConversationDetail instanceId={surface.instanceId} />
-    </Suspense>
-  );
+  return <LazyAgentConversationDetail instanceId={surface.instanceId} />;
 }
 
 function PluginWorkbenchSurfaceView({ surface }: { surface: PluginWorkbenchSurface }) {
-  return (
-    <Suspense fallback={<SurfaceLoadingFallback />}>
-      <PluginWorkbench {...surface.props} />
-    </Suspense>
-  );
+  return <LazyPluginWorkbench {...surface.props} />;
 }
 
 function WebSurfaceView({ surface }: { surface: WebSurface }) {
@@ -127,6 +107,11 @@ export const workColumnSurfaceRegistry = Object.freeze({
       'version-history',
     ],
     component: MarkdownSurfaceView,
+  }),
+  media: defineSurface('media', {
+    chrome: 'media',
+    capabilities: ['properties', 'fullscreen'],
+    component: MediaResourceSurfaceView,
   }),
   mindmap: defineSurface('mindmap', {
     chrome: 'document',
@@ -187,11 +172,15 @@ function WorkColumnSurfaceMount({ surface }: { surface: WorkColumnSurface }) {
 }
 
 export function WorkColumnSurfaceHost({ surface }: { surface: WorkColumnSurface }) {
+  const instanceKey = `${surface.kind}:${surface.instanceKey}`;
+  const definition = getWorkColumnSurfaceDefinition(surface);
   return (
-    <WorkColumnSurfaceMount
-      key={`${surface.kind}:${surface.instanceKey}`}
-      surface={surface}
-    />
+    <SurfaceSuspenseHost
+      instanceKey={instanceKey}
+      loadingTone={definition.chrome}
+    >
+      <WorkColumnSurfaceMount surface={surface} />
+    </SurfaceSuspenseHost>
   );
 }
 

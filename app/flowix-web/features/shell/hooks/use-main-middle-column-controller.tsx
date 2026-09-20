@@ -7,7 +7,10 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useMemoListHoverPreview } from '@features/memo/public/shell-api';
+import {
+  useMemoListHoverPreview,
+  type NoteNavigationDrawerPhase,
+} from '@features/memo/public/shell-api';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('main-middle-column-controller');
@@ -49,15 +52,19 @@ export interface MainMiddleColumnController {
   handleMemoListPreviewTriggerLeave(): void;
   handleMemoListPreviewEnter(): void;
   handleMemoListPreviewLeave(): void;
+  handleMemoListPreviewCompanionEnter(): void;
+  handleMemoListPreviewCompanionLeave(): void;
   agentConversationListNode: ReactNode;
 }
 
 export function useMainMiddleColumnController({
   isAgentConversationView,
   isMemoListHidden,
+  noteNavigationPhase,
 }: {
   isAgentConversationView: boolean;
   isMemoListHidden: boolean;
+  noteNavigationPhase: NoteNavigationDrawerPhase;
 }): MainMiddleColumnController {
   const [agentConversationListMounted, setAgentConversationListMounted] = useState(
     () => isAgentConversationView,
@@ -80,7 +87,7 @@ export function useMainMiddleColumnController({
     return () => window.clearTimeout(timer);
   }, []);
 
-  const preview = useMemoListHoverPreview(isMemoListHidden);
+  const preview = useMemoListHoverPreview(isMemoListHidden, noteNavigationPhase);
   const memoListPreviewVisible = isMemoListHidden && preview.phase !== 'closed';
   // The conversation list remains mounted to preserve its paged snapshot, but
   // its transient portal-backed menus must be closed whenever neither the
@@ -103,6 +110,8 @@ export function useMainMiddleColumnController({
     handleMemoListPreviewTriggerLeave: preview.handleTriggerLeave,
     handleMemoListPreviewEnter: preview.handlePreviewEnter,
     handleMemoListPreviewLeave: preview.handlePreviewLeave,
+    handleMemoListPreviewCompanionEnter: preview.handleCompanionSurfaceEnter,
+    handleMemoListPreviewCompanionLeave: preview.handleCompanionSurfaceLeave,
     agentConversationListNode: (
       <Suspense fallback={null}>
         <AgentConversationListReadySignal

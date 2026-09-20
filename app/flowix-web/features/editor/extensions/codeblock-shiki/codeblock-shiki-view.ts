@@ -4,8 +4,11 @@ import svgPanZoom from 'svg-pan-zoom'
 import { translate, type I18nKey } from '@/lib/i18n'
 import { getCurrentAppLanguage } from '@features/preferences/public/runtime-api'
 import { CodeBlockClipboardController } from './clipboard-controller'
+import { registerCodeBlockThemeHandler } from './theme-coordinator'
+import { detectCodeLanguage } from './language-detection'
 import { setLanguageButtonContent } from './language-button'
 import { SHIKI_LANGUAGE_LABEL_BY_ID, SHIKI_LANGUAGE_OPTIONS } from './shiki/shiki-languages'
+import { getShiki } from './shiki/shiki-highlighter'
 
 // svg-pan-zoom 实例类型 ── 库本身没有导出类型, 用 ReturnType 推断。
 // 用在 fullscreen overlay 内 ── 用户的 mermaid 流程图常因节点多而显示
@@ -26,10 +29,11 @@ const MERMAID_LANGUAGE = 'mermaid'
 //
 // 因此 id → label 解析时, 'plaintext' 必须走专门分支, 不能依赖
 // bundled.find() ── 后者会 miss, 退回 id 自身, button 上就
-// 永远停在 'plaintext' (小写)。空 attr 同理 ── dropdown "Plain Text"
+// 永远停在 'plaintext' (小写)。空 attr 同理 ── dropdown "Text"
 // 项设置的就是空值, 也走这条分支, 跟 'plaintext' 渲染统一。
 const PLAIN_TEXT_ID = 'plaintext'
-const PLAIN_TEXT_LABEL = 'Plain Text'
+const PLAIN_TEXT_LABEL = 'Text'
+const AUTO_LANGUAGE_ID = 'auto'
 
 const MERMAID_PREVIEW_ICON = `<svg class="code-block-mode-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <path d="M2 3h20"></path>
@@ -83,6 +87,7 @@ class CodeBlockShikiView implements NodeView {
   getPosFn: () => number | null | undefined
   private isDropdownOpen: boolean = false
   private boundOutsideClickHandler: ((e: Event) => void) | null = null
+  private boundRepositionDropdown: (() => void) | null = null
 
   private header: HTMLElement | null = null
   private languageBtn: HTMLButtonElement | null = null
@@ -108,7 +113,8 @@ class CodeBlockShikiView implements NodeView {
   private currentLanguageId: string = ''
   private renderVersion = 0
   private lastRenderedSource: string | null = null
-  private boundThemeChangeHandler: ((e: Event) => void) | null = null
+  private unregisterThemeHandler: (() => void) | null = null
+  private initializeClipboard: ((event: MouseEvent) => void) | null = null
   private boundSyncFullscreenBounds: (() => void) | null = null
   private boundHandleFullscreenKeydown: ((event: KeyboardEvent) => void) | null = null
   private isFullscreen = false
@@ -195,20 +201,18 @@ class CodeBlockShikiView implements NodeView {
     this.copyBtn.type = 'button'
     this.copyBtn.tabIndex = -1
     this.copyBtn.title = 'Copy code'
-    this.clipboardController = new CodeBlockClipboardController(
-      this.copyBtn,
-      () => this.node.textContent,
-    )
-
-    // Mermaid preview/code tabs
-    this.modeTabs = document.createElement('div')
-    this.modeTabs.classList.add('code-block-mode-tabs')
-    this.modeTabs.setAttribute('role', 'tablist')
-    this.modeTabs.setAttribute('aria-label', 'Mermaid view mode')
-
-    this.previewTabBtn = this.createModeTab('preview', t('editor.codeblock.previewTab'), MERMAID_PREVIEW_ICON)
-    this.codeTabBtn = this.createModeTab('code', 'Code', MERMAID_CODE_ICON)
-    this.modeTabs.append(this.previewTabBtn, this.codeTabBtn)
+    CodeBlockClipboardController.setIdleIcon(this.copyBtn)
+    this.initializeClipboard = (event) => {
+      if (!this.copyBtn) return
+      this.copyBtn.removeEventListener('click', this.initializeClipboard!)
+      this.initializeClipboard = null
+      this.clipboardController = new CodeBlockClipboardController(
+        this.copyBtn,
+        () => this.node.textContent,
+      )
+      this.clipboardController.handleClick(event)
+    }
+    this.copyBtn.addEventListener('click', this.initializeClipboard)
 
     this.actions = document.createElement('div')
     this.actions.classList.add('code-block-actions')
@@ -224,21 +228,7 @@ class CodeBlockShikiView implements NodeView {
     // modeTabs 自己的 preview/code 切换一致, 都是对当前 mermaid
     // 视图的进一步操作。如果放右侧, copy 按钮会被全屏按钮 / modeTabs
     // 隔开, 失去"复制"作为"对代码块本身操作"的视觉归类。
-    this.fullscreenButton = document.createElement('button')
-    this.fullscreenButton.type = 'button'
-    this.fullscreenButton.tabIndex = -1
-    this.fullscreenButton.classList.add('code-block-fullscreen-btn')
-    this.fullscreenButton.setAttribute('aria-label', t('editor.codeblock.fullscreen'))
-    this.fullscreenButton.hidden = true
-    this.fullscreenButton.innerHTML = FULLSCREEN_ENTER_ICON
-    this.fullscreenButton.addEventListener('click', (event) => {
-      event.stopPropagation()
-      this.toggleFullscreen()
-    })
-
     this.actions.appendChild(this.copyBtn)
-    this.actions.appendChild(this.fullscreenButton)
-    this.actions.appendChild(this.modeTabs)
 
     this.header.appendChild(this.languageBtn)
     this.header.appendChild(this.actions)
@@ -254,26 +244,69 @@ class CodeBlockShikiView implements NodeView {
     this.dom.appendChild(this.codePre)
     this.dom.appendChild(this.header)
 
-    this.dropdown = this.createLanguageDropdownShell()
-    // 下拉面板整体也设 contenteditable=false ── dropdown 不在 header 内
-    // (它在 dom 内, 与 header / codePre 平级), 单独标记避免选区渗
-    // 进 search input / 列表项。
-    this.dropdown.contentEditable = 'false'
-    this.dom.appendChild(this.dropdown)
-
-    // Mermaid preview surface
-    // 同时挂 .code-block-mermaid-preview (容器几何: padding / border-radius /
-    // min-height / 显示态切换) 和 .mermaid-surface (SVG 内部样式: 字号 /
-    // 对齐 / 主题 ── 统一在 editor-mermaid.css 管理)。
-    // 双类分层: 改 mermaid 视觉 → 改 editor-mermaid.css; 改容器几何 →
-    // 改 editor-code-block.css ── 两层关注点解耦, 不会互相污染。
-    this.previewDOM = document.createElement('div')
-    this.previewDOM.classList.add('code-block-mermaid-preview', 'mermaid-surface')
-    this.previewDOM.contentEditable = 'false'
-    this.dom.appendChild(this.previewDOM)
-
     this.updateLanguageAttribute()
+    this.syncShikiTheme()
     this.syncMermaidView()
+  }
+
+  private ensureMermaidControls(): void {
+    if (!this.actions) return
+
+    if (!this.fullscreenButton) {
+      this.fullscreenButton = document.createElement('button')
+      this.fullscreenButton.type = 'button'
+      this.fullscreenButton.tabIndex = -1
+      this.fullscreenButton.classList.add('code-block-fullscreen-btn')
+      this.fullscreenButton.setAttribute('aria-label', t('editor.codeblock.fullscreen'))
+      this.fullscreenButton.hidden = true
+      this.fullscreenButton.innerHTML = FULLSCREEN_ENTER_ICON
+      this.fullscreenButton.addEventListener('click', (event) => {
+        event.stopPropagation()
+        this.toggleFullscreen()
+      })
+      this.actions.appendChild(this.fullscreenButton)
+    }
+
+    if (!this.modeTabs) {
+      this.modeTabs = document.createElement('div')
+      this.modeTabs.classList.add('code-block-mode-tabs')
+      this.modeTabs.setAttribute('role', 'tablist')
+      this.modeTabs.setAttribute('aria-label', 'Mermaid view mode')
+
+      this.previewTabBtn = this.createModeTab('preview', t('editor.codeblock.previewTab'), MERMAID_PREVIEW_ICON)
+      this.codeTabBtn = this.createModeTab('code', 'Code', MERMAID_CODE_ICON)
+      this.previewTabBtn.addEventListener('click', (event) => {
+        event.stopPropagation()
+        this.setViewMode('preview')
+      })
+      this.codeTabBtn.addEventListener('click', (event) => {
+        event.stopPropagation()
+        this.setViewMode('code')
+      })
+      this.modeTabs.append(this.previewTabBtn, this.codeTabBtn)
+      this.actions.appendChild(this.modeTabs)
+    }
+
+    if (!this.previewDOM) {
+      this.previewDOM = document.createElement('div')
+      this.previewDOM.classList.add('code-block-mermaid-preview', 'mermaid-surface')
+      this.previewDOM.contentEditable = 'false'
+      this.dom.appendChild(this.previewDOM)
+    }
+  }
+
+  private syncShikiTheme(): void {
+    const highlighter = getShiki()
+    if (!highlighter) return
+
+    const cssTheme = getComputedStyle(document.documentElement)
+      .getPropertyValue('--shiki-theme')
+      .trim()
+    const themeName = cssTheme || this.node.attrs.theme || 'github-light'
+    if (!highlighter.getLoadedThemes().includes(themeName)) return
+
+    const theme = highlighter.getTheme(themeName)
+    this.dom.style.setProperty('--code-block-shiki-fg', theme.fg)
   }
 
   private createLanguageDropdownShell(): HTMLElement {
@@ -287,7 +320,7 @@ class CodeBlockShikiView implements NodeView {
     const input = document.createElement('input')
     input.classList.add('code-block-language-search')
     input.type = 'search'
-    input.placeholder = 'Search language'
+    input.placeholder = t('editor.codeblock.searchLanguage')
     input.autocomplete = 'off'
     input.spellcheck = false
     input.addEventListener('input', () => this.filterLanguageDropdown(input.value))
@@ -313,7 +346,15 @@ class CodeBlockShikiView implements NodeView {
       // 把构造时的 label 一并塞进去 ── updateLanguage 拿到同步 label
       // 就直接写 button, 跳过 applyLanguageDisplay 的 microtask,
       // 避免用户点完看到 "typescript" 闪一下再变 "TypeScript"。
-      this.updateLanguage(value, label)
+      const language = value === AUTO_LANGUAGE_ID
+        ? detectCodeLanguage(this.node.textContent)
+        : value
+      const displayLabel = value === AUTO_LANGUAGE_ID
+        ? language === PLAIN_TEXT_ID
+          ? PLAIN_TEXT_LABEL
+          : t('editor.codeblock.auto')
+        : label
+      this.updateLanguage(language, displayLabel)
       this.closeDropdown()
     })
     return item
@@ -369,12 +410,15 @@ class CodeBlockShikiView implements NodeView {
     this.dropdownSearchInput = search
     this.dropdownList = list
 
+    // Auto first ── 选择后按当前代码内容检测具体语言, 并将检测结果
+    // 写回节点属性, 让 Shiki 使用对应 grammar 重新高亮。
+    list.appendChild(this.createLanguageDropdownItem(t('editor.codeblock.auto'), AUTO_LANGUAGE_ID))
+
     // Plain text option ── dropdown 选项文案跟 button 状态描述
     // 对齐: 空 attr 在两条路径 (sync click / 初始化) 都显示
-    // "Plain Text", 用户视角一个按钮一种文案。不用 "Auto Detect"
-    // 是因为 shiki 并没有自动检测能力, 选它只是清空 attr, "Plain Text"
-    // 更准确反映 shiki "无高亮" 的语义。
-    list.appendChild(this.createLanguageDropdownItem('Plain Text', ''))
+    // "Text", 用户视角一个按钮一种文案。"Auto Detect" 表示由
+    // NodeView 根据当前代码内容执行语言检测, Text 仍只表示 "无高亮"。
+    list.appendChild(this.createLanguageDropdownItem('Text', ''))
 
     // Language options ── 硬编码精选列表 (细粒度 bundle, 不读 shiki
     // 全量 bundledLanguagesInfo, 未列出的冷门语言不会出现在 dropdown)。
@@ -395,10 +439,71 @@ class CodeBlockShikiView implements NodeView {
   private ensureDropdown(): HTMLElement {
     if (!this.dropdown) {
       this.dropdown = this.createLanguageDropdownShell()
-      this.dom.insertBefore(this.dropdown, this.codePre)
+      this.dropdown.contentEditable = 'false'
+      document.body.appendChild(this.dropdown)
     }
 
     return this.dropdown
+  }
+
+  private updateDropdownPosition(): void {
+    if (!this.languageBtn || !this.dropdown || !this.isDropdownOpen) return
+
+    const triggerRect = this.languageBtn.getBoundingClientRect()
+    const viewportPadding = 8
+    const menuGap = 6
+    const menuWidth = Math.min(
+      Math.max(this.dropdown.offsetWidth, 220),
+      Math.max(0, window.innerWidth - viewportPadding * 2),
+    )
+    const naturalHeight = Math.min(this.dropdown.offsetHeight || 248, 248)
+    const spaceBelow = window.innerHeight - triggerRect.bottom - viewportPadding
+    const spaceAbove = triggerRect.top - viewportPadding
+    const placeAbove = spaceBelow < naturalHeight + menuGap && spaceAbove > spaceBelow
+    const availableHeight = Math.max(
+      0,
+      (placeAbove ? spaceAbove : spaceBelow) - menuGap,
+    )
+    const maxHeight = Math.min(248, availableHeight)
+
+    this.dropdown.style.maxHeight = `${maxHeight}px`
+
+    const top = placeAbove
+      ? Math.max(viewportPadding, triggerRect.top - maxHeight - menuGap)
+      : Math.min(
+        triggerRect.bottom + menuGap,
+        Math.max(viewportPadding, window.innerHeight - maxHeight - viewportPadding),
+      )
+    const left = Math.min(
+      Math.max(triggerRect.left, viewportPadding),
+      Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding),
+    )
+
+    this.dropdown.style.top = `${top}px`
+    this.dropdown.style.left = `${left}px`
+  }
+
+  private attachDropdownViewportListeners(): void {
+    if (this.boundRepositionDropdown) return
+
+    const reposition = () => {
+      if (this.isDropdownOpen) this.updateDropdownPosition()
+    }
+    this.boundRepositionDropdown = reposition
+    window.addEventListener('resize', reposition)
+    window.addEventListener('scroll', reposition, true)
+    window.visualViewport?.addEventListener('resize', reposition)
+    window.visualViewport?.addEventListener('scroll', reposition)
+  }
+
+  private detachDropdownViewportListeners(): void {
+    if (!this.boundRepositionDropdown) return
+
+    window.removeEventListener('resize', this.boundRepositionDropdown)
+    window.removeEventListener('scroll', this.boundRepositionDropdown, true)
+    window.visualViewport?.removeEventListener('resize', this.boundRepositionDropdown)
+    window.visualViewport?.removeEventListener('scroll', this.boundRepositionDropdown)
+    this.boundRepositionDropdown = null
   }
 
   private toggleDropdown() {
@@ -412,16 +517,23 @@ class CodeBlockShikiView implements NodeView {
       this.isDropdownOpen = true
       this.attachOutsideClickHandler()
       this.populateLanguageDropdown(dropdown)
-      requestAnimationFrame(() => this.dropdownSearchInput?.focus())
+      this.attachDropdownViewportListeners()
+      this.updateDropdownPosition()
+      requestAnimationFrame(() => {
+        if (!this.isDropdownOpen) return
+        this.updateDropdownPosition()
+        this.dropdownSearchInput?.focus()
+      })
     }
   }
 
   private closeDropdown() {
     if (this.dropdown) {
       this.dropdown.style.display = 'none'
-      this.isDropdownOpen = false
     }
+    this.isDropdownOpen = false
     this.detachOutsideClickHandler()
+    this.detachDropdownViewportListeners()
   }
 
   private attachOutsideClickHandler() {
@@ -483,9 +595,9 @@ class CodeBlockShikiView implements NodeView {
   // 统一入口: 初始化 / 外部 update / fallback 路径都走这里。dropdown
   // click 路径直接传 label 绕过, 避免 microtask 闪一下。
   //
-  // 空 id (用户选了 dropdown 里的 "Plain Text" 项, 或 attr 初始为
-  // 空) 走 "Plain Text" 显示 ── dropdown 项跟 button 状态描述文案
-  // 对齐: 同一份数据两种视图都用 "Plain Text", 不再区分动作/状态
+  // 空 id (用户选了 dropdown 里的 "Text" 项, 或 attr 初始为
+  // 空) 走 "Text" 显示 ── dropdown 项跟 button 状态描述文案
+  // 对齐: 同一份数据两种视图都用 "Text", 不再区分动作/状态
   // 语义, 用户视角一个空 attr 只对应一个 label。
   private applyLanguageDisplay(): void {
     if (!this.languageBtn) return
@@ -497,7 +609,7 @@ class CodeBlockShikiView implements NodeView {
     if (!id || id === PLAIN_TEXT_ID) {
       // 专门处理 'plaintext' sentinel ── 它不是真实语言, 只是无高亮
       // 占位, 精选列表 lookup 必然 miss, 会让 button 停在 'plaintext'
-      // 小写态。空 attr 同理: dropdown "Plain Text" 项设的就是空值,
+      // 小写态。空 attr 同理: dropdown "Text" 项设的就是空值,
       // 两条路径统一走 label。
       displayLabel = PLAIN_TEXT_LABEL
     } else {
@@ -548,6 +660,12 @@ class CodeBlockShikiView implements NodeView {
 
   private syncMermaidView() {
     const isMermaid = this.isMermaidBlock()
+
+    if (isMermaid) {
+      this.ensureMermaidControls()
+    } else if (this.isFullscreen) {
+      this.setFullscreen(false)
+    }
 
     this.dom.classList.toggle('code-block-is-mermaid', isMermaid)
     this.dom.classList.toggle('code-block-mermaid-previewing', isMermaid && this.viewMode === 'preview')
@@ -620,23 +738,13 @@ class CodeBlockShikiView implements NodeView {
       this.toggleDropdown()
     })
 
-    this.previewTabBtn?.addEventListener('click', (e) => {
-      e.stopPropagation()
-      this.setViewMode('preview')
-    })
-
-    this.codeTabBtn?.addEventListener('click', (e) => {
-      e.stopPropagation()
-      this.setViewMode('code')
-    })
-
-    this.boundThemeChangeHandler = () => {
+    this.unregisterThemeHandler = registerCodeBlockThemeHandler(this.view, () => {
+      this.syncShikiTheme()
       this.lastRenderedSource = null
       if (this.isMermaidBlock() && this.viewMode === 'preview') {
         void this.renderMermaidPreview()
       }
-    }
-    window.addEventListener('app-theme-changed', this.boundThemeChangeHandler)
+    })
   }
 
   // ── 全屏模式 ──
@@ -1039,6 +1147,7 @@ private unmountFullscreenOverlay(): void {
     if (node.type !== this.node.type) return false
 
     this.node = node
+    this.syncShikiTheme()
 
     // Update language button if changed externally
     const newId = node.attrs.language || ''
@@ -1065,10 +1174,14 @@ private unmountFullscreenOverlay(): void {
 
   destroy() {
     this.setFullscreen(false)
-    this.detachOutsideClickHandler()
-    if (this.boundThemeChangeHandler) {
-      window.removeEventListener('app-theme-changed', this.boundThemeChangeHandler)
-      this.boundThemeChangeHandler = null
+    this.closeDropdown()
+    this.dropdown?.remove()
+    this.dropdown = null
+    this.unregisterThemeHandler?.()
+    this.unregisterThemeHandler = null
+    if (this.copyBtn && this.initializeClipboard) {
+      this.copyBtn.removeEventListener('click', this.initializeClipboard)
+      this.initializeClipboard = null
     }
     this.clipboardController?.destroy()
     this.clipboardController = null

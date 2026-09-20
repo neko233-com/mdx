@@ -7,6 +7,7 @@ import {
   useDocumentHistoryStore,
   type ArtifactHistoryEntry,
   type DocumentHistoryEntry,
+  type MediaHistoryEntry,
 } from '@features/document/store/document-history-store';
 import { flushDocumentPath } from '@features/document/store/document-session-service';
 
@@ -51,6 +52,7 @@ export async function flushWorkspaceDocumentPath(
 export type {
   ArtifactHistoryEntry,
   DocumentHistoryEntry,
+  MediaHistoryEntry,
   ExternalDocumentSession,
   MemoDocumentSession,
 };

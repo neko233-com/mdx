@@ -6,8 +6,28 @@ type DocumentEditorProps = ComponentProps<
   typeof import('@features/editor/markdown-editor').MarkdownEditor
 >;
 
+type MarkdownEditorModule = typeof import('@features/editor/markdown-editor');
+
+let markdownEditorModulePromise: Promise<MarkdownEditorModule> | null = null;
+
+function loadMarkdownEditor(): Promise<MarkdownEditorModule> {
+  if (!markdownEditorModulePromise) {
+    markdownEditorModulePromise = import('@features/editor/markdown-editor').catch((error) => {
+      markdownEditorModulePromise = null;
+      throw error;
+    });
+  }
+  return markdownEditorModulePromise;
+}
+
+export function preloadDocumentEditor(): void {
+  void loadMarkdownEditor().catch(() => {
+    // The lazy boundary will retry the import when the editor is rendered.
+  });
+}
+
 const LazyMarkdownEditor = lazy(() =>
-  import('@features/editor/markdown-editor').then((module) => ({
+  loadMarkdownEditor().then((module) => ({
     default: module.MarkdownEditor,
   }))
 );

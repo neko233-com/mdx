@@ -10,6 +10,15 @@ function surface(kind: WorkColumnSurfaceKind): WorkColumnSurface {
   switch (kind) {
     case 'markdown':
       return { kind, instanceKey: 'markdown:1', props: { filePath: '/note.md' } };
+    case 'media':
+      return {
+        kind,
+        instanceKey: 'media:1',
+        filePath: '/notebook/image.png',
+        notebookId: 'notebook-1',
+        notebookPath: '/notebook',
+        resourceKind: 'image',
+      };
     case 'mindmap':
       return {
         kind,
@@ -61,6 +70,7 @@ describe('workColumnSurfaceRegistry', () => {
       'html',
       'json',
       'markdown',
+      'media',
       'mindmap',
       'plugin-artifact',
       'plugin-workbench',
@@ -90,6 +100,14 @@ describe('workColumnSurfaceRegistry', () => {
     expect(surfaceSupports(mindmap, 'edit')).toBe(false);
     expect(surfaceSupports(mindmap, 'export-content')).toBe(false);
     expect(surfaceSupports(surface('html'), 'fullscreen')).toBe(true);
+  });
+
+  it('uses media chrome for media resources', () => {
+    const media = surface('media');
+
+    expect(getWorkColumnSurfaceDefinition(media).chrome).toBe('media');
+    expect(surfaceSupports(media, 'properties')).toBe(true);
+    expect(surfaceSupports(media, 'edit')).toBe(false);
   });
 
   it('uses agent chrome and conversation-specific capabilities for agents', () => {

@@ -290,7 +290,7 @@ export const WebCard = TiptapNode.create({
           void submit();
           return;
         }
-        if (attrs.url) setActive(false);
+        setActive(false);
       });
 
       dom.addEventListener('mousedown', (event) => {

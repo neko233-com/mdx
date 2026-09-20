@@ -7,9 +7,9 @@
       `flowix://memo/<id>` 链接路由到 Flowix (launchd / LaunchServices 机制)
     - 老的 `markdown` 角色跟 .md fileAssociations 走, 不需要再声明
 
-  dev (`tauri dev`) 不读这个 plist (Tauri 走 binary plist at runtime)。 打包
-  后由 `tauri-build` 合并进 app bundle。 跟 `app/flowix-desktop/tauri.conf.json` 里的
-  `bundle.macOS.infoPlist` 路径对应。
+  dev (`tauri dev`) 不会把它作为 app bundle plist 读取；`build.rs` 会把其中的
+  本地化字段嵌入调试二进制。打包后由 `tauri-build` 合并进 app bundle。跟
+  `app/flowix-desktop/tauri.conf.json` 里的 `bundle.macOS.infoPlist` 路径对应。
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -31,5 +31,16 @@
 	<string>Flowix</string>
 	<key>CFBundleName</key>
 	<string>Flowix</string>
+	<!-- Keep AppKit/WKWebView system menu strings aligned with macOS's
+	     preferred language. Tauri's generated plist otherwise defaults the
+	     bundle development region to English, which makes the native editor
+	     context menu appear in English even on a Chinese macOS system. -->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>zh-Hans</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>zh-Hans</string>
+		<string>en</string>
+	</array>
 </dict>
 </plist>

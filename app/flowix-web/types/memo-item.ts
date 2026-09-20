@@ -6,6 +6,11 @@
 
 export type MemoColor = 'red' | 'orange' | 'yellow' | 'green' | 'cyan' | 'blue' | 'gray';
 
+/** Canonical order and membership for every Flowix document color picker. */
+export const MEMO_COLORS: readonly MemoColor[] = [
+  'red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'gray',
+] as const;
+
 export interface AgentThreadItem {
   threadId: string;
   title: string;

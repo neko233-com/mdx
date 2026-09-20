@@ -3,16 +3,75 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { files, type DocTreeItem } from '@platform/tauri/client';
-import { canonicalPath } from '@/lib/path';
+import { canonicalDirectoryPath, canonicalPath } from '@/lib/path';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('folder-tree');
 const REFRESH_DEDUP_WINDOW_MS = 350;
 
-function canonicalDirectoryPath(path: string): string {
-  const canonical = canonicalPath(path);
-  const trimmed = canonical.replace(/\/+$/, '');
-  return trimmed || (canonical.startsWith('/') ? '/' : canonical);
+function deleteCachedSubtree(nodes: Map<string, DocTreeItem>, path: string): void {
+  const key = canonicalPath(path);
+  const node = nodes.get(key);
+  if (node?.type === 'folder') {
+    for (const child of node.children ?? []) {
+      deleteCachedSubtree(nodes, child.fullPath);
+    }
+  }
+  nodes.delete(key);
+}
+
+function reconcileDirectoryChildren(
+  previous: Map<string, DocTreeItem>,
+  parentKey: string,
+  children: DocTreeItem[],
+): Map<string, DocTreeItem> {
+  const next = new Map(previous);
+  const parent = previous.get(parentKey);
+  const nextChildKeys = new Set(children.map((child) => canonicalPath(child.fullPath)));
+
+  for (const oldChild of parent?.children ?? []) {
+    if (!nextChildKeys.has(canonicalPath(oldChild.fullPath))) {
+      deleteCachedSubtree(next, oldChild.fullPath);
+    }
+  }
+
+  const reconciledChildren = children.map((child) => {
+    const childKey = canonicalPath(child.fullPath);
+    const cached = previous.get(childKey);
+    const reconciled = child.type === 'folder' && cached?.children
+      ? { ...child, children: cached.children }
+      : child;
+    next.set(childKey, reconciled);
+    return reconciled;
+  });
+
+  if (parent) next.set(parentKey, { ...parent, children: reconciledChildren });
+  return next;
+}
+
+function reconcileRootChildren(
+  previous: Map<string, DocTreeItem>,
+  previousRootChildren: DocTreeItem[],
+  children: DocTreeItem[],
+): Map<string, DocTreeItem> {
+  const next = new Map(previous);
+  const nextChildKeys = new Set(children.map((child) => canonicalPath(child.fullPath)));
+  for (const oldChild of previousRootChildren) {
+    if (!nextChildKeys.has(canonicalPath(oldChild.fullPath))) {
+      deleteCachedSubtree(next, oldChild.fullPath);
+    }
+  }
+  for (const child of children) {
+    const childKey = canonicalPath(child.fullPath);
+    const cached = previous.get(childKey);
+    next.set(
+      childKey,
+      child.type === 'folder' && cached?.children
+        ? { ...child, children: cached.children }
+        : child,
+    );
+  }
+  return next;
 }
 
 /**
@@ -63,6 +122,8 @@ export function useFolderTree(folderPath: string, options?: FolderTreeOptions) {
   const lastRefreshAtRef = useRef(new Map<string, number>());
   const rootRefreshRef = useRef<Promise<void> | null>(null);
   const rootRefreshSequenceRef = useRef(0);
+  const rootChildrenRef = useRef(rootChildren);
+  rootChildrenRef.current = rootChildren;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -127,27 +188,11 @@ export function useFolderTree(folderPath: string, options?: FolderTreeOptions) {
           || generation !== generationRef.current
           || directoryRefreshSequenceRef.current.get(key) !== requestSequence
         ) return;
-        setNodes((prev) => {
-          const next = new Map(prev);
-          for (const child of children) {
-            const childKey = canonicalPath(child.fullPath);
-            const cached = prev.get(childKey);
-            // Single-level directory reads return folders with `children: []`
-            // placeholders. Preserve an already-loaded subtree when its parent
-            // refreshes, otherwise expanded sibling folders appear empty until
-            // they are collapsed and expanded again.
-            next.set(
-              childKey,
-              child.type === 'folder' && cached?.children
-                ? { ...child, children: cached.children }
-                : child,
-            );
-          }
-          // 回写父节点 children 占位 (flattenVisibleTree 按它递归拍平)。
-          const parent = next.get(key);
-          if (parent) next.set(key, { ...parent, children });
-          return next;
-        });
+        // Preserve loaded descendants that still exist, but remove deleted or
+        // moved-away children (and their cached subtrees) from the flat node
+        // table. Without pruning, long-running watcher refreshes retain stale
+        // nodes that flattenLoadedTree continues to visit.
+        setNodes((prev) => reconcileDirectoryChildren(prev, key, children));
         setDirtyDirectories((prev) => {
           if (!prev.has(key)) return prev;
           const next = new Set(prev);
@@ -255,15 +300,7 @@ export function useFolderTree(folderPath: string, options?: FolderTreeOptions) {
           return;
         }
         setRootChildren(items);
-        setNodes((prev) => {
-          const next = new Map(prev);
-          for (const item of items) {
-            const itemKey = canonicalPath(item.fullPath);
-            const old = prev.get(itemKey);
-            next.set(itemKey, old?.children ? { ...item, children: old.children } : item);
-          }
-          return next;
-        });
+        setNodes((prev) => reconcileRootChildren(prev, rootChildrenRef.current, items));
         setError(null);
         setDirtyDirectories((prev) => {
           if (!prev.has(rootKey)) return prev;
@@ -361,6 +398,33 @@ export type FolderTreeController = ReturnType<typeof useFolderTree>;
 export interface VisibleTreeNode {
   item: DocTreeItem;
   depth: number;
+}
+
+/** Flatten all currently loaded items, including items in collapsed folders. */
+export function flattenLoadedTree(
+  state: Pick<FolderTreeState, 'rootChildren' | 'nodes'>,
+): DocTreeItem[] {
+  const out: DocTreeItem[] = [];
+  const seen = new Set<string>();
+  const walkItem = (candidate: DocTreeItem) => {
+    const key = canonicalPath(candidate.fullPath);
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    // Root and parent child arrays contain single-level placeholders. Prefer
+    // the node-table entry so a loaded folder contributes its real children.
+    const item = state.nodes.get(key) ?? candidate;
+    out.push(item);
+    if (item.type === 'folder') {
+      for (const child of item.children ?? []) walkItem(child);
+    }
+  };
+
+  for (const item of state.rootChildren) walkItem(item);
+  // Include any loaded nodes that are temporarily detached while concurrent
+  // watcher refreshes reconcile their parents, without revisiting subtrees.
+  for (const item of state.nodes.values()) walkItem(item);
+  return out;
 }
 
 export function flattenVisibleTree(state: FolderTreeState): VisibleTreeNode[] {

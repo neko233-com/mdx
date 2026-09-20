@@ -17,14 +17,12 @@ import {
   isCodeTextFilePath,
   isImageFilePath,
   isMarkdownFilePath,
+  isVideoFilePath,
 } from '@features/editor/code-file';
 
 const DOCUMENT_EXTENSIONS = new Set(['doc', 'docm', 'docx', 'dot', 'dotx', 'odt', 'rtf']);
 const HTML_EXTENSIONS = new Set(['htm', 'html', 'xhtml']);
 const PRESENTATION_EXTENSIONS = new Set(['key', 'odp', 'pot', 'potx', 'ppt', 'pptm', 'pptx']);
-const VIDEO_EXTENSIONS = new Set([
-  '3gp', 'avi', 'flv', 'm2ts', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'mts', 'webm', 'wmv',
-]);
 const ARCHIVE_EXTENSIONS = new Set([
   '7z', 'bz', 'bz2', 'cab', 'gz', 'iso', 'lz', 'lzma', 'rar', 'tar', 'tgz', 'xz', 'zip', 'zst',
 ]);
@@ -40,7 +38,7 @@ export function getFileIcon(path: string): Icon {
   if (PRESENTATION_EXTENSIONS.has(extension)) return FilePptIcon;
   if (SPREADSHEET_EXTENSIONS.has(extension)) return FileXlsIcon;
   if (extension === 'pdf') return FilePdfIcon;
-  if (VIDEO_EXTENSIONS.has(extension)) return FileVideoIcon;
+  if (isVideoFilePath(path)) return FileVideoIcon;
   if (ARCHIVE_EXTENSIONS.has(extension)) return FileZipIcon;
   if (isImageFilePath(path)) return FileImageIcon;
   if (isCodeTextFilePath(path)) return FileCodeIcon;

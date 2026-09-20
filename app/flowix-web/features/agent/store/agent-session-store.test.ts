@@ -47,6 +47,8 @@ describe("useAgentSessionStore", () => {
       conversationRegistry: { instances: {} },
       threadProjections: {},
       threadRunSignatures: {},
+      latestCompletedRunIds: {},
+      readThroughRunIds: {},
       runStateVersion: 0,
     });
   });
@@ -81,6 +83,16 @@ describe("useAgentSessionStore", () => {
     expect(proj?.runs.lastRun?.status).toBe("completed");
     expect(proj?.messages).toHaveLength(1);
     expect(useAgentSessionStore.getState().runStateVersion).toBe(afterStart + 1);
+    expect(useAgentSessionStore.getState().latestCompletedRunIds).toEqual({ t1: "r1" });
+    useAgentSessionStore.getState().markThreadRead("t1");
+    expect(useAgentSessionStore.getState().readThroughRunIds).toEqual({ t1: "r1" });
+    dispatch(streamStart("r2"));
+    dispatch(streamEnd("r2"));
+    expect(useAgentSessionStore.getState().latestCompletedRunIds).toEqual({ t1: "r2" });
+    useAgentSessionStore.getState().markThreadRead("t1", "r1");
+    expect(useAgentSessionStore.getState().readThroughRunIds).toEqual({ t1: "r1" });
+    useAgentSessionStore.getState().markThreadRead("t1", "r2");
+    expect(useAgentSessionStore.getState().readThroughRunIds).toEqual({ t1: "r2" });
     expect(proj?.messages[0]).toMatchObject({
       role: "assistant",
       content: "hello",

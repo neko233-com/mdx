@@ -66,4 +66,27 @@ describe('document history store', () => {
       openedAt: 2,
     }]);
   });
+
+  it('keeps image and video resources as distinct history entries', () => {
+    const image = {
+      kind: 'media' as const,
+      filePath: '/notes/image.png',
+      notebookId: 'notebook-1',
+      notebookPath: '/notes',
+      resourceKind: 'image' as const,
+      openedAt: 1,
+    };
+    const video = {
+      ...image,
+      filePath: '/notes/video.mp4',
+      resourceKind: 'video' as const,
+      openedAt: 2,
+    };
+
+    useDocumentHistoryStore.getState().pushBack(image);
+    useDocumentHistoryStore.getState().pushBack({ ...image, openedAt: 3 });
+    useDocumentHistoryStore.getState().pushBack(video);
+
+    expect(useDocumentHistoryStore.getState().backStack).toEqual([image, video]);
+  });
 });

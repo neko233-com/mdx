@@ -101,8 +101,8 @@
 }
 
 .markdown-editor .agent-thread-card {
-  margin: 1rem 0;
-  background: var(--document-bg);
+  margin: 0 0 calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.32);
+  background: transparent;
   /* A Thread Card is a nested NodeView. Own the inherited editor typography
    * at the component boundary so messages and chrome do not depend on the
    * parent ProseMirror's font/caret settings. Keep the app tokens shared with
@@ -160,7 +160,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-  background: var(--editor-block-bg);
+  background: var(--agent-bg, var(--document-bg));
   color: var(--foreground);
   outline: none;
   /* 首条消息发出后 threadId 注入 → min-height 13rem → 24rem 撑开 ──
@@ -192,7 +192,7 @@
   margin: 0;
   margin-top: 0 !important;
   padding: 0;
-  background: var(--editor-block-bg);
+  background: var(--agent-bg, var(--document-bg));
   z-index: 100;
 }
 
@@ -225,7 +225,7 @@
   height: 100%;
   border: 0;
   border-radius: 0;
-  background: transparent;
+  background: var(--agent-bg, var(--document-bg));
   -webkit-user-select: none;
   user-select: none;
 }
@@ -275,7 +275,7 @@
 
 /* 头部 ── grid auto 行, 高度由 grid-template-rows 显式控制 (40px)。
  * 取消旧的 min-height 写法, 用 height 让 grid 行严格等于 token。
- * 背景透明,继承 container 的 --editor-block-bg: 与 body 严格同色 ──
+ * 背景透明,继承 container 的 --agent-bg: 与 body 严格同色 ──
  * 卡片视觉是一个整体, header 仅靠 1px 下边框或字重差异与 body 分区,
  * 不用半透明 + 模糊制造"分块感"。
  *
@@ -299,11 +299,12 @@
   padding: 0 0.8rem;
   box-sizing: border-box;
   /* 与 body 视觉合一: 背景透明, header 继承 container 的
-   * --editor-block-bg, 头/体在视觉上是同一块, 靠文字层级和组件
+   * --agent-bg, 头/体在视觉上是同一块, 靠文字层级和组件
    * 内部 padding 区分。去掉 backdrop-filter ── 半透明 + 模糊只在
    * 背景透出时才有意义, 实色背景下无效果且徒增 GPU 开销。 */
   background: transparent;
   cursor: grab;
+  touch-action: none;
   user-select: none;
 }
 

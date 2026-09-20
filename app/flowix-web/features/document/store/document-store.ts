@@ -4,6 +4,10 @@ import {
   stageDocumentSnapshot,
 } from '@features/document/store/document-session-service';
 import { canonicalPath } from '@/lib/path';
+import {
+  markDocumentOpenTrace,
+  startDocumentOpenTrace,
+} from '@/lib/document-open-perf';
 import type { DocumentIdentity } from '@features/document/store/document-identity';
 import {
   useDocumentHistoryStore,
@@ -168,6 +172,13 @@ function logOpenDocPerf(label: string, startedAt: number, meta?: Record<string, 
     elapsedMs: Math.round((performance.now() - startedAt) * 10) / 10,
     ...meta,
   });
+  const transitionId = meta?.transitionId;
+  if (typeof transitionId === 'number') {
+    markDocumentOpenTrace(transitionId, `navigation:${label}`, {
+      stageElapsedMs: Math.round((performance.now() - startedAt) * 10) / 10,
+      ...meta,
+    });
+  }
 }
 
 let transitionChain: Promise<void> = Promise.resolve();
@@ -234,6 +245,11 @@ export const useDocumentStore = create<DocumentStore>()(
       }
 
       const transitionId = get().documentTransitionId + 1;
+      startDocumentOpenTrace(transitionId, {
+        source: 'memo',
+        memoId,
+        hasPrevious: !!(get().activeMemoSession ?? get().activeExternalSession),
+      });
       logOpenDocPerf('openMemoDocument:start', startedAt, {
         memoId,
         transitionId,
@@ -318,6 +334,14 @@ export const useDocumentStore = create<DocumentStore>()(
       }
 
       const transitionId = get().documentTransitionId + 1;
+      startDocumentOpenTrace(transitionId, {
+        source: 'external',
+        path,
+        hasPrevious: !!(get().activeMemoSession ?? get().activeExternalSession),
+      });
+      markDocumentOpenTrace(transitionId, 'navigation:external-start', {
+        scopePath: canonicalScopePath,
+      });
       set({ isDocumentTransitioning: true, documentTransitionId: transitionId });
       return enqueueTransition(async () => {
         try {

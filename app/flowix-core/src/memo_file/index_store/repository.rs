@@ -3,24 +3,19 @@ use std::collections::HashMap;
 use super::*;
 
 impl MemoFile {
-    /// Read every notebook's memo count with one grouped index query.
+    /// Read every notebook's memo count from its notebook-local index.
     pub fn memo_counts_by_notebook(&self) -> std::io::Result<HashMap<String, usize>> {
-        let conn = self.open_memo_index_db()?;
-        let mut statement = conn
-            .prepare("SELECT notebook_id, COUNT(*) FROM memos GROUP BY notebook_id")
-            .map_err(sqlite_to_io)?;
-        let rows = statement
-            .query_map([], |row| {
-                let notebook_id: String = row.get(0)?;
-                let count: i64 = row.get(1)?;
-                Ok((notebook_id, usize::try_from(count).unwrap_or(0)))
-            })
-            .map_err(sqlite_to_io)?;
-
         let mut counts = HashMap::new();
-        for row in rows {
-            let (notebook_id, count) = row.map_err(sqlite_to_io)?;
-            counts.insert(notebook_id, count);
+        for notebook in self.read_notebook_configs()? {
+            let conn = self.open_memo_index_db_for_notebook_id(&notebook.id)?;
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM memos WHERE notebook_id = ?1",
+                    params![notebook.id],
+                    |row| row.get(0),
+                )
+                .map_err(sqlite_to_io)?;
+            counts.insert(notebook.id, usize::try_from(count).unwrap_or(0));
         }
         Ok(counts)
     }
@@ -58,15 +53,16 @@ impl MemoFile {
             return self.read_index_result();
         }
 
-        let conn = self.open_memo_index_db()?;
+        let conn = self.open_memo_index_db_for_notebook_id(&notebook_id)?;
         self.read_index_from_db(&conn, &notebook_id)
     }
 
     pub fn resolve_memo_location(&self, memo_id: &str) -> std::io::Result<Option<MemoLocation>> {
-        let conn = self.open_memo_index_db()?;
-        let row = conn
-            .query_row(
-                r#"
+        for notebook_config in self.read_notebook_configs()? {
+            let conn = self.open_memo_index_db_for_notebook_id(&notebook_config.id)?;
+            let row = conn
+                .query_row(
+                    r#"
                 SELECT
                     m.id,
                     m.filename,
@@ -90,73 +86,76 @@ impl MemoFile {
                 WHERE m.id = ?1
                 LIMIT 1
                 "#,
-                params![memo_id],
-                |row| {
-                    let memo_id: String = row.get(0)?;
-                    let is_default: i64 = row.get(14)?;
-                    Ok((
-                        MemoIndexEntry {
-                            id: memo_id,
-                            filename: row.get(1)?,
-                            relative_path: row.get(2)?,
-                            preview: row.get(3)?,
-                            thumbnail: row.get(4)?,
-                            tags: Vec::new(),
-                            todos: Vec::new(),
-                            agents: Vec::new(),
-                            created_at: row.get(5)?,
-                            updated_at: row.get(6)?,
-                            favorited: row.get::<_, i64>(7)? != 0,
-                            icon: row.get(8)?,
-                            colors: Vec::new(),
-                            properties: serde_json::from_str::<serde_json::Value>(
-                                &row.get::<_, String>(9)?,
-                            )
-                            .unwrap_or_else(|_| serde_json::json!({})),
-                        },
-                        NotebookConfig {
-                            id: row.get(10)?,
-                            name: row.get(11)?,
-                            icon: row.get(12)?,
-                            path: row.get(13)?,
-                            is_default: is_default != 0,
-                            sort: 0,
-                            created_at: row.get(15)?,
-                            updated_at: row.get(16)?,
-                        },
-                    ))
-                },
-            )
-            .optional()
-            .map_err(sqlite_to_io)?;
+                    params![memo_id],
+                    |row| {
+                        let memo_id: String = row.get(0)?;
+                        let is_default: i64 = row.get(14)?;
+                        Ok((
+                            MemoIndexEntry {
+                                id: memo_id,
+                                filename: row.get(1)?,
+                                relative_path: row.get(2)?,
+                                preview: row.get(3)?,
+                                thumbnail: row.get(4)?,
+                                tags: Vec::new(),
+                                todos: Vec::new(),
+                                agents: Vec::new(),
+                                created_at: row.get(5)?,
+                                updated_at: row.get(6)?,
+                                favorited: row.get::<_, i64>(7)? != 0,
+                                icon: row.get(8)?,
+                                colors: Vec::new(),
+                                properties: serde_json::from_str::<serde_json::Value>(
+                                    &row.get::<_, String>(9)?,
+                                )
+                                .unwrap_or_else(|_| serde_json::json!({})),
+                            },
+                            NotebookConfig {
+                                id: row.get(10)?,
+                                name: row.get(11)?,
+                                icon: row.get(12)?,
+                                path: row.get(13)?,
+                                is_default: is_default != 0,
+                                sort: 0,
+                                created_at: row.get(15)?,
+                                updated_at: row.get(16)?,
+                            },
+                        ))
+                    },
+                )
+                .optional()
+                .map_err(sqlite_to_io)?;
 
-        let Some((mut memo, notebook)) = row else {
-            return Ok(None);
-        };
-        memo.tags = self.read_entry_tags(&conn, &memo.id)?;
-        memo.colors = self.read_entry_colors(&conn, &memo.id)?;
-        memo.todos = self.read_entry_todos(&conn, &memo.id)?;
-        memo.agents = self.read_entry_agents(&conn, &memo.id)?;
-        self.backfill_missing_properties(
-            &conn,
-            &notebook.id,
-            &PathBuf::from(&notebook.path),
-            std::slice::from_mut(&mut memo),
-        )?;
-        self.backfill_missing_agents(
-            &conn,
-            &notebook.id,
-            &PathBuf::from(&notebook.path),
-            std::slice::from_mut(&mut memo),
-        )?;
-        self.backfill_missing_thumbnails(
-            &conn,
-            &notebook.id,
-            &PathBuf::from(&notebook.path),
-            std::slice::from_mut(&mut memo),
-        )?;
+            let Some((mut memo, notebook)) = row else {
+                continue;
+            };
+            memo.tags = self.read_entry_tags(&conn, &memo.id)?;
+            memo.colors = self.read_entry_colors(&conn, &memo.id)?;
+            memo.todos = self.read_entry_todos(&conn, &memo.id)?;
+            memo.agents = self.read_entry_agents(&conn, &memo.id)?;
+            self.backfill_missing_properties(
+                &conn,
+                &notebook.id,
+                &PathBuf::from(&notebook.path),
+                std::slice::from_mut(&mut memo),
+            )?;
+            self.backfill_missing_agents(
+                &conn,
+                &notebook.id,
+                &PathBuf::from(&notebook.path),
+                std::slice::from_mut(&mut memo),
+            )?;
+            self.backfill_missing_thumbnails(
+                &conn,
+                &notebook.id,
+                &PathBuf::from(&notebook.path),
+                std::slice::from_mut(&mut memo),
+            )?;
 
-        Ok(Some(MemoLocation { memo, notebook }))
+            return Ok(Some(MemoLocation { memo, notebook }));
+        }
+
+        Ok(None)
     }
 
     pub fn read_index_result(&self) -> std::io::Result<Option<MemoIndexFile>> {
@@ -164,7 +163,7 @@ impl MemoFile {
         if let Some(cached) = self.current_cached_index(&notebook_id)? {
             return Ok(Some(cached));
         }
-        let conn = self.open_memo_index_db()?;
+        let conn = self.open_memo_index_db_for_notebook_id(&notebook_id)?;
         let list = self.read_index_from_db(&conn, &notebook_id)?;
         if let Some(list) = &list {
             *self.index_cache.write().expect("index_cache poisoned") = Some(list.clone());
@@ -182,7 +181,7 @@ impl MemoFile {
         notebook_id: &str,
         list: &MemoIndexFile,
     ) -> std::io::Result<()> {
-        let conn = self.open_memo_index_db()?;
+        let conn = self.open_memo_index_db_for_notebook_id(notebook_id)?;
         self.replace_notebook_index_in_db(&conn, notebook_id, list)?;
         if self.current_notebook_id_for_index() == notebook_id {
             *self.index_cache.write().expect("index_cache poisoned") = Some(list.clone());
@@ -243,7 +242,7 @@ impl MemoFile {
         notebook_id: &str,
         memo: &Memo,
     ) -> std::io::Result<()> {
-        let mut conn = self.open_memo_index_db()?;
+        let mut conn = self.open_memo_index_db_for_notebook_id(notebook_id)?;
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(sqlite_to_io)?;
@@ -281,7 +280,7 @@ impl MemoFile {
         notebook_id: &str,
         memo_id: &str,
     ) -> std::io::Result<()> {
-        let mut conn = self.open_memo_index_db()?;
+        let mut conn = self.open_memo_index_db_for_notebook_id(notebook_id)?;
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(sqlite_to_io)?;

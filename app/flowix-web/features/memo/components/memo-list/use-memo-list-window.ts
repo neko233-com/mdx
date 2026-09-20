@@ -8,7 +8,8 @@ import {
   type UIEvent,
 } from 'react';
 
-import type { ColorFilterValue, MemoItem } from '@features/memo';
+import type { ColorFilterValue } from '@features/memo/store/memo-store';
+import type { MemoItem } from '@/types/memo-item';
 
 const INITIAL_RENDER_COUNT = 120;
 const RENDER_BATCH_SIZE = 80;

@@ -89,25 +89,26 @@ fn schedule_rebuild(state: &AppState, app: &AppHandle, force: bool) {
                 .map(|config| std::path::PathBuf::from(config.path));
             (entries, path)
         };
-        let items = notebook_path
-            .map(|base| {
-                entries
-                    .into_iter()
-                    .filter(|entry| !entry.id.is_empty())
-                    .map(|entry| {
-                        let body = flowix_core::memo_file::notebook_path_from_relative(
-                            &base,
-                            &entry.relative_path,
-                        )
-                        .ok()
-                        .and_then(|path| std::fs::read_to_string(path).ok())
-                        .unwrap_or_default();
-                        (entry, body)
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        next_index.rebuild(nb.clone(), items);
+        if let Some(base) = notebook_path {
+            // Feed one document at a time into the index so full notebook
+            // bodies are not retained together in a temporary Vec.
+            let items = entries
+                .into_iter()
+                .filter(|entry| !entry.id.is_empty())
+                .map(|entry| {
+                    let body = flowix_core::memo_file::notebook_path_from_relative(
+                        &base,
+                        &entry.relative_path,
+                    )
+                    .ok()
+                    .and_then(|path| std::fs::read_to_string(path).ok())
+                    .unwrap_or_default();
+                    (entry, body)
+                });
+            next_index.rebuild(nb.clone(), items);
+        } else {
+            next_index.rebuild(nb.clone(), std::iter::empty());
+        }
 
         let current_notebook = read_lock(&st.memo_file, "memo_file").current_notebook_id_value();
         if current_notebook.as_deref() != Some(nb.as_str()) {

@@ -1,11 +1,30 @@
 import { describe, expect, it } from 'vitest';
+import { Editor } from '@tiptap/core';
+import StarterKit from '@tiptap/starter-kit';
+import { Markdown } from '@tiptap/markdown';
 import {
   isRelativeNoteDestination,
+  NoteReference,
   parseWikiNoteLinkAtStart,
   splitObsidianTarget,
 } from './view-note';
+import { MarkdownLink } from '../markdown-link';
 
 describe('Obsidian note links', () => {
+  it('keeps ordinary relative Markdown links lightweight', () => {
+    const editor = new Editor({
+      extensions: [StarterKit, Markdown, NoteReference, MarkdownLink],
+      content: '[Install](docs/install.md)',
+      contentType: 'markdown',
+    });
+
+    expect(editor.state.doc.textContent).toBe('Install');
+    expect(editor.state.doc.firstChild?.firstChild?.type.name).toBe('text');
+    expect(editor.state.doc.firstChild?.firstChild?.marks[0]?.type.name).toBe('link');
+    expect(editor.state.doc.firstChild?.firstChild?.marks[0]?.attrs.href).toBe('docs/install.md');
+    editor.destroy();
+  });
+
   it('parses wiki targets and aliases', () => {
     expect(parseWikiNoteLinkAtStart('[[笔记名称.md]] rest')).toEqual({
       raw: '[[笔记名称.md]]',

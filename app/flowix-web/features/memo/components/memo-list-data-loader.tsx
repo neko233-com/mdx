@@ -19,6 +19,7 @@ export interface MemoListDataLoaderProps {
   activeTagId: string | null;
   colorFilter: ColorFilterValue;
   activePluginId: string | null;
+  activeCustomFilterId?: string | null;
   refreshTrigger: number;
   loadedMemoListQueryKey: string | null;
   loadMemos: MemoStore['loadMemos'];
@@ -43,6 +44,7 @@ export function MemoListDataLoader({
   activeTagId,
   colorFilter,
   activePluginId,
+  activeCustomFilterId,
   refreshTrigger,
   loadedMemoListQueryKey,
   loadMemos,
@@ -79,6 +81,7 @@ export function MemoListDataLoader({
       activeTagId,
       colorFilter,
       activePluginId,
+      activeCustomFilterId,
     );
     const shouldShowLoading = queryKey !== loadedMemoListQueryKey;
 
@@ -119,6 +122,7 @@ export function MemoListDataLoader({
   }, [
     activeFilter,
     activePluginId,
+    activeCustomFilterId,
     activeSort,
     activeTagId,
     colorFilter,

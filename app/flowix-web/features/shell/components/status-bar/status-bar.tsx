@@ -1,17 +1,18 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Hash, ListTodo, SlidersHorizontal } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ListTodo } from 'lucide-react';
 import { PlugIcon } from '@phosphor-icons/react';
 import { Tooltip } from '@shared/ui/tooltip';
-import type { Notebook } from '@features/memo';
+import type { Notebook } from '@features/memo/store/memo-store';
 import { NotebookSelectorPopup } from '@features/shell/components/status-bar/notebook-selector-popup';
-import { AgentRuntimeStatusMenu } from '@features/shell/components/status-bar/agent-runtime-status-menu';
 import { ProductUpdatePill } from '@features/shell/components/status-bar/product-update-pill';
+import { AgentConversationStatusBar } from '@features/agent/public/shell-api';
 import { useI18n } from '@/lib/i18n';
-import { useDocumentMetricsStore } from '@features/document';
-import { useMemoStore } from '@features/memo';
+import { useDocumentMetricsStore } from '@features/document/store/document-metrics-store';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import { CloudStatusIcon } from '@shared/icons/cloud-status-icon';
+import { TagSvgIcon } from '@shared/ui/tag-icon';
 import {
   cloud,
   listenToCloudStateChanges,
@@ -26,13 +27,10 @@ interface StatusBarProps {
   onEditNotebook: (notebook: Notebook) => void;
   onDeleteNotebook: (notebook: Notebook) => void;
   onCreateNotebook: () => void;
-  todoCount: number;
   onOpenTodos: () => void;
   onToggleNoteNavigation: () => void;
-  onOpenPreferences: () => void;
   onOpenMcpPreferences: () => void;
   onOpenDshPreferences: () => void;
-  onOpenAgentConversationView: () => void;
   dshDownload: DshDownloadProgress | null;
   updater: AppUpdaterState;
 }
@@ -78,12 +76,9 @@ function DshDownloadProgressIcon({ percent }: { percent: number | null | undefin
  *
  * Layout (two columns):
  *   [NotebookSwitcher] | [Todos] [char count]   …flex spacer…   [Note Nav] [AI Chat] [⚙]
- *                       ↑ top border
  *
  * The left column is the notebook switcher (fixed width by its own button
- * content); the right column takes the remaining width and carries the top
- * border so the switcher's primary-colored block reads as a standalone first
- * column.
+ * content); the right column takes the remaining width for the status actions.
  *
  * Renders no chrome of its own — it assumes it lives in a `h-[26px]` flex strip.
  */
@@ -92,13 +87,10 @@ export function StatusBar({
   onEditNotebook,
   onDeleteNotebook,
   onCreateNotebook,
-  todoCount,
   onOpenTodos,
   onToggleNoteNavigation,
-  onOpenPreferences,
   onOpenMcpPreferences,
   onOpenDshPreferences,
-  onOpenAgentConversationView,
   dshDownload,
   updater,
 }: StatusBarProps) {
@@ -116,10 +108,6 @@ export function StatusBar({
   const selectedNotebook = useMemoStore((state) => state.selectedNotebook);
   const setNotebooks = useMemoStore((state) => state.setNotebooks);
   const charCount = useDocumentMetricsStore((state) => state.charCount);
-
-  const agentWorkspacePath = useMemo(() => {
-    return selectedNotebook?.name ?? '';
-  }, [selectedNotebook?.name]);
 
   useEffect(() => {
     const refreshCloudSyncedNotebookIds = () => {
@@ -171,7 +159,7 @@ export function StatusBar({
   );
 
   return (
-    <div className="flex h-[26px] shrink-0 select-none items-stretch bg-[var(--statusbar-bg)] text-xs text-[var(--muted-foreground)]">
+    <div className="flex h-[26px] shrink-0 select-none items-stretch text-xs text-[var(--muted-foreground)]">
       {/* Left column: notebook switcher (fixed width by its own button content). */}
       <div className="shrink-0 flex items-center">
         <NotebookSelectorPopup
@@ -188,22 +176,8 @@ export function StatusBar({
           cloudSyncAvailable={cloudSyncAvailable}
         />
       </div>
-      {/* Right column: full-width content area; carries the top border. */}
-      <div className="flex-1 min-w-0 flex items-center gap-1 pl-1.5 border-t border-[var(--divider)]">
-        <button
-          type="button"
-          className="h-full inline-flex items-center gap-0.5 px-1.5 text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-          aria-label={`${t('status.todos')} ${todoCount}`}
-          onClick={onOpenTodos}
-        >
-          <ListTodo className="w-3.5 h-3.5 shrink-0" />
-          <span>{t('status.todos')}</span>
-          <span>{todoCount}</span>
-        </button>
-        <AgentRuntimeStatusMenu
-          onOpen={onOpenAgentConversationView}
-          workspaceFolderName={agentWorkspacePath || undefined}
-        />
+      {/* Right column: full-width content area. */}
+      <div className="flex-1 min-w-0 flex items-center gap-0.5 pl-0.5 pr-2">
         <Tooltip content={t('shell.statusBar.noteNavTooltip')} shortcut="panel.noteNavigation.toggle">
           <button
             type="button"
@@ -211,9 +185,18 @@ export function StatusBar({
             className="h-full flex items-center gap-0.5 px-1.5 py-0 hover:bg-[var(--muted)]"
             aria-label={t('shell.statusBar.noteNav')}
           >
-            <Hash className="w-3.5 h-3.5" />
+            <TagSvgIcon className="w-4 h-4" />
           </button>
         </Tooltip>
+        <button
+          type="button"
+          className="h-full inline-flex items-center gap-0.5 px-1.5 text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+          aria-label={t('status.todos')}
+          onClick={onOpenTodos}
+        >
+          <ListTodo className="w-3.5 h-3.5 shrink-0" />
+        </button>
+        <AgentConversationStatusBar />
         <div className="flex-1" />
         {dshDownload && (
           <button
@@ -254,16 +237,6 @@ export function StatusBar({
             aria-label={t('preferences.tabs.mcp')}
           >
             <PlugIcon className="w-3.5 h-3.5" />
-          </button>
-        </Tooltip>
-        <Tooltip content={t('status.preferences')} shortcut="menu.open" side="top">
-          <button
-            type="button"
-            onClick={onOpenPreferences}
-            className="mr-1.5 h-full flex items-center justify-center px-1.5 py-0 hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-            aria-label={t('status.preferences')}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
           </button>
         </Tooltip>
       </div>

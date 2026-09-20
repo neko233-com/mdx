@@ -32,6 +32,7 @@ import {
   openAgentTarget,
   openArtifactTarget,
   openExternalTarget,
+  openMediaTarget,
   openMemoTarget,
   openWebTarget,
   closeAgentTarget,
@@ -57,6 +58,8 @@ function targetTabTitle(target: BrowserColumnTarget): string {
   switch (target.kind) {
     case 'memo':
       return displayTitleFromFilename(filenameFromPath(target.filePath));
+    case 'media':
+      return filenameFromPath(target.filePath);
     case 'file-browser':
       return displayTitleFromFilename(filenameFromPath(target.activeFilePath ?? target.folderPath ?? '')) || '文件';
     case 'web':
@@ -92,10 +95,12 @@ export function openBrowserColumnTarget(
       ? `agent:${target.instanceId}`
       : target.kind === 'web'
         ? `web:${canonicalUrl(target.url) ?? target.url}`
-        : target.kind === 'file-browser'
+    : target.kind === 'file-browser'
           ? target.activeFilePath ? `file:${canonicalPath(target.activeFilePath)}` : `file-browser:${target.folderPath}`
         : target.kind === 'artifact'
           ? `artifact:${target.pointerMemoId}`
+          : target.kind === 'media'
+            ? `media:${canonicalPath(target.filePath)}`
           : 'empty';
 
   return enqueueBrowserColumnNavigation(async () => {
@@ -260,6 +265,21 @@ export function openBrowserColumnText(filePath: string, scopePath: string): Prom
   return openBrowserColumnTarget(createFileBrowserTarget(filePath, scopePath));
 }
 
+export function openBrowserColumnMedia(
+  filePath: string,
+  notebookId: string,
+  notebookPath: string,
+  resourceKind: 'image' | 'video',
+): Promise<BrowserColumnOpenResult | null> {
+  return openBrowserColumnTarget({
+    kind: 'media',
+    filePath,
+    notebookId,
+    notebookPath,
+    resourceKind,
+  }, 'open-in-column');
+}
+
 export function openBrowserColumnFileBrowser(
   folderPath: string,
   activeFilePath: string | null = null,
@@ -295,6 +315,14 @@ export function openWorkColumnTargetInBrowserColumn(
           notebookId: target.notebookId ?? '',
           notebookPath: target.notebookPath ?? '',
           filePath: target.path,
+        };
+      case 'media':
+        return {
+          kind: 'media',
+          filePath: target.filePath,
+          notebookId: target.notebookId ?? '',
+          notebookPath: target.notebookPath ?? '',
+          resourceKind: target.resourceKind,
         };
       case 'external':
         return { ...createFileBrowserTarget(target.path, target.scopePath), ...target.fileBrowser };
@@ -395,6 +423,14 @@ export function openBrowserColumnTabInWorkColumn(tabId: string): Promise<boolean
               fileBrowser: tab.target,
             });
           }
+          break;
+        case 'media':
+          await openMediaTarget({
+            filePath: tab.target.filePath,
+            notebookId: tab.target.notebookId,
+            notebookPath: tab.target.notebookPath,
+            resourceKind: tab.target.resourceKind,
+          });
           break;
         case 'web':
           await openWebTarget(tab.target.url);

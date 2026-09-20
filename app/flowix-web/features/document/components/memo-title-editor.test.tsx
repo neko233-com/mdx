@@ -39,6 +39,25 @@ function dispatchKey(
   return event;
 }
 
+function dispatchPaste(element: HTMLTextAreaElement, text: string, html = ''): ClipboardEvent {
+  const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+  const values: Record<string, string> = {
+    'text/plain': text,
+    'text/html': html,
+  };
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      types: Object.keys(values),
+      files: [],
+      getData(type: string) {
+        return values[type] ?? '';
+      },
+    },
+  });
+  element.dispatchEvent(event);
+  return event;
+}
+
 describe('MemoTitleEditor IME handling', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -133,6 +152,44 @@ describe('MemoTitleEditor IME handling', () => {
     });
   });
 
+  it('keeps title-to-body navigation available when read-only', async () => {
+    await act(async () => {
+      root.render(createElement(MemoTitleEditor, {
+        memoId: 'memo-1',
+        filename: 'Original.md',
+        editable: false,
+        allowReadOnlyBoundaryNavigation: true,
+        onMoveToBody,
+      }));
+    });
+
+    const readOnlyTextarea = container.querySelector('textarea')!;
+    readOnlyTextarea.setSelectionRange(readOnlyTextarea.value.length, readOnlyTextarea.value.length);
+    const event = dispatchKey(readOnlyTextarea, 'ArrowDown');
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(titleSession.commit).not.toHaveBeenCalled();
+    expect(onMoveToBody).toHaveBeenCalledWith({ insertEmptyLine: false });
+  });
+
+  it('does not enable read-only boundary navigation without the mode opt-in', async () => {
+    await act(async () => {
+      root.render(createElement(MemoTitleEditor, {
+        memoId: 'memo-1',
+        filename: 'Original.md',
+        editable: false,
+        onMoveToBody,
+      }));
+    });
+
+    const readOnlyTextarea = container.querySelector('textarea')!;
+    readOnlyTextarea.setSelectionRange(readOnlyTextarea.value.length, readOnlyTextarea.value.length);
+    const event = dispatchKey(readOnlyTextarea, 'ArrowDown');
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(onMoveToBody).not.toHaveBeenCalled();
+  });
+
   it('does not cancel title editing when Escape belongs to the IME', () => {
     act(() => {
       textarea.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
@@ -140,5 +197,62 @@ describe('MemoTitleEditor IME handling', () => {
     });
 
     expect(titleSession.cancel).not.toHaveBeenCalled();
+  });
+
+  it('uses a document-selection surface in source mode', async () => {
+    await act(async () => {
+      root.render(createElement(MemoTitleEditor, {
+        memoId: 'memo-1',
+        filename: 'Original.md',
+        editable: true,
+        useDocumentSelection: true,
+        onMoveToBody,
+      }));
+    });
+
+    const title = container.querySelector<HTMLElement>('.memo-title-editor--document-selection');
+    expect(title?.tagName).toBe('DIV');
+    expect(title?.getAttribute('contenteditable')).toBe('plaintext-only');
+    expect(container.querySelector('textarea')).toBeNull();
+  });
+});
+
+describe('MemoTitleEditor title paste splitting', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('uses the first line as the title and routes the rest to the body', () => {
+    const onPasteToBody = vi.fn();
+    act(() => {
+      root.render(createElement(MemoTitleEditor, {
+        memoId: 'memo-1',
+        filename: 'Original.md',
+        editable: true,
+        onMoveToBody: vi.fn(),
+        onPasteToBody,
+      }));
+    });
+
+    const textarea = container.querySelector('textarea')!;
+    textarea.select();
+    const event = dispatchPaste(textarea, 'Pasted title\nFirst body line\nSecond body line');
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(titleSession.setDraft).toHaveBeenCalledWith('Pasted title');
+    expect(onPasteToBody).toHaveBeenCalledWith(expect.objectContaining({
+      text: 'First body line\nSecond body line',
+    }));
   });
 });

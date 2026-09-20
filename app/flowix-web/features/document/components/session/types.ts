@@ -1,3 +1,5 @@
+import type { Editor } from '@tiptap/core';
+
 export interface LoadContentOptions {
   preservePending?: boolean;
   showLoading?: boolean;
@@ -51,6 +53,8 @@ export interface DocumentContainerProps {
   readOnly?: boolean;
   /** One-shot focus requested by the memo creation/open transaction. */
   initialFocus?: 'title' | 'body';
+  /** Expose the active rich-text editor to document-level exporters. */
+  onEditorReady?: (editor: Editor | null) => void;
   /** Register the active editor flush used by tabbed hosts before switching. */
   onFlushReady?: (
     flush: ((options?: { silent?: boolean }) => Promise<boolean>) | null,

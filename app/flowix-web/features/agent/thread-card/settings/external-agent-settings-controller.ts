@@ -525,7 +525,7 @@ export class ExternalAgentSettingsController {
       ? this.createEmptyControl(
           "model",
           this.t("agent.model.title"),
-          this.getCurrentExternalModelLabel(),
+          this.getComposerModelDisplayLabel(),
         )
       : null;
     this.reasoningButton = null;
@@ -739,7 +739,7 @@ export class ExternalAgentSettingsController {
     if (this.modelButton) {
       updateExternalAgentEmptyControl(
         this.modelButton,
-        this.getCurrentExternalModelLabel(),
+        this.getComposerModelDisplayLabel(),
       );
     }
     if (this.permissionButton) {

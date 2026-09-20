@@ -1,7 +1,10 @@
 import type { PropertyFieldConfig } from '@/lib/constants';
 import { canonicalizePropertyKey } from '@features/document/properties/property-key';
-import { replaceVisibleFrontmatterProperties } from '@features/document/properties/frontmatter-model';
-import { resolvePreset, type PropertyKind, type PropertyPreset } from '@features/document/properties/presets';
+import {
+  replaceVisibleFrontmatterProperties,
+  SYSTEM_FRONTMATTER_KEYS,
+} from '@features/document/properties/frontmatter-model';
+import { resolvePropertyPreset, type PropertyKind, type PropertyPreset } from '@features/document/properties/presets';
 
 export type PropertyType = PropertyKind;
 
@@ -13,10 +16,6 @@ export interface PropertyRow {
   /** Optional preset binding. Drives the key-cell label/icon and the value
    *  cell's option list for Select / MultiSelect rows. Not written to YAML. */
   preset?: PropertyPreset;
-  /** Custom 展示名 (UI-only, 不写入 YAML)。 命中预设时此字段被忽略 —
-   *  trigger 走 preset.labelKey。 仅对未命中预设的自由 key 生效,
-   *  非空时替换 raw key 的显示。 */
-  customLabel?: string;
   /** 用户为 Select / MultiSelect 自定义的选项列表 (UI-only, 不写入 YAML)。
    *  命中预设时此字段被忽略, 走 preset.options; Custom 行读此字段。
    *  设计取舍: 选项不持久化, 关闭重开会丢, 用户接受即可 — 与 preset 同
@@ -34,9 +33,7 @@ export function createRowId(): string {
 }
 
 export function inferType(value: unknown): PropertyType {
-  // 未绑定预设的 YAML 数组按普通列表处理；tags / keywords 等预设在
-  // rowsFromData 中使用预设类型，仍然显示为 MultiSelect。
-  if (Array.isArray(value)) return 'List';
+  if (Array.isArray(value)) return 'MultiSelect';
   if (typeof value === 'number') return 'Number';
   if (typeof value === 'string') {
     if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return 'Date';
@@ -46,11 +43,9 @@ export function inferType(value: unknown): PropertyType {
 }
 
 export function stringifyValue(value: unknown, type: PropertyType): string {
-  if (type === 'MultiSelect') {
+  if (type === 'Boolean') return value === true ? 'true' : value === false ? 'false' : '';
+  if (type === 'MultiSelect' || type === 'Tag' || type === 'Tags' || type === 'Color') {
     return Array.isArray(value) ? value.map((item) => String(item)).join(', ') : String(value ?? '');
-  }
-  if (type === 'List') {
-    return Array.isArray(value) ? value.map((item) => String(item)).join('\n') : String(value ?? '');
   }
   if (value === null || value === undefined) return '';
   return String(value);
@@ -58,18 +53,19 @@ export function stringifyValue(value: unknown, type: PropertyType): string {
 
 export function rowsFromData(
   data: Record<string, unknown>,
-  savedFieldsByKey: Map<string, PropertyFieldConfig> = new Map()
+  savedFieldsByKey: Map<string, PropertyFieldConfig> = new Map(),
+  labelResolver?: (key: import('@/lib/i18n').I18nKey) => string,
 ): PropertyRow[] {
   const hasCanonicalTags = Object.prototype.hasOwnProperty.call(data, 'tags');
   return Object.entries(data)
-    .filter(([key]) => key.trim() !== 'key' && !(key === 'tag' && hasCanonicalTags))
+    .filter(([key]) => !SYSTEM_FRONTMATTER_KEYS.has(key.trim()) && !(key === 'tag' && hasCanonicalTags))
     .map(([sourceKey, value]) => {
       const key = canonicalizePropertyKey(sourceKey);
-      const preset = resolvePreset(key);
+      const preset = resolvePropertyPreset(key, [...savedFieldsByKey.values()], labelResolver);
       const savedField = savedFieldsByKey.get(key);
       // 预设命中时优先用 preset.kind, 这样 'type' 不会被推断成 Text,
-      // 'agent-role' 也能被识别成预设。 Custom (resolvePreset → null)
-      // 走老路的 inferType, 保持向后兼容。
+      // A configured custom preset supplies the kind; otherwise infer it from
+      // the YAML value for an unconfigured property.
       const type: PropertyType = preset
         ? (preset.kind as PropertyType)
         : (savedField?.type ?? inferType(value));
@@ -79,7 +75,6 @@ export function rowsFromData(
         type,
         value: stringifyValue(value, type),
         preset: preset ?? undefined,
-        customLabel: preset ? undefined : savedField?.name,
         options: preset ? undefined : savedField?.options,
       };
     });
@@ -88,20 +83,20 @@ export function rowsFromData(
 export function convertRowValue(row: PropertyRow): unknown {
   const value = row.value.trim();
   switch (row.type) {
+    case 'Boolean':
+      return value === 'true' ? true : value === 'false' ? false : '';
     case 'Number': {
       if (!value) return '';
       const numeric = Number(value);
       return Number.isFinite(numeric) ? numeric : value;
     }
     case 'MultiSelect':
+    case 'Tag':
+    case 'Tags':
+    case 'Color':
       return value
         .split(',')
         .map((item) => item.trim())
-        .filter(Boolean);
-    case 'List':
-      return value
-        .split(/\r?\n/)
-        .map((item) => item.trim().replace(/^-\s*/, ''))
         .filter(Boolean);
     case 'Select': {
       // 空 Select 表示 "未选择" — 写入时跳过整行, 不留 `key: ''`。
@@ -131,7 +126,7 @@ export function buildContentWithFrontmatter(content: string, rows: PropertyRow[]
       const key = row.key.trim();
       if (!key) return [];
       const value = convertRowValue(row);
-      return value === null ? [] : [{ key, value }];
+      return value === null ? [] : [{ key, value, kind: row.type }];
     }),
   );
 }

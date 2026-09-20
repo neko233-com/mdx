@@ -12,7 +12,7 @@ import { useI18n } from '@/lib/i18n';
  *
  * 与 components/ui/dialog.tsx 一样, CommandDialog 使用 react portal
  * 渲染到 document.body, 并复用 flowix-fade-* / flowix-dialog-* 动画。
- * 配色 token 全部走 var(--*) 以适配 light / dark / rock 三套主题。
+ * 配色 token 全部走 var(--*) 以适配各主题。
  */
 
 const SELECTED_SCROLL_OFFSET = 30;
@@ -105,6 +105,7 @@ const Command = React.forwardRef<
       ref={ref}
       className={cn(
         'flex h-full w-full flex-col overflow-hidden rounded-xl bg-[var(--popover)] text-[var(--popover-foreground)]',
+        keyboardPointerLock && 'is-keyboard-navigation',
         className,
       )}
       disablePointerSelection={disablePointerSelection || keyboardPointerLock}
@@ -112,6 +113,9 @@ const Command = React.forwardRef<
       onKeyDown={(event) => {
         onKeyDown?.(event);
         if (!event.defaultPrevented && isKeyboardSelectionKey(event)) {
+          // Keep keyboard navigation as the single selection source until the
+          // pointer actually moves, matching the slash menu behavior.
+          setKeyboardPointerLock(true);
           setKeyboardNavigationTick((tick) => tick + 1);
         }
       }}
@@ -226,7 +230,7 @@ function CommandDialog({
             <button
               type="button"
               onClick={() => onOpenChange(false)}
-              className="absolute top-3 right-3 z-10 p-1 rounded-md text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+              className="absolute top-3 right-3 z-10 p-1 rounded-md text-[var(--muted-foreground)] hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
               aria-label={t('common.close')}
             >
               <X className="w-4 h-4" />
@@ -333,7 +337,7 @@ const CommandItem = React.forwardRef<
     className={cn(
       'relative flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-2 text-sm outline-none',
       'text-[var(--foreground)]',
-      'data-[selected=true]:bg-[var(--muted)]',
+      'data-[selected=true]:bg-[var(--hover-bg)]',
       'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50',
       '[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
       className,

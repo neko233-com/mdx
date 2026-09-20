@@ -12,6 +12,18 @@ type CodexSkillRecord = {
   modelInvocable?: unknown;
 };
 
+export interface CodexSkillCatalogItem {
+  name: string;
+  description: string;
+  displayName?: string;
+  shortDescription?: string;
+  whenToUse?: string;
+  modelInvocable?: boolean;
+  path?: string;
+  scope?: string;
+  enabled?: boolean;
+}
+
 /**
  * `skills/list` returns one result per requested cwd. The actual skill list
  * is nested below each result's `skills` field, rather than directly below
@@ -19,6 +31,29 @@ type CodexSkillRecord = {
  * and older/forward-compatible envelopes used by Codex app-server versions.
  */
 export function parseCodexSkills(value: unknown): readonly ComposerSlashSkill[] {
+  const seen = new Set<string>();
+  return parseCodexSkillCatalog(value)
+    .filter((skill) => {
+      if (seen.has(skill.name)) return false;
+      seen.add(skill.name);
+      return true;
+    })
+    .map(({ name, description, displayName, shortDescription, whenToUse, modelInvocable }) => ({
+      name,
+      description,
+      displayName,
+      shortDescription,
+      whenToUse,
+      modelInvocable,
+    }));
+}
+
+/**
+ * Parse the Codex catalog while retaining the source metadata used by
+ * settings surfaces. The slash picker only needs the presentation fields,
+ * so `parseCodexSkills` above intentionally keeps its smaller return shape.
+ */
+export function parseCodexSkillCatalog(value: unknown): readonly CodexSkillCatalogItem[] {
   const records: unknown[] = [];
 
   const visit = (current: unknown): void => {
@@ -45,19 +80,18 @@ export function parseCodexSkills(value: unknown): readonly ComposerSlashSkill[] 
 
   visit(value);
 
-  const seen = new Set<string>();
   return records
-    .map(asSkill)
-    .filter((skill): skill is ComposerSlashSkill => {
-      if (!skill || seen.has(skill.name)) return false;
-      seen.add(skill.name);
-      return true;
-    });
+    .map(asCatalogItem)
+    .filter((skill): skill is CodexSkillCatalogItem => skill !== null);
 }
 
-function asSkill(value: unknown): ComposerSlashSkill | null {
+function asCatalogItem(value: unknown): CodexSkillCatalogItem | null {
   if (!value || typeof value !== "object") return null;
-  const record = value as CodexSkillRecord;
+  const record = value as CodexSkillRecord & {
+    path?: unknown;
+    scope?: unknown;
+    enabled?: unknown;
+  };
   const name = typeof record.name === "string" ? record.name.trim() : "";
   if (!name) return null;
   const skillInterface = record.interface && typeof record.interface === "object"
@@ -76,6 +110,9 @@ function asSkill(value: unknown): ComposerSlashSkill | null {
         : undefined,
     whenToUse: typeof record.whenToUse === "string" ? record.whenToUse : undefined,
     modelInvocable: typeof record.modelInvocable === "boolean" ? record.modelInvocable : undefined,
+    path: typeof record.path === "string" ? record.path : undefined,
+    scope: typeof record.scope === "string" ? record.scope : undefined,
+    enabled: typeof record.enabled === "boolean" ? record.enabled : undefined,
   };
 }
 

@@ -9,6 +9,7 @@ import {
   type MemoListView,
   type ProductUpdatesConfig,
   type PropertiesConfig,
+  type PropertyFieldType,
   type UserSettings,
 } from '@/lib/constants';
 import { sanitizeTheme, type ThemeId } from '@features/theme';
@@ -22,6 +23,8 @@ import {
   type AppLanguage,
 } from '@/lib/i18n';
 import { createLogger } from '@/lib/logger';
+import { isBuiltinPresetKey } from '@features/document/properties/presets';
+import { canonicalizePropertyKey } from '@features/document/properties/property-key';
 
 const logger = createLogger('user-settings');
 
@@ -101,7 +104,6 @@ function mergeSettings(base: UserSettings, updates: UserSettingsUpdate): UserSet
       ...personalize,
       responseLength: normalizeResponseLength(personalize.responseLength),
       preferredLanguage: normalizePreferredLanguage(personalize.preferredLanguage),
-      showConversationEntry: personalize.showConversationEntry !== false,
     },
     format: { ...base.format, ...(updates.format ?? {}) },
     theme,
@@ -135,14 +137,24 @@ function sanitizePropertiesConfig(properties: PropertiesConfig | undefined): Pro
   fields.forEach((field) => {
     const key = String(field?.key ?? '').trim();
     const name = String(field?.name ?? '').trim();
-    const type = field?.type;
+    const rawType = (field as { type?: unknown })?.type;
+    // `List` was the old name for an array-valued property. Keep existing
+    // preference files usable while ensuring the removed type never reaches
+    // the runtime catalog or any picker.
+    const normalizedType = rawType === 'List' ? 'MultiSelect' : rawType;
     if (!key || !name) return;
-    if (!['Text', 'Number', 'Date', 'URL', 'Icon', 'Select', 'MultiSelect', 'List'].includes(type)) return;
-    deduped.set(key, {
+    if (!['Text', 'Boolean', 'Number', 'Date', 'Icon', 'Select', 'MultiSelect', 'Tag', 'Tags', 'Color'].includes(normalizedType as PropertyFieldType)) return;
+    const type = normalizedType as PropertyFieldType;
+    // Built-in presets own their keys. Filtering them here keeps malformed or
+    // externally-written settings from shadowing the unified runtime catalog.
+    if (isBuiltinPresetKey(key)) return;
+    const comparableKey = canonicalizePropertyKey(key).toLowerCase();
+    if (deduped.has(comparableKey)) return;
+    deduped.set(comparableKey, {
       key,
       name,
       type,
-      options: Array.isArray(field.options)
+      options: (type === 'Select' || type === 'MultiSelect') && Array.isArray(field.options)
         ? field.options.map((option) => String(option).trim()).filter(Boolean)
         : undefined,
     });
@@ -189,7 +201,6 @@ function sanitizeSettings(settings: UserSettings): UserSettings {
       responseLength: normalizeResponseLength(settings.personalize.responseLength),
       preferredLanguage: normalizePreferredLanguage(settings.personalize.preferredLanguage),
       selectedTags: settings.personalize.selectedTags,
-      showConversationEntry: settings.personalize.showConversationEntry !== false,
     },
     format: {
       fontFamily: normalizeActiveFontFamily(settings.format.fontFamily),

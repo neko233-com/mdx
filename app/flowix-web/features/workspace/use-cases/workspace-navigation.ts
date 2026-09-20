@@ -1,12 +1,12 @@
 import { captureFileBrowserContext } from './file-browser-context';
 import type { PluginDescriptor } from '@platform/tauri/client';
 import { canonicalPath } from '@/lib/path';
+import { resourceKindFromPath } from '@features/editor/public/code-file';
 import { canonicalUrl } from '@features/workspace/store/workspace-content-identity';
 import {
   flushWorkspaceDocumentPath,
   getWorkspaceDocumentState,
   pushWorkspaceDocumentHistory,
-  type ArtifactHistoryEntry,
   type DocumentHistoryEntry,
 } from '@features/document/public/workspace-api';
 import {
@@ -56,6 +56,14 @@ export interface OpenExternalTargetOptions {
   scopePath?: string | null;
 }
 
+export interface OpenMediaTargetParams {
+  filePath: string;
+  notebookId?: string | null;
+  notebookPath: string | null;
+  resourceKind?: 'image' | 'video';
+  history?: 'push' | 'skip';
+}
+
 export interface OpenArtifactTargetParams {
   pointerMemoId: string;
   notebookId?: string | null;
@@ -87,6 +95,23 @@ interface DocumentSnapshot {
 
 const retryActions = new Map<string, RetryAction>();
 let retrySequence = 0;
+
+/**
+ * Let a selection-only update reach the screen before document navigation
+ * starts doing synchronous editor work. A single rAF runs before the browser
+ * paints, so the second frame is intentional: the first frame is the one in
+ * which React can paint the selected memo card.
+ */
+function waitForSelectionPaint(): Promise<void> {
+  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => resolve());
+    });
+  });
+}
 
 /**
  * Keep the no-op/main-third path synchronous. BrowserColumn activation is the
@@ -124,6 +149,20 @@ function pendingExternalTarget(
     path: path ?? '',
     scopePath: options?.scopePath ? canonicalPath(options.scopePath) : null,
     transitionId: null,
+  };
+}
+
+function pendingMediaTarget(params: OpenMediaTargetParams): WorkColumnTarget {
+  const resourceKind = params.resourceKind ?? resourceKindFromPath(params.filePath);
+  if (resourceKind !== 'image' && resourceKind !== 'video') {
+    throw new Error(`Unsupported media resource: ${params.filePath}`);
+  }
+  return {
+    kind: 'media',
+    filePath: params.filePath,
+    notebookId: params.notebookId ?? null,
+    notebookPath: params.notebookPath,
+    resourceKind,
   };
 }
 
@@ -272,6 +311,15 @@ function historyEntryFromWorkColumnTarget(
         scopePath: target.scopePath,
         openedAt: Date.now(),
       };
+    case 'media':
+      return {
+        kind: 'media',
+        filePath: target.filePath,
+        notebookId: target.notebookId,
+        notebookPath: target.notebookPath,
+        resourceKind: target.resourceKind,
+        openedAt: Date.now(),
+      };
     case 'agent-conversation':
       return {
         kind: 'agent-conversation',
@@ -291,20 +339,6 @@ function historyEntryFromWorkColumnTarget(
     default:
       return null;
   }
-}
-
-function artifactHistoryEntryFromTarget(
-  target: Extract<WorkColumnTarget, { kind: 'artifact' }>,
-): ArtifactHistoryEntry {
-  return {
-    kind: 'artifact',
-    pointerMemoId: target.pointerMemoId,
-    notebookId: target.notebookId,
-    notebookPath: target.notebookPath,
-    pluginId: target.pluginId,
-    renderer: target.renderer,
-    openedAt: Date.now(),
-  };
 }
 
 function selectArtifactMemo(params: OpenArtifactTargetParams): void {
@@ -457,8 +491,8 @@ export async function openMemoTarget(
   const previousNotebook = getWorkspaceMemoState().selectedNotebook;
   const previousDocument = captureDocumentSnapshot();
   const previousTarget = useWorkColumnStore.getState().navigation.target;
-  const previousArtifactHistory = previousTarget.kind === 'artifact'
-    ? artifactHistoryEntryFromTarget(previousTarget)
+  const previousSurfaceHistory = previousTarget.kind === 'artifact' || previousTarget.kind === 'media'
+    ? historyEntryFromWorkColumnTarget(previousTarget)
     : null;
   const notebookId = params.notebookId ?? params.notebook?.id ?? null;
   const memo = params.memo ?? null;
@@ -503,6 +537,14 @@ export async function openMemoTarget(
         latest.upsertMemo(memo);
         latest.setSelectedMemo(memo);
         if (!isCurrentNavigation(requestId)) return;
+
+        // Selection and document switching used to happen in the same turn.
+        // For a large outgoing document, the editor flush then occupied the
+        // main thread before the selected card background got a paint. Keep
+        // the selection responsive and start the document transition after
+        // that visual update has actually had a chance to render.
+        await waitForSelectionPaint();
+        if (!isCurrentNavigation(requestId)) return;
       }
 
       const {
@@ -514,7 +556,7 @@ export async function openMemoTarget(
       if (!isCurrentNavigation(requestId)) return;
       await getWorkspaceDocumentState().openMemoDocument({
         ...documentParams,
-        history: previousArtifactHistory ? 'skip' : params.history,
+        history: previousSurfaceHistory ? 'skip' : params.history,
         notebookPath: params.notebookPath ?? targetNotebook?.path ?? null,
       });
 
@@ -525,8 +567,8 @@ export async function openMemoTarget(
         throw new Error(`Memo session was not committed: ${params.memoId}`);
       }
       useWorkspaceFocusStore.getState().focusHost('main-third');
-      if (previousArtifactHistory && params.history !== 'skip') {
-        pushWorkspaceDocumentHistory(previousArtifactHistory);
+      if (previousSurfaceHistory && params.history !== 'skip') {
+        pushWorkspaceDocumentHistory(previousSurfaceHistory);
       }
     },
     async () => {
@@ -568,8 +610,8 @@ export async function openExternalTarget(
   const previousMemo = getWorkspaceMemoState().selectedMemo;
   const previousDocument = captureDocumentSnapshot();
   const previousTarget = useWorkColumnStore.getState().navigation.target;
-  const previousArtifactHistory = previousTarget.kind === 'artifact'
-    ? artifactHistoryEntryFromTarget(previousTarget)
+  const previousSurfaceHistory = previousTarget.kind === 'artifact' || previousTarget.kind === 'media'
+    ? historyEntryFromWorkColumnTarget(previousTarget)
     : null;
   await runNavigation(
     pendingExternalTarget(path, options),
@@ -578,7 +620,7 @@ export async function openExternalTarget(
       if (!isCurrentNavigation(requestId)) return;
       await getWorkspaceDocumentState().openExternalDocument(
         path,
-        previousArtifactHistory ? { ...options, history: 'skip' } : options,
+        previousSurfaceHistory ? { ...options, history: 'skip' } : options,
       );
       if (!useWorkColumnStore.getState().isCurrentNavigation(requestId)) return;
       const scopePath = options?.scopePath ? canonicalPath(options.scopePath) : null;
@@ -587,8 +629,8 @@ export async function openExternalTarget(
       } else if (!publishExternalTargetIfCurrent(requestId, path, scopePath, fileBrowser)) {
         throw new Error(`External document session was not committed: ${path}`);
       }
-      if (previousArtifactHistory && options?.history !== 'skip') {
-        pushWorkspaceDocumentHistory(previousArtifactHistory);
+      if (previousSurfaceHistory && options?.history !== 'skip') {
+        pushWorkspaceDocumentHistory(previousSurfaceHistory);
       }
     },
     async () => {
@@ -601,6 +643,51 @@ export async function openExternalTarget(
       if (!getWorkspaceMemoState().selectedMemo) {
         getWorkspaceMemoState().setSelectedMemo(previousMemo);
       }
+    },
+  );
+  return null;
+}
+
+/** Open an image/video as a resource surface, without creating a document session. */
+export async function openMediaTarget(
+  params: OpenMediaTargetParams,
+): Promise<WorkspaceContentLocation | null> {
+  const filePath = params.filePath.trim();
+  if (!filePath || !params.notebookPath?.trim()) return null;
+  const target = pendingMediaTarget({ ...params, filePath });
+  const existing = activateExistingContentForNavigation({ kind: 'media', path: filePath });
+  if (existing instanceof Promise) {
+    const activated = await existing;
+    if (activated) return activated;
+  } else if (existing) {
+    return existing;
+  }
+
+  const previousMemo = getWorkspaceMemoState().selectedMemo;
+  const previousDocument = captureDocumentSnapshot();
+  const previousHistoryEntry = historyEntryFromWorkColumnTarget(
+    useWorkColumnStore.getState().navigation.target,
+  );
+  await runNavigation(
+    target,
+    async (requestId) => {
+      await flushWorkspaceDocument();
+      if (!isCurrentNavigation(requestId)) return;
+      await getWorkspaceDocumentState().clearDocument();
+      if (!isCurrentNavigation(requestId)) return;
+      getWorkspaceMemoState().setSelectedMemo(null);
+      if (!commitNavigation(requestId, target)) return;
+      useWorkspaceFocusStore.getState().focusHost('main-third');
+      if (params.history !== 'skip' && previousHistoryEntry) {
+        pushWorkspaceDocumentHistory(previousHistoryEntry);
+      }
+    },
+    async () => { await openMediaTarget(params); },
+    async (requestId) => {
+      if (!isCurrentNavigation(requestId)) return;
+      await restoreDocumentSnapshot(previousDocument);
+      if (!isCurrentNavigation(requestId)) return;
+      getWorkspaceMemoState().setSelectedMemo(previousMemo);
     },
   );
   return null;
@@ -709,15 +796,15 @@ export async function openAgentTarget(
     return existing;
   }
   const previousTarget = useWorkColumnStore.getState().navigation.target;
-  const previousArtifactHistory = previousTarget.kind === 'artifact'
-    ? artifactHistoryEntryFromTarget(previousTarget)
+  const previousSurfaceHistory = previousTarget.kind === 'artifact' || previousTarget.kind === 'media'
+    ? historyEntryFromWorkColumnTarget(previousTarget)
     : null;
   await runNavigation(
     { kind: 'agent-conversation', instanceId: normalized },
     async (requestId) => {
       await getWorkspaceDocumentState().openAgentConversation(
         normalized,
-        previousArtifactHistory ? { ...options, history: 'skip' } : options,
+        previousSurfaceHistory ? { ...options, history: 'skip' } : options,
       );
       if (!useWorkColumnStore.getState().isCurrentNavigation(requestId)) return;
       if (getWorkspaceDocumentState().activeAgentConversationId !== normalized) {
@@ -727,8 +814,8 @@ export async function openAgentTarget(
       getWorkspaceMemoState().setSelectedMemo(null);
       if (!isCurrentNavigation(requestId)) return;
       commitNavigation(requestId, { kind: 'agent-conversation', instanceId: normalized });
-      if (previousArtifactHistory && options?.history !== 'skip') {
-        pushWorkspaceDocumentHistory(previousArtifactHistory);
+      if (previousSurfaceHistory && options?.history !== 'skip') {
+        pushWorkspaceDocumentHistory(previousSurfaceHistory);
       }
     },
     async () => {

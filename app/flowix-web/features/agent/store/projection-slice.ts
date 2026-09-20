@@ -16,6 +16,7 @@ import {
 import {
   EMPTY_CONVERSATION_RUN_SIGNATURE,
   getConversationRunSignature,
+  splitConversationRunSignature,
 } from "@features/agent/store/conversation-run-signature";
 
 type SessionSet = (
@@ -30,6 +31,10 @@ export interface ProjectionSlice {
   threadProjections: Record<string, ThreadProjection>;
   /** Incrementally maintained lifecycle projection used by conversation rows. */
   threadRunSignatures: Record<string, string>;
+  /** Latest terminal run observed for each thread. */
+  latestCompletedRunIds: Record<string, string>;
+  /** Latest terminal run acknowledged by a reading surface. */
+  readThroughRunIds: Record<string, string>;
   /** Changes only when lifecycle fields change, not for message chunks. */
   runStateVersion: number;
   threadEpochs: Record<string, number>;
@@ -48,6 +53,7 @@ export interface ProjectionSlice {
   applySessionResolved(
     event: AgentEvent & { kind: "session_resolved" },
   ): void;
+  markThreadRead(threadId: string, runId?: string | null): void;
 }
 
 export function createProjectionSlice(
@@ -61,7 +67,20 @@ export function createProjectionSlice(
     const previousSignature = state.threadRunSignatures[threadId]
       ?? getConversationRunSignature(state.threadProjections[threadId]);
     const nextSignature = getConversationRunSignature(nextProjection);
-    if (previousSignature === nextSignature) return {};
+    const previousStatus = splitConversationRunSignature(previousSignature).status;
+    const nextStatus = splitConversationRunSignature(nextSignature).status;
+    const runEnded = previousStatus === "running"
+      && nextStatus !== "running"
+      && nextStatus !== null;
+    const nextRunId = splitConversationRunSignature(nextSignature).runId;
+    const latestCompletedRunIds = { ...state.latestCompletedRunIds };
+    const readThroughRunIds = { ...state.readThroughRunIds };
+    if (runEnded && nextRunId) latestCompletedRunIds[threadId] = nextRunId;
+    if (!nextProjection) {
+      delete latestCompletedRunIds[threadId];
+      delete readThroughRunIds[threadId];
+    }
+    if (previousSignature === nextSignature && !runEnded) return {};
 
     const threadRunSignatures = { ...state.threadRunSignatures };
     if (nextSignature === EMPTY_CONVERSATION_RUN_SIGNATURE) {
@@ -72,16 +91,44 @@ export function createProjectionSlice(
     return {
       threadRunSignatures,
       runStateVersion: state.runStateVersion + 1,
+      ...(latestCompletedRunIds[threadId] === state.latestCompletedRunIds[threadId]
+        ? {}
+        : { latestCompletedRunIds }),
+      ...(readThroughRunIds[threadId] === state.readThroughRunIds[threadId]
+        ? {}
+        : { readThroughRunIds }),
     };
   };
 
   return {
     threadProjections: {},
     threadRunSignatures: {},
+    latestCompletedRunIds: {},
+    readThroughRunIds: {},
     runStateVersion: 0,
     threadEpochs: {},
     threadTombstones: {},
     codexLiveTurns: {},
+    markThreadRead: (threadId, runId) => {
+      if (!threadId) return;
+      set((state) => {
+        const targetRunId = runId ?? state.latestCompletedRunIds[threadId];
+        // A delayed surface may acknowledge an older run after a newer run
+        // has completed. Never let that stale acknowledgement move the
+        // cursor backwards or clear the newer unread result.
+        if (
+          !targetRunId ||
+          targetRunId !== state.latestCompletedRunIds[threadId] ||
+          state.readThroughRunIds[threadId] === targetRunId
+        ) return state;
+        return {
+          readThroughRunIds: {
+            ...state.readThroughRunIds,
+            [threadId]: targetRunId,
+          },
+        };
+      });
+    },
     clearCodexLiveTurn: (threadId, runId) => {
       set((state) => {
         const current = state.codexLiveTurns[threadId];

@@ -121,6 +121,24 @@ impl ExportAccess {
         }
         Ok(())
     }
+
+    /// Check that a path was selected by the save dialog without consuming the
+    /// authorization. Native exporters write to a temporary file first and
+    /// then call [`Self::save`] to perform the authorized atomic commit.
+    pub fn authorized_target(&self, window: &str, path: &Path) -> io::Result<PathBuf> {
+        let (target, _) = resolve_target(path)?;
+        let targets = self
+            .targets
+            .lock()
+            .map_err(|_| io::Error::other("export authorization lock unavailable"))?;
+        if !targets.contains_key(&(window.to_string(), target.clone())) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "save dialog authorization required",
+            ));
+        }
+        Ok(target)
+    }
 }
 
 fn resolve_target(path: &Path) -> io::Result<(PathBuf, bool)> {

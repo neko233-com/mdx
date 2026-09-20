@@ -225,7 +225,10 @@ impl MemoIndex {
     /// 全量重建. `items` 是 (metadata, 完整 .md 原始内容) 对的列表.
     /// 读失败或条目不存在的项会被静默跳过 (在 memo index 里的 metadata 仍会进索引,
     /// 只是 body_lower 为空, 搜不到正文).
-    pub fn rebuild(&mut self, notebook_id: String, items: Vec<(MemoIndexEntry, String)>) {
+    pub fn rebuild<I>(&mut self, notebook_id: String, items: I)
+    where
+        I: IntoIterator<Item = (MemoIndexEntry, String)>,
+    {
         self.mark_unloaded();
         self.notebook_id = Some(notebook_id);
         for (entry, full_md) in items {
@@ -306,6 +309,9 @@ impl MemoIndex {
         if q_tokens.is_empty() {
             return Vec::new();
         }
+        if limit == 0 {
+            return Vec::new();
+        }
         let normalized_tag_filter = match tag_filter {
             Some(raw) => match normalize_search_tag_filter(raw) {
                 Some(filter) => Some(filter),
@@ -317,36 +323,23 @@ impl MemoIndex {
         // tokenize 阶段空格已经是分隔符, 但 contains() 还按字面比对, 这里抹平.
         let query_for_contains: String = query_lower.split_whitespace().collect();
 
-        // 1. 候选集: q_tokens 在 postings 里的 set 之交集. 任一 token 缺失 -> 候选空.
-        let mut candidates: Option<BTreeSet<String>> = None;
+        // 1. 从最小 posting 开始，以引用探测其余集合。避免每次按键都
+        // 克隆全部 posting，同时把工作量限制在最稀有的查询 token 上。
+        let mut posting_sets = Vec::with_capacity(q_tokens.len());
         for tok in &q_tokens {
-            match self.postings.get(tok) {
-                Some(set) => {
-                    let s = set.clone();
-                    candidates = Some(match candidates.take() {
-                        Some(prev) => {
-                            // 用较小的一边 reduce, 减少分配
-                            if prev.len() < s.len() {
-                                prev.intersection(&s).cloned().collect()
-                            } else {
-                                let mut s = s;
-                                s.retain(|id| prev.contains(id));
-                                s
-                            }
-                        }
-                        None => s,
-                    });
-                }
-                None => return Vec::new(),
-            }
+            let Some(set) = self.postings.get(tok) else {
+                return Vec::new();
+            };
+            posting_sets.push(set);
         }
-        let Some(candidates) = candidates else {
-            return Vec::new();
-        };
+        posting_sets.sort_unstable_by_key(|set| set.len());
+        let candidates = posting_sets[0]
+            .iter()
+            .filter(|id| posting_sets[1..].iter().all(|set| set.contains(*id)));
 
         // 2. 精确校验 + 打分
-        let mut hits: Vec<MemoSearchHit> = Vec::with_capacity(candidates.len());
-        for id in &candidates {
+        let mut scored = Vec::new();
+        for id in candidates {
             let Some(entry) = self.entries.get(id) else {
                 continue;
             };
@@ -397,26 +390,34 @@ impl MemoIndex {
             // 时间微调, 毫秒时间戳 / 1e13 量级在 0..10 之间, 不会喧宾夺主
             score += entry.updated_at as f32 / 1e13;
 
-            let snippet = make_snippet(entry, &query_for_contains, &matched_in);
-            hits.push(MemoSearchHit {
+            scored.push((id, entry, matched_in, score));
+        }
+
+        // 3. 先保留 Top-K，再只为最终结果生成 snippet。候选很多时避免
+        // 全量排序，也避免给最终不会返回的候选分配 snippet String。
+        let compare = |a: &(&String, &SearchIndexEntry, MatchField, f32),
+                       b: &(&String, &SearchIndexEntry, MatchField, f32)| {
+            b.3.partial_cmp(&a.3)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.1.updated_at.cmp(&a.1.updated_at))
+                .then_with(|| a.0.cmp(b.0))
+        };
+        if scored.len() > limit {
+            scored.select_nth_unstable_by(limit, compare);
+            scored.truncate(limit);
+        }
+        scored.sort_unstable_by(compare);
+        scored
+            .into_iter()
+            .map(|(id, entry, matched_in, score)| MemoSearchHit {
                 id: id.clone(),
                 filename: entry.filename.clone(),
-                snippet,
+                snippet: make_snippet(entry, &query_for_contains, &matched_in),
                 matched_in,
                 score,
                 updated_at: entry.updated_at,
-            });
-        }
-
-        // 3. 排序 + 截断
-        hits.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| b.updated_at.cmp(&a.updated_at))
-        });
-        hits.truncate(limit);
-        hits
+            })
+            .collect()
     }
 
     // ---- private ----
@@ -449,6 +450,7 @@ impl MemoIndex {
         self.entries.insert(id, idx_entry);
     }
 }
+
 /// 抽 snippet. title/tag 命中用 preview 替代; body 命中在 body_lower 里找首次出现位置,
 /// 用 `char_indices` 算 UTF-8 字符级偏移 (绝不能按字节切). 命中区间用 `\x01...\x02` 包裹.
 pub fn rebuild_index_from_store(index: &mut MemoIndex, memo_file: &MemoFile, notebook_id: String) {
@@ -799,6 +801,25 @@ mod tests {
         let idx = fixture_index();
         let hits = idx.search("今天", 1);
         assert_eq!(hits.len(), 1);
+    }
+
+    #[test]
+    fn search_uses_id_as_stable_final_tiebreaker() {
+        let mut idx = MemoIndex::new(Arc::new(BigramTokenizer));
+        idx.rebuild(
+            "nb".to_string(),
+            vec![
+                mk_entry("memo-b", "same", "body", vec![], 1),
+                mk_entry("memo-a", "same", "body", vec![], 1),
+            ],
+        );
+
+        let ids = idx
+            .search("same", 10)
+            .into_iter()
+            .map(|hit| hit.id)
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["memo-a", "memo-b"]);
     }
 
     #[test]

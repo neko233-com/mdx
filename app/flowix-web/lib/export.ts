@@ -3,7 +3,7 @@
 import { Marked } from 'marked';
 import { translate, type AppLanguage } from '@/lib/i18n';
 
-const FRONTMATTER_PATTERN = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+const FRONTMATTER_PATTERN = /^\uFEFF?(?:[ \t]*\r?\n)*---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 const MAX_FILE_NAME_LENGTH = 120;
 
 // Use a dedicated `Marked` instance so `@tiptap/markdown`'s global extensions

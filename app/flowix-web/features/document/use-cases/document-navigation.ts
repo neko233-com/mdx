@@ -11,6 +11,7 @@ import { selectAndOpenAgentConversation } from '@features/workspace/use-cases/ag
 import {
   openArtifactTarget,
   openExternalTarget,
+  openMediaTarget,
   openMemoTarget,
 } from '@features/workspace/use-cases/workspace-navigation';
 import { useWorkColumnStore } from '@features/workspace/store/work-column-store';
@@ -19,6 +20,16 @@ export type DocumentHistoryDirection = 'back' | 'forward';
 
 function currentHistoryEntry(): DocumentHistoryEntry | null {
   const workColumnTarget = useWorkColumnStore.getState().navigation.target;
+  if (workColumnTarget.kind === 'media') {
+    return {
+      kind: 'media',
+      filePath: workColumnTarget.filePath,
+      notebookId: workColumnTarget.notebookId,
+      notebookPath: workColumnTarget.notebookPath,
+      resourceKind: workColumnTarget.resourceKind,
+      openedAt: Date.now(),
+    };
+  }
   if (workColumnTarget.kind === 'artifact') {
     return {
       kind: 'artifact',
@@ -107,6 +118,7 @@ function historyEntryKey(entry: DocumentHistoryEntry | null): string | null {
   if (entry.kind === 'memo') return `memo:${entry.memoId}:${canonicalPath(entry.path)}`;
   if (entry.kind === 'agent-conversation') return `agent-conversation:${entry.instanceId}`;
   if (entry.kind === 'artifact') return `artifact:${entry.pointerMemoId}`;
+  if (entry.kind === 'media') return `media:${canonicalPath(entry.filePath)}`;
   return `external:${canonicalPath(entry.path)}`;
 }
 
@@ -133,6 +145,16 @@ async function openHistoryEntry(entry: DocumentHistoryEntry): Promise<void> {
       history: 'skip',
       memo,
       notebook,
+    });
+    return;
+  }
+  if (entry.kind === 'media') {
+    await openMediaTarget({
+      filePath: entry.filePath,
+      notebookId: entry.notebookId,
+      notebookPath: entry.notebookPath,
+      resourceKind: entry.resourceKind,
+      history: 'skip',
     });
     return;
   }

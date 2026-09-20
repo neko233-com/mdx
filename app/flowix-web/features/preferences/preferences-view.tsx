@@ -93,15 +93,11 @@ function PlaceholderSection({ title, emptyText }: { title: string; emptyText: st
 }
 
 function GeneralSettingsSection() {
-	const personalize = useUserSettings((settings) => settings.personalize);
 	const language = useUserSettings((settings) => settings.language);
-	const region = useUserSettings((settings) => settings.region);
 	const { updateSettings } = useUserSettingsActions();
 	return (
 		<GeneralSection
-			settings={personalize}
 			language={language}
-			region={region}
 			updateSettings={updateSettings}
 		/>
 	);

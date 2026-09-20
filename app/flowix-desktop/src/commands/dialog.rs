@@ -82,6 +82,7 @@ pub async fn select_directory(app: tauri::AppHandle) -> Option<String> {
 pub async fn select_files(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
+    accept: Option<String>,
 ) -> Option<Vec<String>> {
     let generation = app
         .state::<AppState>()
@@ -92,19 +93,25 @@ pub async fn select_files(
 
     let handle = app.clone();
     task::spawn_blocking(move || {
-        let result = handle
-            .dialog()
-            .file()
-            .add_filter(
+        let dialog = handle.dialog().file().set_title("选择文件");
+        let dialog = match accept.as_deref() {
+            Some("image/*") => dialog.add_filter(
+                "图片",
+                &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"],
+            ),
+            Some("video/*") => {
+                dialog.add_filter("视频", &["mp4", "webm", "mov", "avi", "mkv", "ogg"])
+            }
+            _ => dialog.add_filter(
                 "Attachments",
                 &[
                     "png", "jpg", "jpeg", "gif", "webp", "svg", "pdf", "doc", "docx", "xls",
                     "xlsx", "ppt", "pptx", "txt", "md", "csv", "json", "mp3", "wav", "ogg", "mp4",
                     "webm", "mov", "avi", "zip", "rar", "7z", "tar", "gz",
                 ],
-            )
-            .set_title("选择文件")
-            .add_filter("图片", &["png", "jpg", "jpeg", "gif", "webp", "svg"])
+            ),
+        };
+        let result = dialog
             .add_filter("All files", &["*"])
             .blocking_pick_files()
             .map(|paths| {

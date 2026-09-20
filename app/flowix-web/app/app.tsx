@@ -7,7 +7,7 @@ import { useAppPreferencesViewModel } from "@features/preferences/public/app-api
 import { useAppAgentRuntimeViewModel } from "@features/agent/public/app-api";
 import { useApplyFontSettings } from "@features/preferences/public/app-api";
 import { ThemeProvider } from "@features/theme";
-import { NativeSelectAllBridge, ShortcutsProvider } from "@features/shortcuts";
+import { NativeEditMenuBridge, ShortcutsProvider } from "@features/shortcuts";
 import { I18nProvider } from "@/lib/i18n";
 import { TooltipProvider } from "@shared/ui/tooltip";
 import "@features/shortcuts/actions";
@@ -89,6 +89,12 @@ function App() {
   useApplyFontSettings(format);
 
   useEffect(() => {
+    void windows.applyMenuLanguage(language).catch((error) => {
+      logger.error("apply native menu language failed", { error });
+    });
+  }, [language]);
+
+  useEffect(() => {
     // The static loading screen is only a first-paint fallback. It must not
     // depend on a lazy route resolving: if a packaged chunk is unavailable,
     // ErrorBoundary should be visible instead of an endless spinner.
@@ -139,7 +145,7 @@ function App() {
           <ThemeProvider>
             <TooltipProvider>
               <ShortcutsProvider overrides={shortcutOverrides}>
-              <NativeSelectAllBridge />
+              <NativeEditMenuBridge />
               <Suspense fallback={null}>
                 <PreferencesView initialTab={tab} />
                 <AppReadySignal />
@@ -165,7 +171,7 @@ function App() {
           </Suspense>
           <TooltipProvider>
             <ShortcutsProvider overrides={shortcutOverrides}>
-              <NativeSelectAllBridge />
+              <NativeEditMenuBridge />
               <Suspense fallback={null}>
                 <MainWindow />
                 <MainWindowReadySignal />

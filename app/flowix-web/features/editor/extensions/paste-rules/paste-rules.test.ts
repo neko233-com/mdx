@@ -1,8 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import type { JSONContent } from '@tiptap/core';
 
+const attachmentUploadMock = vi.hoisted(() => ({
+  handleFileUpload: vi.fn(),
+}));
+
 vi.mock('@features/editor/extensions/attachment-link/upload/plugin', () => ({
-  handleFileUpload: () => undefined,
+  handleFileUpload: attachmentUploadMock.handleFileUpload,
 }));
 
 vi.mock('@features/editor/extensions/note-link', () => ({
@@ -16,6 +20,7 @@ import {
   normalizeLooseCodeBlocks,
 } from '@features/editor/extensions/paste-rules/code-block-detector';
 import { hasMeaningfulInlineHtml, isStandaloneHtmlTable } from '@features/editor/extensions/paste-rules/html';
+import { isInternalEditorHtml, sanitizeExternalHtml } from '@features/editor/extensions/paste-rules/html-sanitizer';
 import { containsMarkdownTable, hasLeadingFrontmatter } from '@features/editor/extensions/paste-rules/markdown';
 import {
   htmlTableToTableContent,
@@ -30,6 +35,28 @@ function cellText(table: JSONContent | null, row: number, cell: number): string 
 }
 
 describe('paste rule helpers', () => {
+  it('forwards the owning memo to file uploads', () => {
+    const rule = createManagedPasteRules().find(item => item.id === 'files');
+    if (!rule) throw new Error('files paste rule is missing');
+
+    const view = { state: { selection: { from: 7 } } };
+    const files = [{ name: 'paste.png', type: 'image/png' }] as unknown as File[];
+    attachmentUploadMock.handleFileUpload.mockClear();
+
+    expect(rule.run({
+      view,
+      files,
+      memoId: 'memo-a',
+    } as unknown as Parameters<typeof rule.run>[0])).toBe('handled');
+    expect(attachmentUploadMock.handleFileUpload).toHaveBeenCalledWith(
+      view,
+      files,
+      7,
+      undefined,
+      'memo-a',
+    );
+  });
+
   it('normalizes text/uri-list by ignoring comments', () => {
     const data = {
       types: ['text/uri-list'],
@@ -80,6 +107,8 @@ describe('paste rule helpers', () => {
 
   it('detects pasted markdown with YAML frontmatter', () => {
     const markdown = [
+      '',
+      '  ',
       '---',
       'title: Paste target',
       'tags:',
@@ -93,15 +122,15 @@ describe('paste rule helpers', () => {
 
   it('merges pasted frontmatter into the existing document frontmatter', () => {
     const merged = mergeFrontmatterYaml(
-      ['key: sg8qgwdq', 'title: Existing'].join('\n'),
-      ['name: guizang-ppt-skill', 'description: deck generator', 'key: pasted1'].join('\n'),
+      ['flowix_key: sg8qgwdq', 'title: Existing'].join('\n'),
+      ['name: guizang-ppt-skill', 'description: deck generator', 'flowix_key: pasted1'].join('\n'),
     );
 
-    expect(merged).toContain('key: sg8qgwdq');
+    expect(merged).toContain('flowix_key: sg8qgwdq');
     expect(merged).toContain('title: Existing');
     expect(merged).toContain('name: guizang-ppt-skill');
     expect(merged).toContain('description: deck generator');
-    expect(merged).not.toContain('key: pasted1');
+    expect(merged).not.toContain('flowix_key: pasted1');
     expect(parseVisibleFrontmatter(merged).userData).toMatchObject({
       title: 'Existing',
       name: 'guizang-ppt-skill',
@@ -248,6 +277,67 @@ describe('paste rule helpers', () => {
     expect(hasMeaningfulInlineHtml('<span>plain wrapper</span>')).toBe(false);
     expect(hasMeaningfulInlineHtml('<span style="color: red">red text</span>')).toBe(true);
     expect(hasMeaningfulInlineHtml('<a href="https://example.com">link</a>')).toBe(true);
+  });
+
+  it('keeps semantic formatting but drops webpage presentation styles', () => {
+    const sanitized = sanitizeExternalHtml(
+      '<p style="text-align: start; margin: 0"><span style="font-weight: 700; color: red">Bold</span><span style="font-style: italic"> italic</span></p>',
+    );
+
+    expect(sanitized).toBe('<p><strong>Bold</strong><em> italic</em></p>');
+
+    expect(sanitizeExternalHtml('<span style="font-weight: 700; font-style: italic">Both</span>'))
+      .toBe('<strong><em>Both</em></strong>');
+  });
+
+  it('preserves the minimal attributes needed for supported task lists', () => {
+    expect(sanitizeExternalHtml(
+      '<ul data-type="taskList" class="copied"><li data-type="taskItem" data-checked="true" style="margin:0">Done</li></ul>',
+    )).toBe('<ul data-type="taskList"><li data-type="taskItem" data-checked="true">Done</li></ul>');
+  });
+
+  it('removes unsafe content and unwraps unknown containers', () => {
+    const sanitized = sanitizeExternalHtml('<custom-box><script>alert(1)</script><strong>Text</strong></custom-box>');
+
+    expect(sanitized).toBe('<strong>Text</strong>');
+  });
+
+  it('does not sanitize ProseMirror internal clipboard HTML', () => {
+    expect(isInternalEditorHtml('<div data-pm-slice="1 1 []">text</div>')).toBe(true);
+    expect(isInternalEditorHtml('<p><strong>external</strong></p>')).toBe(false);
+  });
+
+  it('routes external rich HTML through the sanitizer before insertion', () => {
+    const inserted: string[] = [];
+    const rule = createManagedPasteRules().find(item => item.id === 'rich-inline-html');
+    const context = {
+      html: '<p style="text-align: start"><span style="font-weight: 700">Bold</span></p>',
+      editor: {
+        commands: {
+          insertContent(value: string) {
+            inserted.push(value);
+            return true;
+          },
+        },
+      },
+    } as unknown as Parameters<NonNullable<typeof rule>['run']>[0];
+
+    expect(rule?.match(context)).toBe(true);
+    expect(rule?.run(context)).toBe('handled');
+    expect(inserted).toEqual(['<p><strong>Bold</strong></p>']);
+  });
+
+  it('consumes external HTML even when sanitization removes everything', () => {
+    const rule = createManagedPasteRules().find(item => item.id === 'rich-html');
+    const insertContent = vi.fn(() => true);
+    const context = {
+      html: '<figure><script>alert(1)</script></figure>',
+      editor: { commands: { insertContent } },
+    } as unknown as Parameters<NonNullable<typeof rule>['run']>[0];
+
+    expect(rule?.match(context)).toBe(true);
+    expect(rule?.run(context)).toBe('handled');
+    expect(insertContent).not.toHaveBeenCalled();
   });
 
   it('only treats table-only HTML as a standalone HTML table paste', () => {

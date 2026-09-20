@@ -2,7 +2,6 @@ import type { I18nKey } from "@/lib/i18n";
 import type { AgentRolePickerController } from "@features/agent/thread-card/role/agent-role-picker-controller";
 import type { ComposerImageController } from "./composer-image-controller";
 import { COMPOSER_ATTACHMENT_ACCEPT } from "./composer-image-controller";
-import type { AgentTypeKey } from "@/types/agent";
 
 export interface ComposerAddMenuControllerOptions {
   trigger: HTMLButtonElement;
@@ -12,8 +11,7 @@ export interface ComposerAddMenuControllerOptions {
   images: ComposerImageController;
   t: (key: I18nKey) => string;
   isDestroyed: () => boolean;
-  getAgentType: () => AgentTypeKey;
-  openCodexSettings: () => void;
+  openNotebookAgentSettings: () => void;
 }
 
 export class ComposerAddMenuController {
@@ -72,13 +70,11 @@ export class ComposerAddMenuController {
     const note = this.createItem(this.options.t("editor.threadCard.addNote"), true);
     const attachment = this.createItem(this.options.t("editor.threadCard.addAttachment"), false);
     const items = [note, attachment];
-    if (this.options.getAgentType() === "codex") {
-      const codex = this.createItem(this.options.t("editor.threadCard.codexSettings"), false, () => {
-        this.setOpen(false);
-        this.options.openCodexSettings();
-      });
-      items.push(codex);
-    }
+    const projectAiSettings = this.createItem(this.options.t("editor.threadCard.projectAiSettings"), false, () => {
+      this.setOpen(false);
+      this.options.openNotebookAgentSettings();
+    });
+    items.push(projectAiSettings);
     this.options.popover.replaceChildren(...items);
     this.noteItem = note;
     // The parent item and level-2 popover form one continuous hover region.

@@ -33,6 +33,18 @@ export function usePropertyFieldPreferences() {
   };
 }
 
+/** Read property-field preferences from non-React runtime consumers. */
+export function getPropertyFieldPreferences() {
+  return useUserSettingsStore.getState().settings.properties.fields;
+}
+
+/** Subscribe non-React runtime consumers to property-field preference changes. */
+export function subscribePropertyFieldPreferences(listener: () => void): () => void {
+  return useUserSettingsStore.subscribe((state, previous) => {
+    if (state.settings.properties.fields !== previous.settings.properties.fields) listener();
+  });
+}
+
 export function useAgentVisibilityPreferences() {
   const enabledByType = useUserSettingsStore((state) => state.settings.agents.enabledByType);
   const updateSettings = useUserSettingsStore((state) => state.updateSettings);
@@ -44,8 +56,9 @@ export function useAgentVisibilityPreferences() {
   };
 }
 
-export function useMemoNavigationPreferences() {
-  return useUserSettingsStore((state) => state.settings.personalize.showConversationEntry);
+/** Visibility preference consumed by the notebook file-tree runtime. */
+export function useShowHiddenNotebookFiles() {
+  return useUserSettingsStore((state) => state.settings.showHiddenNotebookFiles);
 }
 
 export function useMemoListViewPreference() {

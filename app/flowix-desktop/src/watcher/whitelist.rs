@@ -87,11 +87,7 @@ impl WhitelistConfig {
         // AGENTS.md is Flowix/Agent project configuration, never a memo.
         // Keep this unconditional so a user-supplied watcher configuration
         // cannot accidentally re-enable indexing it.
-        if path
-            .file_name()
-            .and_then(|name| name.to_str())
-            == Some("AGENTS.md")
-        {
+        if path.file_name().and_then(|name| name.to_str()) == Some("AGENTS.md") {
             return Err(DropReason::PathBlacklisted);
         }
 

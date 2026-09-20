@@ -1,6 +1,6 @@
 import { memos as memosClient, type AgentRoleMemoItem } from "@platform/tauri/client";
 import { createLogger } from "@/lib/logger";
-import { useMemoStore } from "@features/memo";
+import { useMemoStore } from "@features/memo/store/memo-store";
 import { joinPath } from "@features/document/components/session/document-utils";
 import {
   getMemoAgentRoleName,

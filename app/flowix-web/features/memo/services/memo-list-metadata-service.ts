@@ -1,4 +1,4 @@
-import type { Notebook } from '@features/memo';
+import type { Notebook } from '@features/memo/store/memo-store';
 import { memos, system, tags } from '@platform/tauri/client';
 import { applyPinOrdering } from '@features/memo/components/tag-reorder';
 

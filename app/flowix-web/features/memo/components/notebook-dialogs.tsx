@@ -12,19 +12,15 @@ import {
   getNotebookIconOption,
   NotebookIcon,
   NOTEBOOK_ICON_OPTIONS,
-  type Notebook,
-} from '@features/memo';
+} from '@features/memo/components/notebook-icon';
+import type { Notebook } from '@features/memo/store/memo-store';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import type { CloudNotebook } from '@platform/tauri/client';
-import { ArrowLeft, Check, ChevronDown, CloudDownload, Loader2 } from 'lucide-react';
+import { ArrowLeft, Check, CloudDownload, Loader2 } from 'lucide-react';
 import { useExperimentalMode } from '@platform/tauri/use-experimental-mode';
-import { useState } from 'react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@shared/ui/dropdown-menu';
+import { Textarea } from '@shared/ui/textarea';
+import { useEffect, useRef, useState } from 'react';
 
 interface NotebookDialogsProps {
   createOpen: boolean;
@@ -32,6 +28,7 @@ interface NotebookDialogsProps {
   newNotebookName: string;
   onNewNotebookNameChange: (name: string) => void;
   newNotebookPath: string;
+  newNotebookDefaultPath: string;
   onNewNotebookPathChange: (path: string) => void;
   newNotebookIcon: string | null;
   onNewNotebookIconChange: (icon: string | null) => void;
@@ -53,6 +50,10 @@ interface NotebookDialogsProps {
   onEditNotebookNameChange: (name: string) => void;
   editNotebookIcon: string | null;
   onEditNotebookIconChange: (icon: string | null) => void;
+  editNotebookDescription: string;
+  onEditNotebookDescriptionChange: (description: string) => void;
+  editNotebookDescriptionLoading: boolean;
+  editNotebookDescriptionChanged: boolean;
   editNotebookCloudSync: boolean;
   onEditNotebookCloudSyncChange: (enabled: boolean) => void;
   onEditNotebookCloudSyncUnavailable: () => void;
@@ -74,61 +75,91 @@ function NotebookIconPicker({
   disabled?: boolean;
 }) {
   const { t } = useI18n();
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [showBottomScrollHint, setShowBottomScrollHint] = useState(false);
+
+  useEffect(() => {
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea) return;
+
+    setShowBottomScrollHint(
+      scrollArea.scrollTop + scrollArea.clientHeight < scrollArea.scrollHeight - 1,
+    );
+  }, []);
+
   return (
     <div>
-      <div className="flex items-center gap-1.5 px-1.5 pb-[0.35rem] pt-[0.35rem] text-xs font-normal leading-[1.2] text-[var(--muted-foreground)]">
+      <div className="flex items-center gap-1.5 pb-[0.35rem] pt-[0.35rem] text-sm font-semibold leading-[1.2] text-[var(--foreground)]">
         {t("notebook.iconLabel")}
       </div>
-      <div className="max-h-[162px] overflow-y-auto pr-1 [scrollbar-gutter:stable]">
-        <div className="grid grid-cols-8 gap-1.5">
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => onChange(null)}
-            className={cn(
-              'flex h-9 w-9 items-center justify-center rounded-md border transition-colors',
-              value === null
-                ? 'border-[var(--primary)] bg-[var(--accent)]'
-                : 'border-[var(--border)] hover:bg-[var(--muted)]',
-              disabled && 'cursor-not-allowed opacity-60',
-            )}
-            aria-label={t("memo.notebook.letterIcon")}
-            title={t("memo.notebook.letterIcon")}
-          >
-            <NotebookIcon
-              name={notebookName}
-              className="h-[26px] w-[26px] rounded-md bg-[var(--muted)] text-[12px] font-semibold text-[var(--secondary-foreground)]"
-            />
-          </button>
-          {NOTEBOOK_ICON_OPTIONS.map((option) => (
+      <div className="relative">
+        <div
+          ref={scrollAreaRef}
+          className="max-h-[146px] overflow-y-auto pr-1 [scrollbar-gutter:stable]"
+          onScroll={(event) => {
+            const scrollArea = event.currentTarget;
+            setShowBottomScrollHint(
+              scrollArea.scrollTop + scrollArea.clientHeight < scrollArea.scrollHeight - 1,
+            );
+          }}
+        >
+          <div className="grid grid-cols-7 gap-1.5">
             <button
-              key={option.id}
               type="button"
               disabled={disabled}
-              onClick={() => onChange(option.id)}
+              onClick={() => onChange(null)}
               className={cn(
                 'flex h-9 w-9 items-center justify-center rounded-md border transition-colors',
-                value === option.id
+                value === null
                   ? 'border-[var(--primary)] bg-[var(--accent)]'
                   : 'border-[var(--border)] hover:bg-[var(--muted)]',
                 disabled && 'cursor-not-allowed opacity-60',
               )}
-              aria-label={option.label}
-              title={option.label}
+              aria-label={t("memo.notebook.letterIcon")}
+              title={t("memo.notebook.letterIcon")}
             >
               <NotebookIcon
-                icon={option.id}
-                className={cn(
-                  'h-[26px] w-[26px] rounded-md bg-[var(--muted)]',
-                  value === option.id
-                    ? 'text-[var(--secondary-foreground)]'
-                    : 'text-[var(--muted-foreground)]',
-                )}
-                imageClassName="h-[72%] w-[72%]"
+                name={notebookName}
+                className="h-[26px] w-[26px] rounded-md bg-[var(--muted)] text-[15px] font-semibold text-[var(--secondary-foreground)]"
               />
             </button>
-          ))}
+            {NOTEBOOK_ICON_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                disabled={disabled}
+                onClick={() => onChange(option.id)}
+                className={cn(
+                  'flex h-9 w-9 items-center justify-center rounded-md border transition-colors',
+                  value === option.id
+                    ? 'border-[var(--primary)] bg-[var(--accent)]'
+                    : 'border-[var(--border)] hover:bg-[var(--muted)]',
+                  disabled && 'cursor-not-allowed opacity-60',
+                )}
+                aria-label={option.label}
+                title={option.label}
+              >
+                <NotebookIcon
+                  icon={option.id}
+                  className={cn(
+                    'h-[26px] w-[26px] rounded-md bg-[var(--muted)]',
+                    value === option.id
+                      ? 'text-[var(--secondary-foreground)]'
+                      : 'text-[var(--muted-foreground)]',
+                  )}
+                  imageClassName="h-[72%] w-[72%]"
+                />
+              </button>
+            ))}
+          </div>
         </div>
+        <div
+          aria-hidden="true"
+          className={cn(
+            'pointer-events-none absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-[var(--card)] via-[var(--card)]/80 to-transparent transition-opacity duration-150',
+            showBottomScrollHint ? 'opacity-100' : 'opacity-0',
+          )}
+        />
       </div>
     </div>
   );
@@ -203,6 +234,7 @@ export function NotebookDialogs({
   newNotebookName,
   onNewNotebookNameChange,
   newNotebookPath,
+  newNotebookDefaultPath,
   onNewNotebookPathChange,
   newNotebookIcon,
   onNewNotebookIconChange,
@@ -224,6 +256,10 @@ export function NotebookDialogs({
   onEditNotebookNameChange,
   editNotebookIcon,
   onEditNotebookIconChange,
+  editNotebookDescription,
+  onEditNotebookDescriptionChange,
+  editNotebookDescriptionLoading,
+  editNotebookDescriptionChanged,
   editNotebookCloudSync,
   onEditNotebookCloudSyncChange,
   onEditNotebookCloudSyncUnavailable,
@@ -234,7 +270,7 @@ export function NotebookDialogs({
 }: NotebookDialogsProps) {
   const { t } = useI18n();
   const experimental = useExperimentalMode();
-  const [customPathOpen, setCustomPathOpen] = useState(false);
+
   return (
     <>
       <Dialog open={createOpen} onOpenChange={onCreateOpenChange}>
@@ -311,73 +347,37 @@ export function NotebookDialogs({
             </div>
           ) : (
             <>
-              <div className="mt-1 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Input
-                    placeholder={t("notebook.create.namePlaceholder")}
-                    value={newNotebookName}
-                    onChange={(event) => onNewNotebookNameChange(event.target.value)}
-                    autoFocus
-                    className="min-w-0 flex-1"
-                  />
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-[var(--border)] px-1.5 hover:bg-[var(--muted)]"
-                        aria-label={t('notebook.iconLabel')}
-                        title={t('notebook.iconLabel')}
-                      >
-                        <NotebookIcon
-                          name={newNotebookName}
-                          icon={newNotebookIcon ?? undefined}
-                          className="h-6 w-6 rounded-md bg-[var(--muted)] text-[11px] font-semibold"
-                        />
-                        <ChevronDown className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="end"
-                      side="bottom"
-                      className="w-[318px] rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]"
-                    >
-                      <NotebookIconPicker
-                        value={newNotebookIcon}
-                        notebookName={newNotebookName}
-                        onChange={onNewNotebookIconChange}
-                      />
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                <button
-                  type="button"
-                  className="flex items-center gap-1 text-left text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                  onClick={() => setCustomPathOpen((open) => !open)}
-                  aria-expanded={customPathOpen}
-                >
-                  {t('notebook.create.customPath')}
-                  <ChevronDown
-                    className={cn(
-                      'h-3.5 w-3.5 transition-transform',
-                      customPathOpen && 'rotate-180',
-                    )}
-                  />
-                </button>
-                {customPathOpen && (
+              <div className="mt-2 space-y-3">
+                <Input
+                  placeholder={t("notebook.create.namePlaceholder")}
+                  value={newNotebookName}
+                  onChange={(event) => onNewNotebookNameChange(event.target.value)}
+                  autoFocus
+                  className="h-10"
+                />
+                <NotebookIconPicker
+                  value={newNotebookIcon}
+                  notebookName={newNotebookName}
+                  onChange={onNewNotebookIconChange}
+                />
+                <div className="space-y-2">
+                  <div className="text-sm font-semibold text-[var(--foreground)]">
+                    {t("notebook.create.pathLabel")}
+                  </div>
                   <div className="flex gap-2">
                     <Input
                       placeholder={t("notebook.create.pathPlaceholder")}
-                      value={newNotebookPath}
+                      value={newNotebookPath || newNotebookDefaultPath}
                       onChange={(event) => onNewNotebookPathChange(event.target.value)}
                       onClick={() => {
                         void onSelectDirectory();
                       }}
-                      className="flex-1 cursor-pointer"
+                      className="h-10 flex-1 cursor-pointer"
                       readOnly
                     />
                     <Button
                       variant="outline"
-                      className="h-8"
+                      className="h-10"
                       onClick={() => {
                         void onSelectDirectory();
                       }}
@@ -385,7 +385,7 @@ export function NotebookDialogs({
                       {t("notebook.create.selectDirectory")}
                     </Button>
                   </div>
-                )}
+                </div>
               </div>
               <div className={cn(
                 'mt-4 flex items-center gap-2',
@@ -425,47 +425,62 @@ export function NotebookDialogs({
       </Dialog>
 
       <Dialog open={editOpen} onOpenChange={onEditOpenChange}>
-        <DialogContent className="w-[400px]" aria-busy={editSaving}>
+        <DialogContent className="w-[760px] !max-w-[calc(100vw-2rem)]" aria-busy={editSaving}>
           <DialogHeader>
             <DialogTitle>{t("notebook.edit.title")}</DialogTitle>
           </DialogHeader>
-          <div className="mt-2 space-y-3">
-            <Input
-              placeholder={t("notebook.edit.namePlaceholder")}
-              value={editNotebookName}
-              disabled={editSaving}
-              onChange={(event) => onEditNotebookNameChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') onConfirmEdit();
-              }}
-              autoFocus
-            />
-            <NotebookIconPicker
-              value={editNotebookIcon}
-              notebookName={editNotebookName}
-              onChange={onEditNotebookIconChange}
-              disabled={editSaving}
-            />
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-[var(--muted-foreground)]">
-                {t("notebook.edit.pathLabel")}
-              </div>
-              <div
-                className="w-full truncate rounded-md border border-[var(--border)] bg-[var(--muted)] px-3 py-2 text-sm text-[var(--muted-foreground)] select-all"
-                title={editingNotebook?.path ?? ''}
-              >
-                {editingNotebook?.path ?? ''}
-              </div>
-            </div>
-            {experimental && (
-              <NotebookCloudSyncToggle
-                checked={editNotebookCloudSync}
-                available={cloudSyncAvailable}
+          <div className="mt-2 grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+            <div className="min-w-0 space-y-3">
+              <Input
+                placeholder={t("notebook.edit.namePlaceholder")}
+                value={editNotebookName}
                 disabled={editSaving}
-                onChange={onEditNotebookCloudSyncChange}
-                onUnavailableClick={onEditNotebookCloudSyncUnavailable}
+                onChange={(event) => onEditNotebookNameChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') onConfirmEdit();
+                }}
+                autoFocus
+                className="h-10"
               />
-            )}
+              <NotebookIconPicker
+                value={editNotebookIcon}
+                notebookName={editNotebookName}
+                onChange={onEditNotebookIconChange}
+                disabled={editSaving}
+              />
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-[var(--foreground)]">
+                  {t("notebook.edit.pathLabel")}
+                </div>
+                <div
+                  className="flex h-10 w-full items-center truncate rounded-lg border border-input bg-[var(--muted)] px-3 text-sm text-[var(--muted-foreground)] select-all"
+                  title={editingNotebook?.path ?? ''}
+                >
+                  {editingNotebook?.path ?? ''}
+                </div>
+              </div>
+              {experimental && (
+                <NotebookCloudSyncToggle
+                  checked={editNotebookCloudSync}
+                  available={cloudSyncAvailable}
+                  disabled={editSaving}
+                  onChange={onEditNotebookCloudSyncChange}
+                  onUnavailableClick={onEditNotebookCloudSyncUnavailable}
+                />
+              )}
+            </div>
+            <div className="min-w-0 flex h-full flex-col md:border-l md:border-[var(--border)] md:pl-6">
+              <div className="flex items-center gap-1.5 pb-[0.35rem] pt-[0.35rem] text-sm font-semibold leading-[1.2] text-[var(--foreground)]">
+                {t('notebook.edit.agents.title')}
+              </div>
+              <Textarea
+                value={editNotebookDescription}
+                disabled={editSaving || editNotebookDescriptionLoading}
+                onChange={(event) => onEditNotebookDescriptionChange(event.target.value)}
+                placeholder={t('notebook.edit.agents.placeholder')}
+                className="h-full min-h-0 flex-1 resize-none"
+              />
+            </div>
           </div>
           <div className="mt-4 flex items-center justify-between gap-2">
             {editingNotebook ? (
@@ -504,10 +519,12 @@ export function NotebookDialogs({
                 className="h-8 px-3 text-sm rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
                 disabled={
                   editSaving ||
+                  editNotebookDescriptionLoading ||
                   !editNotebookName.trim() ||
                   (editNotebookName.trim() === editingNotebook?.name &&
                     (editNotebookIcon ?? '') === (normalizeNotebookIconId(editingNotebook?.icon) ?? '') &&
-                    !editNotebookCloudSyncChanged)
+                    !editNotebookCloudSyncChanged &&
+                    !editNotebookDescriptionChanged)
                 }
               >
                 {editSaving && <Loader2 className="mr-1.5 inline-block h-3.5 w-3.5 animate-spin" />}

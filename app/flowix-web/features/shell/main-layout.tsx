@@ -4,28 +4,30 @@ import { lazy, Suspense, useState, useEffect, useRef, useCallback } from 'react'
 import {
   DocumentTitlebarWin,
   DocumentTitlebarMac,
+  NotePropertiesHost,
   navigateDocumentHistory,
   useDocumentCommands,
   useShellDocumentHistory,
   useShellDocumentViewModel,
+  captureLatestDocumentContent,
+  setDocumentEditorMode,
+  useDocumentEditorMode,
   type DocumentHistoryEntry,
   type MemoDocumentSession,
 } from '@features/document/public/shell-api';
 import {
   MemoList,
   MemoListServicesHost,
-  MemoListTitlebarMac,
-  MemoListTitlebarWin,
   NoteNavigationDrawer,
-  useNotebookTodoCount,
   useShellMemoViewModel,
   type MemoItem,
   type Notebook,
 } from '@features/memo/public/shell-api';
 import { AgentConversationTitlebar } from '@features/agent/public/shell-api';
-import { useSettingsStore } from '@features/shell';
+import { useSettingsStore } from '@/lib/store/settings-store';
 import { useShallow } from 'zustand/react/shallow';
 import {
+  product,
   windows,
   type DshDownloadProgress,
 } from '@platform/tauri/client';
@@ -33,10 +35,11 @@ import { WindowsTitlebarControls } from '@shared/window-titlebar-controls';
 import { canonicalPath, getDocumentInstanceKey } from '@/lib/path';
 import { NotebookDeleteDialog } from '@features/shell/components/notebook-delete-dialog';
 import { MarkdownFileDropOverlay } from '@features/shell/components/drag-overlay/markdown-file-drop-overlay';
-import { useDeferredUnmount } from '@features/shell/hooks/use-deferred-unmount';
 import { useMainMiddleColumnController } from '@features/shell/hooks/use-main-middle-column-controller';
 import { useMainPanelController } from '@features/shell/hooks/use-main-panel-controller';
+import { ListColumn } from '@features/shell/components/list-column';
 import { useI18n } from '@/lib/i18n';
+import { toast } from '@/lib/toast';
 import type { DshRuntimeInstallerState } from '@features/preferences/public/system-api';
 import type { AppUpdaterState } from '@features/shell/hooks/use-app-updater';
 import {
@@ -50,7 +53,9 @@ import {
   type WorkColumnTarget,
 } from '@features/workspace/public/shell-api';
 import { MainStatusBarHost } from '@features/shell/components/main-status-bar-host';
+import { CenteredLoadingSpinner } from '@shared/ui/centered-loading-spinner';
 import { MainPromptHost } from '@features/shell/components/main-prompt-host';
+import type { Editor } from '@tiptap/core';
 
 const DOCUMENT_PANEL_MIN_WIDTH = BROWSER_COLUMN_MIN_WIDTH;
 
@@ -76,6 +81,10 @@ function isDifferentHistoryTarget(
     return entry.kind !== 'artifact'
       || entry.pointerMemoId !== currentWorkColumnTarget.pointerMemoId;
   }
+  if (currentWorkColumnTarget.kind === 'media') {
+    return entry.kind !== 'media'
+      || canonicalPath(entry.filePath) !== canonicalPath(currentWorkColumnTarget.filePath);
+  }
   if (entry.kind === 'artifact') return true;
   if (currentWorkColumnTarget.kind === 'agent-conversation') {
     return entry.kind !== 'agent-conversation'
@@ -90,6 +99,7 @@ function isDifferentHistoryTarget(
       canonicalPath(entry.path) !== canonicalPath(activeMemoSession.path)
     );
   }
+  if (entry.kind !== 'external') return true;
   return currentDocumentSource !== 'external' || canonicalPath(entry.path) !== canonicalPath(currentDocumentPath ?? '');
 }
 
@@ -221,11 +231,12 @@ export function MainLayout({
   ));
   const [isSearchPanelOpen, setIsSearchPanelOpen] = useState(false);
   const workColumnTarget = navigationState.target;
+  const mediaTarget = workColumnTarget.kind === 'media' ? workColumnTarget : null;
   const activePlugin = workColumnTarget.kind === 'plugin-workbench'
     ? workColumnTarget.plugin
     : null;
   const currentDocumentContentRef = useRef('');
-  const memoListMounted = useDeferredUnmount(memoListVisible);
+  const currentDocumentEditorRef = useRef<Editor | null>(null);
   const {
     browserColumnLayout,
     browserColumnLayoutKey,
@@ -234,10 +245,12 @@ export function MainLayout({
     handleListDividerMouseDown,
     handleToggleMemoList,
     handleToggleNoteNavigation,
+    closeNoteNavigation,
+    completeNoteNavigationClose,
     isDraggingListDivider,
     isMemoListHidden,
     memoColWidth,
-    memoListWidth,
+    noteNavigationPhase,
   } = useMainPanelController({
     browserColumnSplitRatio,
     documentPanelMinWidth: DOCUMENT_PANEL_MIN_WIDTH,
@@ -258,13 +271,14 @@ export function MainLayout({
     handleMemoListPreviewTriggerLeave,
     handleMemoListPreviewEnter,
     handleMemoListPreviewLeave,
+    handleMemoListPreviewCompanionEnter,
+    handleMemoListPreviewCompanionLeave,
     agentConversationListNode,
   } = useMainMiddleColumnController({
     isAgentConversationView,
     isMemoListHidden,
+    noteNavigationPhase,
   });
-  const documentTitlebarHeight = isWindowsPlatform() ? 36 : 48;
-
   const currentMemo = currentDocumentPath && currentDocumentSource === 'memo' && activeMemoSession
     ? memos.find((memo) => memo.id === activeMemoSession.memoId)
       ?? (selectedMemo?.id === activeMemoSession.memoId ? selectedMemo : null)
@@ -274,8 +288,18 @@ export function MainLayout({
     currentDocumentSource === 'memo' && activeMemoSession
       ? activeMemoSession.id
       : activeExternalSession?.id ?? (currentDocumentPath ? getDocumentInstanceKey(currentDocumentPath) : null);
-  const todoCount = useNotebookTodoCount(selectedNotebook?.id);
+  const mainMemoEditorIdentity = activeMemoSession
+    ? { kind: 'memo' as const, id: activeMemoSession.memoId }
+    : null;
+  const mainEditorMode = useDocumentEditorMode(
+    'main-third',
+    mainMemoEditorIdentity ?? { kind: 'external', path: currentDocumentPath ?? '' },
+  );
   const getCurrentDocumentContent = useCallback(() => currentDocumentContentRef.current, []);
+  const getCurrentDocumentEditor = useCallback(() => currentDocumentEditorRef.current, []);
+  const handleDocumentEditorReady = useCallback((editor: Editor | null) => {
+    currentDocumentEditorRef.current = editor;
+  }, []);
   const {
     handleCopyFullText,
     handleCopyLink,
@@ -284,9 +308,11 @@ export function MainLayout({
     handleExportMarkdown,
     handleSaveAsTemplate,
     handleExportWord,
+    handleExportPdf,
   } = useDocumentCommands({
     currentDocumentPath,
     getCurrentDocumentContent,
+    getCurrentDocumentEditor,
     currentMemo,
     updateMemoMeta,
     setMemoColors,
@@ -300,6 +326,7 @@ export function MainLayout({
   // re-fire on every parent render.
   useEffect(() => {
     currentDocumentContentRef.current = '';
+    currentDocumentEditorRef.current = null;
   }, [currentDocumentInstanceKey]);
 
   // 切换 memo 时关闭搜索面板 — 搜索/替换的 matches 是基于当前 editor state,
@@ -319,14 +346,6 @@ export function MainLayout({
     });
   }, [activeFilter, activeSort, loadMemos, selectedNotebook?.id, setActiveFilter, setMemoListVisible]);
 
-  // 状态栏 Agents 星标: 打开中间列展示 AgentConversationList,
-  // 已在 agents 视图则 no-op, 不再回退。
-  const handleOpenAgentConversationView = useCallback(() => {
-    if (isAgentConversationView) return;
-    setActiveFilter('agents');
-    setMemoListVisible(true);
-  }, [isAgentConversationView, setActiveFilter, setMemoListVisible]);
-
   const handleNavigateBack = useCallback(() => {
     void navigateDocumentHistory('back');
   }, []);
@@ -344,6 +363,72 @@ export function MainLayout({
       new CustomEvent<MemoItem>('flowix:request-delete-memo', { detail: currentMemo })
     );
   }, [currentMemo]);
+
+  const handleCopyMediaLink = useCallback(async () => {
+    if (!mediaTarget) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(mediaTarget.filePath);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = mediaTarget.filePath;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      toast.success(t('document.command.copySuccess'));
+    } catch (error) {
+      console.warn('[MainLayout] Failed to copy media link:', error);
+      toast.error(t('document.command.copyFailed'));
+    }
+  }, [mediaTarget, t]);
+
+  const handleRevealMedia = useCallback(() => {
+    if (!mediaTarget) return;
+    void product.revealInFileManager(mediaTarget.filePath).catch((error) => {
+      console.warn('[MainLayout] Failed to reveal media in file manager:', error);
+      toast.error(t('memo.fileTree.openFailed'));
+    });
+  }, [mediaTarget, t]);
+
+  const handleRequestDeleteMedia = useCallback(() => {
+    if (!mediaTarget?.notebookPath) return;
+    window.dispatchEvent(new CustomEvent('flowix:request-delete-media', {
+      detail: {
+        filePath: mediaTarget.filePath,
+        notebookPath: mediaTarget.notebookPath,
+      },
+    }));
+  }, [mediaTarget]);
+
+  const handleToggleEditorMode = useCallback(() => {
+    if (!currentMemo || !activeMemoSession) return;
+    const identity = { kind: 'memo' as const, id: activeMemoSession.memoId };
+    // Publish the active editor's latest serialized content before replacing
+    // its React subtree. The autosave pipeline continues asynchronously from
+    // the shared document buffer; mode switching itself must stay immediate.
+    captureLatestDocumentContent(identity, 'main-third');
+    const nextMode = mainEditorMode === 'source' ? 'rich' : 'source';
+    setDocumentEditorMode('main-third', identity, nextMode);
+  }, [activeMemoSession, currentMemo, mainEditorMode]);
+
+  const handleViewSourceMode = useCallback(() => {
+    if (!currentMemo || !activeMemoSession || mainEditorMode === 'source') return;
+    const identity = { kind: 'memo' as const, id: activeMemoSession.memoId };
+    captureLatestDocumentContent(identity, 'main-third');
+    setDocumentEditorMode('main-third', identity, 'source');
+  }, [activeMemoSession, currentMemo, mainEditorMode]);
+
+  useEffect(() => {
+    const handleViewSource = () => handleViewSourceMode();
+    window.addEventListener('flowix:view-source-mode', handleViewSource);
+    return () => window.removeEventListener('flowix:view-source-mode', handleViewSource);
+  }, [handleViewSourceMode]);
 
   const workColumnDocument = currentDocumentPath
     ? {
@@ -382,6 +467,7 @@ export function MainLayout({
             onMetainfoData: (data: { memoContent: string }) => {
               currentDocumentContentRef.current = data.memoContent;
             },
+            onEditorReady: handleDocumentEditorReady,
           },
         },
       }
@@ -400,8 +486,16 @@ export function MainLayout({
     emptyMessage: t('shell.emptyDocument'),
   });
   const isAgentConversationDetail = workColumnPresentation.header.kind === 'agent';
+  const workColumnLoadingTone = navigationState.phase === 'loading'
+    ? navigationState.pendingTarget?.kind === 'agent-conversation'
+      ? 'agent'
+      : navigationState.pendingTarget?.kind === 'media'
+        ? 'media'
+        : 'document'
+    : workColumnPresentation.chrome;
   const documentTitlebarProps = {
     reserveWindowsControls: !browserColumnVisible,
+    surfaceChrome: workColumnPresentation.chrome === 'media' ? 'media' as const : 'document' as const,
     document: {
       // An artifact is allowed to sit above an existing editable session.
       // Do not expose that underlying memo's actions in the artifact chrome;
@@ -417,8 +511,6 @@ export function MainLayout({
       hidden: isMemoListHidden,
       noteNavigationVisible,
       onToggle: handleToggleMemoList,
-      onPreviewTriggerEnter: handleMemoListPreviewTriggerEnter,
-      onPreviewTriggerLeave: handleMemoListPreviewTriggerLeave,
     },
     navigation: {
       canNavigateBack,
@@ -439,9 +531,17 @@ export function MainLayout({
       onExportMarkdown: handleExportMarkdown,
       onSaveAsTemplate: handleSaveAsTemplate,
       onExportWord: handleExportWord,
+      onExportPdf: handleExportPdf,
       onRequestDeleteMemo: handleRequestDeleteMemo,
       onColorsChange: handleColorsChange,
+      editorMode: mainEditorMode,
+      onToggleEditorMode: handleToggleEditorMode,
     },
+    mediaActions: mediaTarget ? {
+      onCopyLink: handleCopyMediaLink,
+      onRevealInFileManager: handleRevealMedia,
+      onRequestDelete: handleRequestDeleteMedia,
+    } : undefined,
   };
 
   return (
@@ -449,15 +549,15 @@ export function MainLayout({
       className="flowix-main-layout flex h-screen w-screen overflow-hidden"
       data-agent-conversation-view={isAgentConversationView || undefined}
       data-agent-conversation-detail={isAgentConversationDetail || undefined}
-      style={{ backgroundColor: 'var(--document-bg)' }}
+      style={{ backgroundColor: 'var(--frame-bg)' }}
     >
       <WindowsTitlebarControls />
       <MarkdownFileDropOverlay />
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-col flex-1 overflow-hidden">
-          <div className="relative flex flex-1 h-full overflow-hidden">
+          <div className="relative flex flex-1 h-full overflow-hidden rounded-b-[18px] border-b border-[var(--divider)]">
           <NoteNavigationDrawer
-            open={noteNavigationVisible}
+            phase={noteNavigationPhase}
             notebooks={notebooks}
             selectedNotebook={selectedNotebook}
             onSelectNotebook={handleSelectNotebook}
@@ -467,121 +567,69 @@ export function MainLayout({
             onOpenPreferences={(tab) => void windows.openPreferences(tab)}
             activePluginId={activePluginId}
             onOpenPlugin={handleOpenPlugin}
-            onClose={() => setNoteNavigationVisible(false)}
+            onRequestClose={closeNoteNavigation}
+            onCloseComplete={completeNoteNavigationClose}
+            onCompanionSurfaceEnter={handleMemoListPreviewCompanionEnter}
+            onCompanionSurfaceLeave={handleMemoListPreviewCompanionLeave}
           />
-          {/* Memo list column */}
-          <div
-            data-memo-list-swipe-area
-            className={`flex flex-col ${
-              memoListPreviewVisible ? 'overflow-visible' : 'overflow-hidden'
-            } will-change-[width] ${
-              isDraggingListDivider ? 'transition-none' : 'transition-[width] duration-150 ease-out'
-            }`}
-            style={{ width: memoListWidth, flexShrink: 0 }}
-            aria-hidden={isMemoListHidden && !memoListPreviewVisible}
+          {/* List column: one mounted subtree shared by the docked sidebar and hover preview. */}
+          <ListColumn
+            hidden={isMemoListHidden}
+            previewVisible={memoListPreviewVisible}
+            previewPhase={memoListPreviewPhase === 'open' ? 'open' : 'closing'}
+            memoColWidth={memoColWidth}
+            isDraggingListDivider={isDraggingListDivider}
+            selectedNotebook={selectedNotebook}
+            noteNavigationPhase={noteNavigationPhase}
+            onCollapseMemoList={collapseMemoList}
+            onToggleNoteNavigation={handleToggleNoteNavigation}
+            onOpenPreferences={(tab) => void windows.openPreferences(tab)}
+            onPreviewEnter={handleMemoListPreviewEnter}
+            onPreviewLeave={handleMemoListPreviewLeave}
             onPointerDown={() => focusWorkspaceHost('main-third')}
           >
             <div
-              className={`flex h-full min-w-0 flex-col ${
-                memoListPreviewVisible
-                  ? 'overflow-visible'
-                  : 'overflow-hidden bg-[var(--card)] border-[var(--divider)] border-r'
+              className={`absolute inset-0 ${
+                showMemoListSurface
+                  ? 'visible'
+                  : 'invisible pointer-events-none'
               }`}
-              style={{ width: memoListPreviewVisible ? 0 : memoColWidth }}
+              aria-hidden={!showMemoListSurface}
             >
-              {memoListMounted && (
-                isWindowsPlatform() ? (
-                  <MemoListTitlebarWin
-                    noteNavigationVisible={noteNavigationVisible}
-                    selectedNotebook={selectedNotebook}
-                    onCollapseMemoList={collapseMemoList}
-                    onToggleNoteNavigation={handleToggleNoteNavigation}
-                    onOpenPreferences={(tab) => void windows.openPreferences(tab)}
-                  />
-                ) : (
-                  <MemoListTitlebarMac
-                    noteNavigationVisible={noteNavigationVisible}
-                    selectedNotebook={selectedNotebook}
-                    onCollapseMemoList={collapseMemoList}
-                    onToggleNoteNavigation={handleToggleNoteNavigation}
-                    onOpenPreferences={(tab) => void windows.openPreferences(tab)}
-                  />
-                )
-              )}
-              <div
-                data-memo-list-hover-preview={memoListPreviewVisible ? '' : undefined}
-                data-preview-state={
-                  memoListPreviewVisible ? memoListPreviewPhase : undefined
-                }
-                onMouseEnter={
-                  memoListPreviewVisible ? handleMemoListPreviewEnter : undefined
-                }
-                onMouseLeave={
-                  memoListPreviewVisible ? handleMemoListPreviewLeave : undefined
-                }
-                className={
-                  memoListPreviewVisible
-                      // Keep the hover preview below the click-opened note
-                      // navigation drawer (z-index 100).
-                      ? 'absolute z-[90] mb-1 flex w-[280px] flex-col overflow-hidden rounded-xl border border-[var(--border-popup)] bg-[var(--card)] pt-3 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)] ' +
-                      (memoListPreviewPhase === 'open'
-                        ? 'flowix-hover-preview-enter'
-                        : 'flowix-hover-preview-leave')
-                    : 'relative flex flex-1 flex-col min-h-0 min-w-0 w-full'
-                }
-                style={memoListPreviewVisible ? {
-                  left: 2,
-                  top: documentTitlebarHeight,
-                  bottom: 0,
-                } : undefined}
-              >
-                <div className="relative min-h-0 flex-1">
-                  <div
-                    className={`absolute inset-0 ${
-                      showMemoListSurface
-                        ? 'visible'
-                        : 'invisible pointer-events-none'
-                    }`}
-                    aria-hidden={!showMemoListSurface}
-                  >
-                    <MemoList
-                      navigationDrawerEnabled
-                      navigationDrawerOpen={noteNavigationVisible}
-                      onToggleNavigationDrawer={handleToggleNoteNavigation}
-                      isActive={!isAgentConversationView}
-                      dataLoadingEnabled={!isAgentConversationView}
-                    />
-                  </div>
-                  {shouldRenderAgentConversationList && (
-                    <div
-                      className={`absolute inset-0 ${
-                        showAgentConversationSurface
-                          ? 'visible z-10'
-                          : 'invisible pointer-events-none'
-                      }`}
-                      aria-hidden={!showAgentConversationSurface}
-                    >
-                      {agentConversationListNode}
-                    </div>
-                  )}
-                  {isAgentConversationView && !agentConversationListReady && (
-                    <div
-                      className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-[color-mix(in_oklch,var(--card)_78%,transparent)] text-sm text-[var(--muted-foreground)] backdrop-blur-[1px]"
-                      role="status"
-                      aria-live="polite"
-                    >
-                      {t('status.agent.loadingConversations')}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <MemoList
+                navigationDrawerEnabled
+                navigationDrawerOpen={noteNavigationPhase !== 'closed'}
+                onToggleNavigationDrawer={handleToggleNoteNavigation}
+                isActive={!isAgentConversationView}
+                dataLoadingEnabled={!isAgentConversationView}
+              />
             </div>
-          </div>
+            {shouldRenderAgentConversationList && (
+              <div
+                className={`absolute inset-0 ${
+                  showAgentConversationSurface
+                    ? 'visible z-10'
+                    : 'invisible pointer-events-none'
+                }`}
+                aria-hidden={!showAgentConversationSurface}
+              >
+                {agentConversationListNode}
+              </div>
+            )}
+            {isAgentConversationView && !agentConversationListReady && (
+              <div
+                className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-[color-mix(in_oklch,var(--card)_78%,transparent)] text-sm text-[var(--muted-foreground)] backdrop-blur-[1px]"
+                role="status"
+                aria-live="polite"
+              >
+                {t('status.agent.loadingConversations')}
+              </div>
+            )}
+          </ListColumn>
           {/* List <-> Memo detail divider */}
           {!isMemoListHidden && (
-            <div className="relative w-[1px] h-full cursor-col-resize group z-10" onMouseDown={handleListDividerMouseDown}>
-              <div className="absolute inset-0 -translate-x-1/2 w-[12px] left-1/2 bg-transparent z-11" />
-              <div className={`w-[1px] h-full transition-colors ${isDraggingListDivider ? 'bg-transparent' : 'group-hover:bg-transparent bg-transparent'}`} />
+            <div className="relative z-10 h-full w-px shrink-0 cursor-col-resize bg-[var(--divider)]" onMouseDown={handleListDividerMouseDown}>
+              <div className="absolute inset-y-0 -left-[5px] w-[11px] bg-transparent" />
             </div>
           )}
           <div
@@ -590,7 +638,7 @@ export function MainLayout({
           >
           {/* Memo detail */}
             <div
-              className="h-full min-w-0 relative -left-px flex flex-col"
+              className="relative h-full min-w-0 flex flex-col bg-[var(--document-bg)]"
               style={browserColumnVisible
                 ? {
                     minWidth: DOCUMENT_PANEL_MIN_WIDTH,
@@ -611,12 +659,12 @@ export function MainLayout({
                 onClick={handleToggleMemoList}
                 aria-label={t('document.titlebar.showSidebar')}
                 title={t('document.titlebar.showSidebarTooltip')}
-                className="group absolute left-0 top-1/2 z-[60] flex h-14 w-5 -translate-y-1/2 items-center justify-center text-[var(--muted-foreground)] opacity-55 transition-[color,opacity] duration-150 hover:text-[var(--foreground)] hover:opacity-75 focus-visible:outline-none focus-visible:text-[var(--brand)] focus-visible:opacity-100"
+                className="group absolute bottom-0 left-0 top-0 z-[60] flex w-4 items-center justify-center text-[var(--muted-foreground)] opacity-30 transition-[color,opacity] duration-150 hover:text-[var(--foreground)] hover:opacity-50 focus-visible:outline-none focus-visible:text-[var(--brand)] focus-visible:opacity-100"
               >
-                <span className="flex flex-col items-center gap-[6px]" aria-hidden="true">
-                  <span className="h-0.5 w-1.5 rounded-full bg-current transition-[width] group-hover:w-2" />
-                  <span className="h-0.5 w-1.5 rounded-full bg-current transition-[width] group-hover:w-2" />
-                  <span className="h-0.5 w-1.5 rounded-full bg-current transition-[width] group-hover:w-2" />
+                <span className="flex translate-x-0 flex-col items-center gap-[6px]" aria-hidden="true">
+                  <span className="h-1 w-1 rounded-full bg-current" />
+                  <span className="h-1 w-1 rounded-full bg-current" />
+                  <span className="h-1 w-1 rounded-full bg-current" />
                 </span>
               </button>
             )}
@@ -626,10 +674,8 @@ export function MainLayout({
                 instanceId={workColumnPresentation.header.instanceId}
                 reserveWindowsControls={!browserColumnVisible}
                 isMiddleColumnCollapsed={isMemoListHidden}
-                isSidebarVisible={noteNavigationVisible}
+                isSidebarVisible={noteNavigationPhase !== 'closed'}
                 onExpandSidebar={handleToggleMemoList}
-                onSidebarPreviewEnter={handleMemoListPreviewTriggerEnter}
-                onSidebarPreviewLeave={handleMemoListPreviewTriggerLeave}
                 canNavigateBack={canNavigateBack}
                 canNavigateForward={canNavigateForward}
                 onNavigateBack={handleNavigateBack}
@@ -645,16 +691,11 @@ export function MainLayout({
             <div className="relative isolate flex-1 min-w-0 overflow-hidden">
               <WorkColumnContentHost content={workColumnPresentation.content} />
               {(isDocumentTransitioning || navigationState.phase === 'loading') && (
-                <div
-                  className="absolute inset-0 z-40 flex items-center justify-center bg-[color-mix(in_oklch,var(--card)_78%,transparent)] backdrop-blur-[1px]"
-                  role="status"
-                  aria-label="Loading"
-                >
-                  <div
-                    className="h-5 w-5 rounded-full border-2 border-[color-mix(in_oklch,var(--muted-foreground)_26%,transparent)] border-t-[var(--brand)] animate-spin"
-                    aria-hidden="true"
-                  />
-                </div>
+                <CenteredLoadingSpinner
+                  className={workColumnLoadingTone === 'agent' || workColumnLoadingTone === 'media'
+                    ? 'absolute inset-0 z-40 bg-[var(--agent-bg,var(--document-bg))]'
+                    : 'absolute inset-0 z-40 bg-[var(--document-bg)]'}
+                />
               )}
             </div>
           </div>
@@ -677,10 +718,8 @@ export function MainLayout({
             onEditNotebook={handleEditNotebook}
             onDeleteNotebook={handleDeleteNotebook}
             onCreateNotebook={handleCreateNotebook}
-            todoCount={todoCount}
             onOpenTodos={handleOpenTodos}
             onToggleNoteNavigation={handleToggleNoteNavigation}
-            onOpenAgentConversationView={handleOpenAgentConversationView}
             dshDownload={dshDownload}
             updater={updater}
           />
@@ -697,6 +736,8 @@ export function MainLayout({
         notebookCreateRequest={notebookCreateRequest}
         onRefresh={triggerRefresh}
       />
+
+      <NotePropertiesHost />
 
       <MainPromptHost
         updater={updater}

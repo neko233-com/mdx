@@ -9,6 +9,7 @@ use chrono::Utc;
 use flowix_core::memo_file::{
     atomic_write_bytes, extract_frontmatter_key, merge_frontmatter, notebook_path_from_relative,
     resolve_filename_conflict, sanitize_filename_component, IsMd, MergeOverrides,
+    CANONICAL_FRONTMATTER_KEY,
 };
 use flowix_sync::{
     collect_v2_attachments, v2_content_hash, v2_local_content_diverged, CloudCheckout,
@@ -382,7 +383,9 @@ fn apply_v2_note_changes(
                 crate::watcher::runtime::mark_self_write_for(app, path);
             }
             let overrides: MergeOverrides =
-                [("key".to_string(), note_id.clone())].into_iter().collect();
+                [(CANONICAL_FRONTMATTER_KEY.to_string(), note_id.clone())]
+                    .into_iter()
+                    .collect();
             let stamped_content = merge_frontmatter(markdown, &overrides);
             crate::watcher::runtime::write_note_atomic(
                 app,
@@ -547,8 +550,9 @@ fn canonicalize_local_keys(
                 }
             }
         }
-        let overrides: MergeOverrides =
-            [("key".to_string(), memo.id.clone())].into_iter().collect();
+        let overrides: MergeOverrides = [(CANONICAL_FRONTMATTER_KEY.to_string(), memo.id.clone())]
+            .into_iter()
+            .collect();
         let canonical = merge_frontmatter(&content, &overrides);
         if canonical != content {
             crate::watcher::runtime::write_note_atomic(app, &path, canonical.as_bytes())

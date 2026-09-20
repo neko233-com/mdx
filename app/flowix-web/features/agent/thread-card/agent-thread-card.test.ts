@@ -151,6 +151,14 @@ vi.mock("@features/document", () => ({
     }),
   },
 }));
+vi.mock("@features/document/store/document-session-service", () => ({
+  getActiveDocumentDraft: () => null,
+}));
+vi.mock("@features/document/store/document-store", () => ({
+  useDocumentStore: {
+    getState: () => ({ currentDocumentPath: "" }),
+  },
+}));
 
 vi.mock("@features/memo/use-cases/open-by-target", () => ({
   openNoteByDeepLink: vi.fn(),
@@ -718,6 +726,70 @@ describe("AgentThreadCard NodeView streaming", () => {
       "/Users/rop/Desktop/vibe/flowix-main/src/main.ts",
     );
     expect(openBrowserColumnText).not.toHaveBeenCalled();
+  });
+
+  it("opens a clicked tool file summary through the Thread Card link handler", async () => {
+    const { AgentThreadCard } =
+      await import("@features/agent/thread-card");
+    const { useChatStore } = await import(
+      "@features/agent/store/agent-session-test-facade",
+    );
+    const { openBrowserColumnText, openBrowserColumnFileBrowser } = await import(
+      "@features/workspace/use-cases/browser-column-navigation",
+    );
+    const threadId = "thread-card-tool-file-link";
+    vi.mocked(openBrowserColumnText).mockClear();
+    vi.mocked(openBrowserColumnFileBrowser).mockClear();
+
+    const host = document.createElement("div");
+    document.body.append(host);
+    editor = new Editor({
+      element: host,
+      extensions: [StarterKit, AgentThreadCard],
+      content: {
+        type: "doc",
+        content: [{
+          type: "agentThreadCard",
+          attrs: {
+            threadId,
+            title: "Tool file link",
+            typeKey: "codex",
+            collapsed: false,
+          },
+        }],
+      },
+    });
+
+    const store = useChatStore.getState();
+    store.bindThreadType(threadId, "codex");
+    store.dispatchAgentChunk({
+      kind: "stream_start",
+      thread_id: threadId,
+      agent_type: "codex",
+    });
+    store.dispatchAgentChunk({
+      kind: "tool_call",
+      thread_id: threadId,
+      id: "tool-file-link",
+      name: "edit",
+      input: { path: "/Users/rop/Documents/Outside.ts" },
+      agent_type: "codex",
+    });
+    await flushStreamingRender();
+
+    const link = host.querySelector<HTMLAnchorElement>(
+      ".agent-thread-card__message--tool .agent-thread-card__message-tool-summary--link",
+    );
+    expect(link?.textContent).toBe("Outside.ts");
+    expect(link?.getAttribute("href")).toBe("/Users/rop/Documents/Outside.ts");
+    link?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(openBrowserColumnText).toHaveBeenCalledWith(
+      "/Users/rop/Documents/Outside.ts",
+      "/Users/rop/Documents",
+    );
+    expect(openBrowserColumnFileBrowser).not.toHaveBeenCalled();
   });
 
   it("uses thread runtime as the Thread Card footer running source", async () => {
@@ -2585,6 +2657,7 @@ describe("AgentThreadCard NodeView streaming", () => {
     const input = getComposerInput(host);
     const row = input.parentElement;
     expect(row?.classList.contains("agent-thread-card__composer-input-row")).toBe(true);
+    expect(input.closest(".agent-thread-card__composer")?.classList.contains("agent-composer--expanded")).toBe(true);
 
     input.blur();
     row?.dispatchEvent(
@@ -2597,6 +2670,12 @@ describe("AgentThreadCard NodeView streaming", () => {
 
     expect(document.activeElement).toBe(input);
     expect(getComposerEditor(input).view.hasFocus()).toBe(true);
+
+    host
+      .querySelector<HTMLButtonElement>(".agent-thread-card__fullscreen")
+      ?.click();
+    await flushAnimationFrame();
+    expect(input.closest(".agent-thread-card__composer")?.classList.contains("agent-composer--expanded")).toBe(false);
   });
 
   it("does not refocus the editor when clicking non-interactive card content", async () => {
@@ -2742,6 +2821,63 @@ describe("AgentThreadCard NodeView streaming", () => {
     expect(card!.classList.contains("ProseMirror-selectednode")).toBe(false);
     expect(editor.state.doc.childCount).toBe(3);
     expect(editor.state.doc.child(1).type.name).toBe("agentThreadCard");
+  });
+
+  it("clears a different card's node selection when a composer receives focus", async () => {
+    const { AgentThreadCard } =
+      await import("@features/agent/thread-card");
+    const host = document.createElement("div");
+    document.body.append(host);
+
+    editor = new Editor({
+      element: host,
+      extensions: [StarterKit, AgentThreadCard],
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "agentThreadCard",
+            attrs: {
+              threadId: "thread-card-focus-first",
+              title: "First",
+              typeKey: "deepseek-harness",
+              collapsed: false,
+            },
+          },
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "between" }],
+          },
+          {
+            type: "agentThreadCard",
+            attrs: {
+              threadId: "thread-card-focus-second",
+              title: "Second",
+              typeKey: "deepseek-harness",
+              collapsed: false,
+            },
+          },
+        ],
+      },
+    });
+
+    const cardPositions: number[] = [];
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === "agentThreadCard") cardPositions.push(pos);
+      return true;
+    });
+    expect(cardPositions).toHaveLength(2);
+
+    editor.commands.setNodeSelection(cardPositions[0]!);
+    const cards = [...host.querySelectorAll<HTMLElement>(".agent-thread-card")];
+    const secondInput = getComposerInput(cards[1]!);
+    expect(cards[0]!.classList.contains("ProseMirror-selectednode")).toBe(true);
+
+    secondInput.focus();
+
+    expect(document.activeElement).toBe(secondInput);
+    expect(editor.state.selection).not.toBeInstanceOf(NodeSelection);
+    expect(cards[0]!.classList.contains("ProseMirror-selectednode")).toBe(false);
   });
 
   it("blurs a focused card input before outside pointer interactions", async () => {

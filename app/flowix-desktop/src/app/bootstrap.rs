@@ -213,6 +213,14 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(crate::app_update::AppUpdateState::default())
         .manage(memo_watcher.clone())
+        .on_webview_event(|webview, event| {
+            if let tauri::WebviewEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                let state = webview.state::<AppState>();
+                for path in paths {
+                    state.document_access.grant(webview.label(), path);
+                }
+            }
+        })
         .setup(move |app| {
             // Structural data migrations are the startup gate. They complete
             // before AppState, cloud polling, file watchers, or normal Webview
@@ -338,17 +346,17 @@ pub fn run() {
 
                 // Theme::System 时跟�?OS 明暗实时切换窗口背景�? 仅当窗口�??显式
                 // theme (�?��用所有窗口都�? �?Tauri 才派�?ThemeChanged, 故这�?                // 监听主窗口即�?��发一次全局刷新 (apply_theme_background_all 遍历所有窗�?�?
-                let app_for_theme = app.handle().clone();
+                let app_for_window_event = app.handle().clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::ThemeChanged(_) = event {
-                        let current = app_for_theme
+                        let current = app_for_window_event
                             .state::<AppState>()
                             .user_config
                             .get_preference()
                             .theme;
                         if current == crate::config::Theme::System {
                             crate::window_chrome::apply_theme_background_all(
-                                &app_for_theme,
+                                &app_for_window_event,
                                 current,
                             );
                         }
@@ -660,6 +668,9 @@ pub fn run() {
             commands::memo::reads::get_memos,
             commands::memo::reads::search_mention_notes,
             commands::memo::reads::list_agent_role_memos,
+            commands::media::get_media_resource,
+            commands::media::update_media_resource,
+            commands::media::delete_media_resource,
             commands::memo::reads::get_used_memo_tag_ids,
             commands::memo::reads::get_memo_todo_metadata,
             commands::memo::reads::get_memo_todo_count,
@@ -667,6 +678,10 @@ pub fn run() {
             commands::memo::reads::open_memo_session,
             commands::memo::reads::read_document,
             commands::memo::reads::write_document,
+            commands::recovery::write_recovery_draft,
+            commands::recovery::read_recovery_draft,
+            commands::recovery::clear_recovery_draft_through,
+            commands::recovery::list_recovery_drafts,
             commands::external_document::read_external_document,
             commands::external_document::write_external_document,
             commands::memo::reads::get_launch_open_files,
@@ -697,6 +712,7 @@ pub fn run() {
             commands::tag::get_tag_prefix_counts,
             // notebook
             commands::notebook::get_notebooks,
+            commands::notebook::get_default_notebook_path,
             commands::notebook::create_notebook,
             commands::notebook::create_notebook_from_cloud,
             commands::notebook::start_notebook_import,
@@ -713,6 +729,8 @@ pub fn run() {
             commands::file::read_image_file,
             commands::file::write_file,
             commands::file::rename_file,
+            commands::file::move_file,
+            commands::file::import_file,
             commands::file::rename_folder,
             commands::file::delete_file,
             commands::file::delete_folder,
@@ -729,6 +747,7 @@ pub fn run() {
             commands::dialog::select_files,
             commands::dialog::save_file_dialog,
             commands::dialog::write_export_file,
+            commands::export::export_pdf,
             commands::dialog::save_attachment,
             commands::dialog::upload_journal::list_attachment_import_records,
             commands::dialog::attachment_audit::scan_attachment_references,
@@ -790,6 +809,8 @@ pub fn run() {
             commands::agent::codex_catalog::codex_mcp_reload,
             commands::agent::codex_catalog::codex_project_mcp_upsert,
             commands::agent::codex_catalog::codex_project_skill_write,
+            commands::agent::notebook_agents::notebook_agent_workspace_read,
+            commands::agent::notebook_agents::notebook_agent_workspace_write,
             commands::thread::claude_thread_list,
             commands::thread::claude_thread_get,
             commands::thread::claude_thread_get_page,
@@ -817,6 +838,7 @@ pub fn run() {
             commands::window::show_main_window,
             commands::window::open_preferences_window,
             commands::window::apply_window_theme,
+            commands::window::apply_menu_language,
             commands::external_document_watch::watch_external_document,
             commands::external_document_watch::unwatch_external_document,
             commands::file_browser_watch::watch_file_browser_root,
@@ -834,9 +856,7 @@ pub fn run() {
 fn handle_second_instance(app: &tauri::AppHandle, args: Vec<String>) {
     // 二�?�?��: 区分 markdown 文件�?���?flowix:// 深链�?    // 两个通道�?��同时触发 (用户�?`xdg-open foo.md flowix://memo/abc123` �?��)�?
     let paths = commands::markdown_paths_from_args(args.clone());
-    for path in &paths {
-        emit_open_target_if_resolved(app, path);
-    }
+    emit_open_target_batch_if_needed(app, &paths);
 
     for arg in args {
         if !paths.contains(&arg) {
@@ -871,9 +891,7 @@ fn handle_cold_start_open_targets(app: &tauri::AppHandle) {
         if let Some(main_window) = app.get_webview_window("main") {
             main_window.hide().ok();
         }
-        for path in &paths {
-            emit_open_target_if_resolved(app, path);
-        }
+        emit_open_target_batch_if_needed(app, &paths);
     }
     for arg in args {
         if !paths.contains(&arg) {
@@ -882,9 +900,44 @@ fn handle_cold_start_open_targets(app: &tauri::AppHandle) {
     }
 }
 
+fn emit_open_target_batch_if_needed(app: &tauri::AppHandle, paths: &[String]) {
+    let mut external_paths = Vec::new();
+    let state = app.state::<AppState>();
+    let configs = crate::lock_utils::read_lock(&state.memo_file, "memo_file")
+        .read_notebook_configs()
+        .unwrap_or_default();
+    for path in paths {
+        if let Ok(target) = open_target::parse_open_target(path) {
+            let canonical = dunce::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
+            let inside_notebook = configs.iter().any(|config| {
+                let root = dunce::canonicalize(&config.path)
+                    .unwrap_or_else(|_| PathBuf::from(&config.path));
+                canonical == root || canonical.starts_with(root.join(""))
+            });
+            if open_target::resolve_open_target(target, state.memo_file.as_ref()).is_err()
+                && !inside_notebook
+            {
+                state.document_access.grant("main", &canonical);
+                external_paths.push(path.clone());
+            } else {
+                emit_open_target_if_resolved(app, path);
+            }
+        }
+    }
+    if !external_paths.is_empty() {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.set_focus();
+            let _ = window.unminimize();
+        }
+        emit_external_markdown_open(app, external_paths);
+    }
+}
+
 fn emit_open_target_if_resolved(app: &tauri::AppHandle, raw: &str) {
     let state = app.state::<AppState>();
-    for path in commands::markdown_paths_from_args([raw.to_string()]) {
+    let markdown_paths = commands::markdown_paths_from_args([raw.to_string()]);
+    for path in &markdown_paths {
         if let Ok(path) = dunce::canonicalize(path) {
             state.document_access.grant("main", &path);
         }
@@ -896,8 +949,26 @@ fn emit_open_target_if_resolved(app: &tauri::AppHandle, raw: &str) {
                 let _ = window.unminimize();
             }
             dispatcher::emit_to(app, "flowix:open-target", resolved);
+        } else if let Some(path) = markdown_paths.first() {
+            // A Markdown file outside every registered notebook is still a
+            // valid Flowix open request. Let the UI ask which notebook should
+            // receive a copy instead of silently dropping the request.
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+                let _ = window.unminimize();
+            }
+            emit_external_markdown_open(app, vec![path.clone()]);
         }
     }
+}
+
+fn emit_external_markdown_open(app: &tauri::AppHandle, paths: Vec<String>) {
+    dispatcher::emit_to(
+        app,
+        "flowix:external-markdown-open",
+        serde_json::json!({ "filePaths": paths }),
+    );
 }
 
 fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
@@ -923,16 +994,18 @@ fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
         }
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Opened { urls } => {
+            let mut markdown_paths = Vec::new();
             for url in urls {
                 if url.scheme() == "file" {
                     if let Ok(path) = url.to_file_path() {
                         let path = path.to_string_lossy().to_string();
                         if !commands::markdown_paths_from_args([path.clone()]).is_empty() {
-                            emit_open_target_if_resolved(app, &path);
+                            markdown_paths.push(path);
                         }
                     }
                 }
             }
+            emit_open_target_batch_if_needed(app, &markdown_paths);
         }
         tauri::RunEvent::ExitRequested { .. } => {
             stop_external_agent_children(app, "exit");

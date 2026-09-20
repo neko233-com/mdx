@@ -91,7 +91,7 @@ describe('ComposerSlashCommandController', () => {
     type(editor, '/');
     expect([...document.querySelectorAll('.agent-composer-slash-menu__name')]
       .map((node) => node.textContent)).toEqual([
-        '/compact', '/skill', '/goal', '/plan', '/model', '/permission', '/export',
+        '/compact', '/goal', '/plan', '/model', '/permission', '/export',
       ]);
     expect([...document.querySelectorAll('.agent-composer-slash-menu__description')]
       .every((node) => !node.textContent?.endsWith('。'))).toBe(true);
@@ -124,6 +124,7 @@ describe('ComposerSlashCommandController', () => {
 
     expect(editor.getMarkdown()).toBe('[/goal](flowix://slash/deepseek-harness/goal)');
     expect(composer.querySelector('.agent-thread-card__slash-token')?.textContent).toBe('/goal');
+    expect(composer.querySelector('.agent-thread-card__slash-token--control')).not.toBeNull();
     const wrapper = composer.querySelector('.agent-thread-card__slash-token-wrapper');
     expect(wrapper?.childNodes).toHaveLength(3);
     expect(wrapper?.firstChild?.textContent).toBe('\u200B');
@@ -207,7 +208,7 @@ describe('ComposerSlashCommandController', () => {
     )?.textContent;
 
     // A real mouse move selects the hovered command and exits keyboard mode.
-    getItems()[3].dispatchEvent(new MouseEvent('mousemove', {
+    getItems()[2].dispatchEvent(new MouseEvent('mousemove', {
       bubbles: true,
       movementX: 4,
       movementY: 0,
@@ -225,7 +226,7 @@ describe('ComposerSlashCommandController', () => {
     )).toBe(true);
 
     // The stationary pointer must not take the selection back.
-    getItems()[6].dispatchEvent(new MouseEvent('mousemove', {
+    getItems()[5].dispatchEvent(new MouseEvent('mousemove', {
       bubbles: true,
       movementX: 0,
       movementY: 0,
@@ -233,7 +234,7 @@ describe('ComposerSlashCommandController', () => {
     expect(activeName()).toBe('/model');
 
     // Once the pointer really moves, hover selection is enabled again.
-    getItems()[6].dispatchEvent(new MouseEvent('mousemove', {
+    getItems()[5].dispatchEvent(new MouseEvent('mousemove', {
       bubbles: true,
       movementX: 1,
       movementY: 0,
@@ -291,10 +292,8 @@ describe('ComposerSlashCommandController', () => {
     type(editor, '/');
     expect([...document.querySelectorAll('.agent-composer-slash-menu__name')]
       .map((node) => node.textContent)).toEqual([
-        '/compact', '/skill', '/goal', '/model', '/permission',
+        '/compact', '/goal', '/plan', '/model', '/permission',
       ]);
-    expect([...document.querySelectorAll('.agent-composer-slash-menu__name')]
-      .map((node) => node.textContent)).not.toContain('/plan');
     expect([...document.querySelectorAll('.agent-composer-slash-menu__name')]
       .map((node) => node.textContent)).not.toContain('/export');
     expect(document.querySelector('.agent-composer-slash-menu')).not.toBeNull();
@@ -326,7 +325,7 @@ describe('ComposerSlashCommandController', () => {
     editor.destroy();
   });
 
-  it('opens the DSH skill submenu and inserts a scoped skill token', async () => {
+  it('loads skills in the first-level menu', async () => {
     const { editor, controller } = setup();
     const listDshSkills = vi.fn(async () => [
       { name: 'review', description: 'Review the current change.' },
@@ -346,6 +345,7 @@ describe('ComposerSlashCommandController', () => {
       content: '',
       contentType: 'markdown',
     });
+    (nextEditor.view as unknown as { scrollToSelection: () => void }).scrollToSelection = () => undefined;
     const nextController = new ComposerSlashCommandController({
       input: nextInput,
       composer: nextComposer,
@@ -353,17 +353,12 @@ describe('ComposerSlashCommandController', () => {
       agentType: 'deepseek-harness',
       listDshSkills,
     });
-    type(nextEditor, '/ski');
-    nextInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    await Promise.resolve();
+    type(nextEditor, '/');
+    await vi.waitFor(() => expect(listDshSkills).toHaveBeenCalledOnce());
     expect(listDshSkills).toHaveBeenCalledOnce();
-    expect(document.querySelector('.agent-composer-slash-menu__name')?.textContent)
-      .toBe('/review');
-    expect(document.querySelector('.agent-composer-slash-menu__item--back')).not.toBeNull();
+    await vi.waitFor(() => expect([...document.querySelectorAll('.agent-composer-slash-menu__name')]
+      .map((node) => node.textContent)).toContain('/review'));
     expect(document.querySelector('.agent-composer-slash-menu__item--skill')).not.toBeNull();
-    document.querySelector<HTMLButtonElement>('.agent-composer-slash-menu__item:not(.agent-composer-slash-menu__item--back)')
-      ?.click();
-    expect(nextEditor.getMarkdown()).toBe('[/review](flowix://slash/deepseek-harness/review)');
     nextController.dispose();
     nextEditor.destroy();
   });

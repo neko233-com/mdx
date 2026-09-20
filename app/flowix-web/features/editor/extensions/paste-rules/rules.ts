@@ -1,6 +1,6 @@
 import type { Editor, JSONContent } from '@tiptap/core';
 import { mergeFrontmatterYaml } from '@features/document/properties/frontmatter-model';
-import type { ManagedPasteRule } from '@features/editor/extensions/paste-rules/types';
+import type { ManagedPasteRule, PasteContext, PasteRuleResult } from '@features/editor/extensions/paste-rules/types';
 import { handleFileUpload } from '@features/editor/extensions/attachment-link/upload/plugin';
 import { filterFilesByMimeTypes } from '@features/editor/extensions/attachment-link/upload/file-source';
 import { tryMatchPhysicalMemoPath } from '@features/editor/extensions/note-link';
@@ -18,6 +18,10 @@ import {
   hasMeaningfulInlineHtml,
   isStandaloneHtmlTable,
 } from '@features/editor/extensions/paste-rules/html';
+import {
+  isInternalEditorHtml,
+  sanitizeExternalHtml,
+} from '@features/editor/extensions/paste-rules/html-sanitizer';
 import {
   htmlTableToTableContent,
   looksLikeTsvTable,
@@ -70,9 +74,9 @@ export function createManagedPasteRules(options: {
       kind: 'files',
       priority: 1000,
       match: ({ files }) => filterFilesByMimeTypes(files, options.allowedMimeTypes).length > 0,
-      run: ({ view, files }) => {
+      run: ({ view, files, memoId }) => {
         const filteredFiles = filterFilesByMimeTypes(files, options.allowedMimeTypes);
-        void handleFileUpload(view, filteredFiles, view.state.selection.from);
+        void handleFileUpload(view, filteredFiles, view.state.selection.from, undefined, memoId);
         return 'handled';
       },
     },
@@ -178,15 +182,23 @@ export function createManagedPasteRules(options: {
       id: 'rich-html',
       kind: 'rich-html',
       priority: 700,
-      match: ({ html }) => html.trim().length > 0 && RICH_HTML_RE.test(html),
-      run: () => 'default',
+      match: ({ html }) => html.trim().length > 0 && RICH_HTML_RE.test(html) && !isInternalEditorHtml(html),
+      run: ({ html, editor }) => {
+        const sanitized = sanitizeExternalHtml(html);
+        if (sanitized.trim().length > 0) editor.commands.insertContent(sanitized);
+        return 'handled';
+      },
     },
     {
       id: 'rich-inline-html',
       kind: 'rich-inline-html',
       priority: 650,
-      match: ({ html }) => html.trim().length > 0 && hasMeaningfulInlineHtml(html),
-      run: () => 'default',
+      match: ({ html }) => html.trim().length > 0 && hasMeaningfulInlineHtml(html) && !isInternalEditorHtml(html),
+      run: ({ html, editor }) => {
+        const sanitized = sanitizeExternalHtml(html);
+        if (sanitized.trim().length > 0) editor.commands.insertContent(sanitized);
+        return 'handled';
+      },
     },
     {
       id: 'markdown-block',
@@ -203,4 +215,34 @@ export function createManagedPasteRules(options: {
   ];
 
   return rules.sort((a, b) => b.priority - a.priority);
+}
+
+/**
+ * Run the application-specific part of the paste pipeline against an
+ * already-normalized clipboard snapshot. Native ProseMirror paste events are
+ * not the only entry point anymore: a memo title can split a paste and route
+ * the remaining payload into the body editor.
+ */
+export function executeManagedPasteRules(
+  ctx: PasteContext,
+  rules: ManagedPasteRule[] = createManagedPasteRules(),
+): PasteRuleResult {
+  for (const rule of rules) {
+    let result: PasteRuleResult;
+    try {
+      if (!rule.match(ctx)) continue;
+      result = rule.run(ctx);
+    } catch (err) {
+      console.warn('[paste-rules] rule failed:', {
+        ruleId: rule.id,
+        kind: rule.kind,
+        error: err,
+      });
+      continue;
+    }
+
+    if (result === 'handled' || result === 'default') return result;
+  }
+
+  return 'continue';
 }

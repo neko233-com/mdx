@@ -1,19 +1,22 @@
 import { useCallback, useRef, useState } from 'react';
 
 import { externalDocuments, memos as memosClient } from '@platform/tauri/client';
-import { useMemoStore } from '@features/memo';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import {
   setActiveDocumentPath,
   applyLoadedDocumentContent,
   consumeStagedDocumentSnapshot,
-  useDocumentStore,
-  type DocumentIdentity,
-} from '@features/document';
+  applyRecoveryDraftContent,
+} from '@features/document/store/document-session-service';
+import { readRecoveryDraft, type RecoveryDraft } from '@features/document/store/recovery-draft-store';
+import { useDocumentStore } from '@features/document/store/document-store';
+import type { DocumentIdentity } from '@features/document/store/document-identity';
 import { translate } from '@/lib/i18n';
 import { replaceActiveMemoPath } from '@features/workspace/use-cases/workspace-navigation';
 import { replaceBrowserColumnMemoPath } from '@features/workspace/use-cases/browser-column-navigation';
 import { getCurrentAppLanguage } from '@features/preferences/public/runtime-api';
 import { formatDateTime } from '@/lib/utils';
+import { markDocumentOpenTrace } from '@/lib/document-open-perf';
 import {
   initialDocumentContainerState,
   type DocumentContainerState,
@@ -58,6 +61,13 @@ function logOpenDocPerf(label: string, startedAt: number, meta?: Record<string, 
     elapsedMs: Math.round((performance.now() - startedAt) * 10) / 10,
     ...meta,
   });
+  const transitionId = meta?.transitionId;
+  if (typeof transitionId === 'number') {
+    markDocumentOpenTrace(transitionId, `content:${label}`, {
+      stageElapsedMs: Math.round((performance.now() - startedAt) * 10) / 10,
+      ...meta,
+    });
+  }
 }
 
 export function useDocumentContent({
@@ -80,12 +90,30 @@ export function useDocumentContent({
   const counter = useRef(0);
 
   const applyLoadedContent = useCallback(
-    (path: string, fullContent: string, options?: Pick<LoadContentOptions, 'preservePending'>) => {
+    (
+      path: string,
+      fullContent: string,
+      options?: Pick<LoadContentOptions, 'preservePending'> & { recovery?: RecoveryDraft | null },
+    ) => {
       const startedAt = performance.now();
+      markDocumentOpenTrace(transitionId, 'content:apply-start', {
+        memoId,
+        bytes: fullContent.length,
+        isolatedSession,
+      });
       const buf = applyLoadedDocumentContent(identity, path, fullContent, {
         preservePending: options?.preservePending ?? true,
         setAsCurrent: !isolatedSession,
       });
+      const recovery = options?.recovery ?? null;
+      if (
+        recovery
+        && recovery.originalPath === path
+        && recovery.baseContent === fullContent
+        && recovery.content !== fullContent
+      ) {
+        applyRecoveryDraftContent(identity, recovery.content, recovery.revision);
+      }
       const memo = isExternalDocument ? null : getMemoSnapshot(memoId);
       const createdAt = memo?.createdAt ? formatDateTime(memo.createdAt, getCurrentAppLanguage()) : '';
       const updatedAt = memo?.updatedAt ? formatDateTime(memo.updatedAt, getCurrentAppLanguage()) : '';
@@ -95,7 +123,11 @@ export function useDocumentContent({
       // from the first Markdown heading would make an existing document look
       // newly created and is invalid once the title lives outside Markdown.
       const isNew = false;
-      const initialContent = buf.content;
+      const initialContent = recovery
+        && recovery.originalPath === path
+        && recovery.baseContent === fullContent
+        ? recovery.content
+        : buf.content;
       const initialBody = extractBodyContent(initialContent);
       const initialCharCount = countTextUnits(initialBody);
 
@@ -127,6 +159,12 @@ export function useDocumentContent({
     async (path: string, options?: LoadContentOptions) => {
       if (!path) return;
       const startedAt = performance.now();
+      markDocumentOpenTrace(transitionId, 'content:load-start', {
+        memoId,
+        path,
+        isExternalDocument,
+        isolatedSession,
+      });
 
       // Switch the active buffer up-front so any in-flight writes from
       // the previous document that resolve after this point still
@@ -150,7 +188,17 @@ export function useDocumentContent({
       }
       const stagedContent = consumeStagedDocumentSnapshot(identity, path);
       if (stagedContent !== null) {
-        applyLoadedContent(path, stagedContent, { preservePending: true });
+        markDocumentOpenTrace(transitionId, 'recovery:read-start', {
+          memoId,
+          source: 'staged',
+        });
+        const recovery = await readRecoveryDraft(identity).catch(() => null);
+        markDocumentOpenTrace(transitionId, 'recovery:read-end', {
+          memoId,
+          source: 'staged',
+          found: recovery !== null,
+        });
+        applyLoadedContent(path, stagedContent, { preservePending: true, recovery });
         logOpenDocPerf('reloadDocument:staged', startedAt, {
           memoId,
           transitionId,
@@ -178,6 +226,11 @@ export function useDocumentContent({
           path,
         });
         const readStartedAt = performance.now();
+        markDocumentOpenTrace(transitionId, 'ipc:read-start', {
+          memoId,
+          path,
+          isExternalDocument,
+        });
         let readPath = path;
         let fullContent = isExternalDocument
           ? await externalDocuments.read(readPath, externalScopePath)
@@ -214,6 +267,12 @@ export function useDocumentContent({
           path: readPath,
           bytes: fullContent?.length ?? 0,
         });
+        markDocumentOpenTrace(transitionId, 'ipc:read-end', {
+          memoId,
+          path: readPath,
+          bytes: fullContent?.length ?? 0,
+          isExternalDocument,
+        });
 
         if (fullContent === null || fullContent === undefined) {
           if (currentLoadId !== counter.current) return;
@@ -226,7 +285,17 @@ export function useDocumentContent({
         }
 
         if (currentLoadId !== counter.current) return;
-        applyLoadedContent(readPath, fullContent, { preservePending: options?.preservePending });
+        markDocumentOpenTrace(transitionId, 'recovery:read-start', { memoId });
+        const recovery = await readRecoveryDraft(identity).catch(() => null);
+        markDocumentOpenTrace(transitionId, 'recovery:read-end', {
+          memoId,
+          found: recovery !== null,
+        });
+        if (currentLoadId !== counter.current) return;
+        applyLoadedContent(readPath, fullContent, {
+          preservePending: options?.preservePending,
+          recovery,
+        });
         logOpenDocPerf('reloadDocument:loaded', startedAt, {
           memoId,
           transitionId,

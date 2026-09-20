@@ -1,8 +1,10 @@
 import type { ComponentProps } from 'react';
 import type { AgentConversationDetail } from '@features/agent/components/agent-conversation-detail';
 import type { DocumentContainer } from '@features/document/components/document-container';
-import type { PluginDocumentView } from '@features/plugin/plugin-document-view';
-import type { PluginWorkbench } from '@features/plugin/plugin-workbench';
+import type {
+  PluginDocumentViewProps,
+  PluginWorkbenchProps,
+} from '@features/plugin/public/surface-api';
 import type { PluginArtifactRendererId } from '@features/plugin/plugin-note';
 import type { MemoItem } from '@/types/memo-item';
 import type { PluginDescriptor } from '@platform/tauri/client';
@@ -23,7 +25,8 @@ export type WorkColumnSurfaceCapability =
   | 'run-agent'
   | 'stream-conversation';
 
-export type WorkColumnSurfaceChrome = 'document' | 'agent';
+/** Visual chrome owned by the currently mounted surface. */
+export type WorkColumnSurfaceChrome = 'document' | 'agent' | 'media';
 
 export type WorkColumnEmptyReason =
   | 'no-target'
@@ -42,8 +45,16 @@ export interface MarkdownSurface extends SurfaceBase {
   props: ComponentProps<typeof DocumentContainer>;
 }
 
+export interface MediaResourceSurface extends SurfaceBase {
+  kind: 'media';
+  filePath: string;
+  notebookId: string | null;
+  notebookPath: string | null;
+  resourceKind: 'image' | 'video';
+}
+
 export interface PluginArtifactSurfaceBase extends SurfaceBase {
-  props: ComponentProps<typeof PluginDocumentView>;
+  props: PluginDocumentViewProps;
   renderer: PluginArtifactRendererId | null;
 }
 
@@ -78,7 +89,7 @@ export interface AgentConversationSurface extends SurfaceBase {
 
 export interface PluginWorkbenchSurface extends SurfaceBase {
   kind: 'plugin-workbench';
-  props: ComponentProps<typeof PluginWorkbench>;
+  props: PluginWorkbenchProps;
 }
 
 export interface WebSurface extends SurfaceBase {
@@ -88,6 +99,7 @@ export interface WebSurface extends SurfaceBase {
 
 export type WorkColumnSurface =
   | MarkdownSurface
+  | MediaResourceSurface
   | MindmapSurface
   | HtmlSurface
   | JsonSurface

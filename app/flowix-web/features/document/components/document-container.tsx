@@ -1,16 +1,22 @@
 ﻿'use client';
 
 import { useEffect, useCallback, useRef, useMemo, useState } from 'react';
-import { useMemoStore } from '@features/memo';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import { files } from '@platform/tauri/client';
 import {
   applyLoadedDocumentContent,
+  registerDocumentCapture,
+  captureLatestDocumentContent,
   consumeSelfDocumentPathUpdate,
   hasDocumentUnsavedChanges,
-  useDocumentMetricsStore,
-  useDocumentStore,
-  type DocumentIdentity,
-} from '@features/document';
+} from '@features/document/store/document-session-service';
+import { useDocumentMetricsStore } from '@features/document/store/document-metrics-store';
+import { useDocumentStore } from '@features/document/store/document-store';
+import {
+  setDocumentEditorMode,
+  useDocumentEditorMode,
+} from '@features/document/store/document-editor-view-store';
+import type { DocumentIdentity } from '@features/document/store/document-identity';
 import { getDocumentInstanceKey } from '@/lib/path';
 import { toast } from '@/lib/toast';
 import { product } from '@platform/tauri/client/desktop';
@@ -27,20 +33,29 @@ import { useDocumentContent } from '@features/document/components/session/use-do
 import { useDocumentAutosave } from '@features/document/components/session/use-document-autosave';
 import { useExternalDocumentChangeWatch } from '@features/document/components/session/use-external-document-change-watch';
 import { useMemoDocumentChangeWatch } from '@features/document/components/session/use-memo-document-change-watch';
-import { LazyDocumentEditor } from '@features/document/components/lazy-document-editor';
+import {
+  LazyDocumentEditor,
+  preloadDocumentEditor,
+} from '@features/document/components/lazy-document-editor';
 import { LazyCodeEditor } from '@features/document/components/lazy-code-editor';
-import { NotePropertiesDialog } from '@features/document/components/note-properties-dialog';
+import { SourceMemoEditor } from '@features/document/components/source-memo-editor';
 import { MemoDocumentHeader } from '@features/document/components/memo-document-header';
-import type { MemoTitleEditorHandle } from '@features/document/components/memo-title-editor';
+import type {
+  MemoTitleBodyNavigation,
+  MemoTitleEditorHandle,
+} from '@features/document/components/memo-title-editor';
 import type { MarkdownEditorHandle } from '@features/editor/markdown-editor';
-import { isEditableTextFilePath, isImageFilePath } from '@features/editor/code-file';
+import type { ClipboardSnapshot } from '@features/editor/extensions/paste-rules/clipboard';
+import { isEditableTextFilePath, isImageFilePath, isVideoFilePath } from '@features/editor/code-file';
 import { useI18n } from '@/lib/i18n';
+import { CenteredLoadingSpinner } from '@shared/ui/centered-loading-spinner';
 import { WorkspaceEmptyState } from '@shared/ui/workspace-empty-state';
 import { clearWorkspaceDocument } from '@features/workspace/use-cases/workspace-navigation';
 import { removeBrowserColumnTabsByMemoId } from '@features/workspace/use-cases/browser-column-navigation';
 import { useWorkspaceFocusStore } from '@features/workspace/store/workspace-focus-store';
 import { getBuffer, subscribeDocumentBufferChanges } from '@features/document/store/buffer-registry';
 import { documentIdentityKey } from '@features/document/store/document-identity';
+import type { Editor } from '@tiptap/core';
 
 export function DocumentContainer({
   filePath,
@@ -57,6 +72,7 @@ export function DocumentContainer({
   documentSessionMode = 'main',
   readOnly: forcedReadOnly = false,
   initialFocus,
+  onEditorReady,
   onFlushReady,
 }: DocumentContainerProps) {
   const { t } = useI18n();
@@ -74,11 +90,20 @@ export function DocumentContainer({
       : { kind: 'external', path: filePath },
     [filePath, isExternalDocument, memoId],
   );
+  const editorMode = useDocumentEditorMode(hostId, documentIdentity);
   const isImagePreview = isExternalDocument && isImageFilePath(filePath);
-  const isUnsupportedExternalFile = isExternalDocument && !isEditableTextFilePath(filePath) && !isImagePreview;
+  const isVideoPreview = isExternalDocument && isVideoFilePath(filePath);
+  const isUnsupportedExternalFile = isExternalDocument
+    && !isEditableTextFilePath(filePath)
+    && !isImagePreview
+    && !isVideoPreview;
   // Every text file in the file tree, including Markdown, is source text and
-  // therefore uses CodeMirror. Memo documents retain their rich editor.
-  const usesCodeEditor = isExternalDocument && isEditableTextFilePath(filePath);
+  // therefore uses CodeMirror. Internal memo documents can opt into the same
+  // source editor without changing their document identity or persistence
+  // channel.
+  const usesCodeEditor = isExternalDocument
+    ? isEditableTextFilePath(filePath)
+    : editorMode === 'source';
   const loadedDocumentInstanceKeyRef = useRef<string | null>(null);
   const prevFilePathRef = useRef<string | null>(null);
   const editorHandleRef = useRef<MarkdownEditorHandle | null>(null);
@@ -99,20 +124,80 @@ export function DocumentContainer({
     notebookPath,
     isExternalDocument,
     externalScopePath,
-    skipContentLoad: isImagePreview || isUnsupportedExternalFile,
+    skipContentLoad: isImagePreview || isVideoPreview || isUnsupportedExternalFile,
     transitionId,
     isolatedSession: documentSessionMode === 'isolated',
   });
+
+  useEffect(() => {
+    if (usesCodeEditor) onEditorReady?.(null);
+    return () => onEditorReady?.(null);
+  }, [onEditorReady, usesCodeEditor]);
+
+  useEffect(() => {
+    if (
+      transitionId === null
+      || usesCodeEditor
+      || isImagePreview
+      || isVideoPreview
+      || isUnsupportedExternalFile
+    ) {
+      return;
+    }
+    preloadDocumentEditor();
+  }, [
+    isImagePreview,
+    isUnsupportedExternalFile,
+    isVideoPreview,
+    transitionId,
+    usesCodeEditor,
+  ]);
   const flushPendingEditorChanges = useCallback(() => {
     return editorHandleRef.current?.flushPendingChanges() ?? null;
   }, []);
+  const handleEditorScroll = useCallback((scrollTop: number) => {
+    const isScrolled = scrollTop > 90;
+    setState((prev) => (
+      prev.isScrolled === isScrolled
+        ? prev
+        : { ...prev, isScrolled }
+    ));
+  }, [setState]);
+
+  const handleMoveTitleToBody = useCallback(({
+    trailingContent,
+    insertEmptyLine,
+  }: MemoTitleBodyNavigation) => {
+    if (!insertEmptyLine) {
+      editorHandleRef.current?.focusStart?.();
+      return;
+    }
+    editorHandleRef.current?.moveTitleToBody?.(trailingContent ?? '');
+  }, []);
+
+  const handlePasteTitleContentToBody = useCallback((snapshot: ClipboardSnapshot) => {
+    editorHandleRef.current?.pasteToBody?.(snapshot);
+  }, []);
+
+  const handleToggleEditorMode = useCallback(() => {
+    if (isExternalDocument || !memoId) return;
+    captureLatestDocumentContent(documentIdentity, hostId);
+    setDocumentEditorMode(
+      hostId,
+      documentIdentity,
+      editorMode === 'source' ? 'rich' : 'source',
+    );
+  }, [documentIdentity, editorMode, hostId, isExternalDocument, memoId]);
+
+  useEffect(() => (
+    registerDocumentCapture(documentIdentity, flushPendingEditorChanges, hostId)
+  ), [documentIdentity, flushPendingEditorChanges, hostId]);
 
   const {
     clearSaveTimer,
     flushDocument,
     discardDocument,
     handleChange,
-    saveDoc,
   } = useDocumentAutosave({
     filePath,
     identity: documentIdentity,
@@ -168,9 +253,6 @@ export function DocumentContainer({
     onFlushReady?.(flushDocument, discardDocument);
     return () => onFlushReady?.(null, null);
   }, [discardDocument, flushDocument, onFlushReady]);
-  const [propertiesOpen, setPropertiesOpen] = useState(false);
-  const [propertiesContentSnapshot, setPropertiesContentSnapshot] = useState<string | null>(null);
-
   useEffect(() => {
     if (!filePath) {
       useDocumentMetricsStore.getState().clear(documentInstanceKey);
@@ -202,21 +284,6 @@ export function DocumentContainer({
       document.removeEventListener('navigate-to-memo', handleNavigateToMemo);
     };
   }, []);
-
-  useEffect(() => {
-    if (!memoId) return;
-
-    const handleOpenProperties = (event: Event) => {
-      const detail = (event as CustomEvent<{ memoId: string }>).detail;
-      if (detail?.memoId !== memoId) return;
-      setPropertiesOpen(true);
-    };
-
-    window.addEventListener('flowix:open-note-properties', handleOpenProperties);
-    return () => {
-      window.removeEventListener('flowix:open-note-properties', handleOpenProperties);
-    };
-  }, [memoId]);
 
   useEffect(() => {
     if (!memoId) return;
@@ -398,67 +465,90 @@ export function DocumentContainer({
     return <UnavailableFileView filePath={filePath} />;
   }
 
+  const activeMemoUpdatedAt = activeMemo
+    ? state.updatedAtDate ?? (activeMemo.updatedAt ? new Date(activeMemo.updatedAt) : null)
+    : null;
+  const memoDocumentHeader = !isExternalDocument && memoId && activeMemo ? (
+    <MemoDocumentHeader
+      titleRef={titleEditorRef}
+      memoId={memoId}
+      filename={activeMemo.filename}
+      updatedAt={activeMemoUpdatedAt}
+      editable={!readOnly}
+      autoFocus={initialFocus === 'title'}
+      onMoveToBody={handleMoveTitleToBody}
+      onPasteToBody={handlePasteTitleContentToBody}
+      editorMode={editorMode}
+      onToggleEditorMode={handleToggleEditorMode}
+    />
+  ) : null;
+
   return (
     <div ref={containerRef} onFocusCapture={() => useWorkspaceFocusStore.getState().focusHost(hostId)} onPointerDownCapture={() => useWorkspaceFocusStore.getState().focusHost(hostId)} className="document-container h-full w-full min-w-0 flex flex-col bg-transparent relative overflow-hidden">
       <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
         {state.isLoading && (
-          <div
-            role="status"
-            aria-label="Loading"
-            className="flex h-full w-full items-center justify-center"
-          >
-            <div
-              aria-hidden="true"
-              className="h-5 w-5 animate-spin rounded-full border-2 border-[color-mix(in_oklch,var(--muted-foreground)_26%,transparent)] border-t-[var(--brand)]"
-            />
-          </div>
+          <CenteredLoadingSpinner className="h-full w-full" />
         )}
         {!state.isLoading && isImagePreview && (
           <ImageFilePreview filePath={filePath} scopePath={externalScopePath} />
         )}
+        {!state.isLoading && isVideoPreview && (
+          <VideoFilePreview filePath={filePath} />
+        )}
         {!state.isLoading && usesCodeEditor && (
-          <LazyCodeEditor
-            ref={editorHandleRef}
-            key={documentInstanceKey}
-            filePath={filePath}
-            content={state.fullContent}
-            editable={!readOnly}
-            onChange={handleChange}
-            onEditorScroll={(scrollTop) => setState(prev => ({ ...prev, isScrolled: scrollTop > 90 }))}
-            onEditingFinished={flushPendingEditorChanges}
-            searchPanelOpen={searchPanelOpen}
-            onSearchPanelOpenChange={onSearchPanelOpenChange}
-          />
+          !isExternalDocument && memoId && activeMemo ? (
+            <SourceMemoEditor
+              ref={editorHandleRef}
+              key={documentInstanceKey}
+              filePath={filePath}
+              content={state.fullContent}
+              editable={!readOnly}
+              onChange={handleChange}
+              autoFocus={initialFocus === 'body'}
+              memoId={memoId}
+              filename={activeMemo.filename}
+              titleAutoFocus={initialFocus === 'title'}
+              titleRef={titleEditorRef}
+              onMoveToBody={handleMoveTitleToBody}
+              onPasteToBody={handlePasteTitleContentToBody}
+              editorMode={editorMode}
+              onToggleEditorMode={handleToggleEditorMode}
+              sourceModeToggleLabel={t('document.action.richTextMode')}
+              onEditorScroll={handleEditorScroll}
+              onEditingFinished={flushPendingEditorChanges}
+              searchPanelOpen={searchPanelOpen}
+              onSearchPanelOpenChange={onSearchPanelOpenChange}
+            />
+          ) : (
+            <LazyCodeEditor
+              ref={editorHandleRef}
+              key={documentInstanceKey}
+              filePath={filePath}
+              content={state.fullContent}
+              editable={!readOnly}
+              onChange={handleChange}
+              autoFocus={initialFocus === 'body'}
+              onEditorScroll={handleEditorScroll}
+              onEditingFinished={flushPendingEditorChanges}
+              searchPanelOpen={searchPanelOpen}
+              onSearchPanelOpenChange={onSearchPanelOpenChange}
+            />
+          )
         )}
         {!state.isLoading && !usesCodeEditor && state.fullContent && (
           <LazyDocumentEditor
             memoId={memoId ?? undefined}
+            transitionId={transitionId}
             ref={editorHandleRef}
             key={documentInstanceKey}
             content={state.fullContent}
-            header={!isExternalDocument && memoId && activeMemo ? (
-              <MemoDocumentHeader
-                titleRef={titleEditorRef}
-                memoId={memoId}
-                filename={activeMemo.filename}
-                updatedAt={state.updatedAtDate ?? (activeMemo.updatedAt ? new Date(activeMemo.updatedAt) : null)}
-                editable={!readOnly}
-                autoFocus={initialFocus === 'title'}
-                onMoveToBody={({ trailingContent, insertEmptyLine }) => {
-                  if (!insertEmptyLine) {
-                    editorHandleRef.current?.focusStart?.();
-                    return;
-                  }
-                  editorHandleRef.current?.moveTitleToBody?.(trailingContent ?? '');
-                }}
-              />
-            ) : null}
+            header={memoDocumentHeader}
             editable={!readOnly}
             onChange={(content) => {
               handleChange(content);
             }}
             className=""
-            onEditorScroll={(scrollTop) => setState(prev => ({ ...prev, isScrolled: scrollTop > 90 }))}
+            onEditorScroll={handleEditorScroll}
             onEditingFinished={() => {
               flushPendingEditorChanges();
             }}
@@ -467,42 +557,12 @@ export function DocumentContainer({
             autoFocus={initialFocus === 'body'}
             searchPanelOpen={searchPanelOpen}
             onSearchPanelOpenChange={onSearchPanelOpenChange}
+            onBeforeCreate={(editor: Editor) => onEditorReady?.(editor)}
             toolbarCollapsed={toolbarCollapsed}
             onToolbarCollapsedChange={onToolbarCollapsedChange}
           />
         )}
       </div>
-      {!readOnly && !isExternalDocument && memoId && (
-        <NotePropertiesDialog
-          open={propertiesOpen}
-          content={propertiesContentSnapshot ?? state.fullContent}
-          onOpenChange={(open) => {
-            if (open) {
-              // 打开属性面板前清掉 autosave debounce timer, 避免:
-              // 1. 用户敲了字后立刻打开面板 → 1s 后 timer 触发, 用
-              //    propertiesContentSnapshot (尚未含属性改动) 覆盖磁盘;
-              // 2. 用户在面板里改完属性, saveDoc(force) 已落盘, 但 timer
-              //    随后再用旧 snapshot 走 CAS-fail 之外的路径把磁盘回滚。
-              clearSaveTimer();
-              const latestContent = flushPendingEditorChanges();
-              if (latestContent !== null) {
-                setPropertiesContentSnapshot(latestContent);
-              }
-            } else {
-              setPropertiesContentSnapshot(null);
-            }
-            setPropertiesOpen(open);
-          }}
-          onSave={async (nextContent) => {
-            flushPendingEditorChanges();
-            setPropertiesContentSnapshot(null);
-            setState((prev) => ({ ...prev, fullContent: nextContent }));
-            handleChange(nextContent);
-            clearSaveTimer();
-            await saveDoc(nextContent, filePath, { force: true });
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -564,6 +624,27 @@ function ImageFilePreview({ filePath, scopePath }: { filePath: string; scopePath
         src={src}
         alt={filePath.split(/[\\/]/).pop() ?? filePath}
         className="max-h-full max-w-full object-contain"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  );
+}
+
+function VideoFilePreview({ filePath }: { filePath: string }) {
+  const [failed, setFailed] = useState(false);
+  const src = useMemo(() => files.toAssetUrl(filePath), [filePath]);
+
+  if (failed) return <UnavailableFileView filePath={filePath} />;
+
+  return (
+    <div className="flex h-full w-full items-center justify-center overflow-auto bg-[var(--background)] p-6">
+      <video
+        src={src}
+        controls
+        preload="metadata"
+        playsInline
+        className="max-h-full max-w-full"
+        aria-label={filePath.split(/[\\/]/).pop() ?? filePath}
         onError={() => setFailed(true)}
       />
     </div>

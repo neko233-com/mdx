@@ -1,6 +1,7 @@
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import type { NodeView as ProseMirrorNodeView, EditorView, Decoration } from '@tiptap/pm/view';
 import type { ViewMutationRecord } from '@tiptap/pm/view';
+import { NodeSelection } from '@tiptap/pm/state';
 import { Node, InputRule, mergeAttributes, type JSONContent, type MarkdownToken } from '@tiptap/core';
 import { assetMarkdownUrl, assetUrl, decodeStorageKey, isVideoUrl } from '@features/editor/extensions/attachment-link/utils';
 
@@ -33,6 +34,27 @@ function cancelIdle(handle: number): void {
     }
 }
 
+const MEDIA_SEEK_STEP_SECONDS = 10;
+const MEDIA_SESSION_SEEK_ACTIONS: MediaSessionAction[] = [
+    'seekbackward',
+    'seekforward',
+    'previoustrack',
+    'nexttrack',
+];
+
+type VideoSeekDirection = 'backward' | 'forward';
+
+function mediaKeyDirection(event: KeyboardEvent): VideoSeekDirection | null {
+    const keys = [event.key, event.code];
+    if (keys.some((key) => key === 'MediaTrackPrevious' || key === 'AudioTrackPrevious' || key === 'MediaRewind')) {
+        return 'backward';
+    }
+    if (keys.some((key) => key === 'MediaTrackNext' || key === 'AudioTrackNext' || key === 'MediaFastForward')) {
+        return 'forward';
+    }
+    return null;
+}
+
 // ─── VideoView ───────────────────────────────────────────────────────────────
 
 class VideoView implements ProseMirrorNodeView {
@@ -48,6 +70,66 @@ class VideoView implements ProseMirrorNodeView {
     private appliedSrc: string | null = null;
     /** Handle for a pending src-set scheduled via whenIdle. */
     private pendingLoadHandle: number | null = null;
+    private mediaSession: MediaSession | null = null;
+    /**
+     * Native video controls may restore focus to the <video> after click
+     * handlers have run (notably in WebKit). Keep the editor focus restoration
+     * until that native click work has finished.
+     */
+    private pendingFocusHandle: number | null = null;
+    /** Select the atom while leaving the native video controls usable. */
+    private readonly handleClick = (event: MouseEvent): void => {
+        if (event.button !== 0 || this.view.isDestroyed) return;
+
+        const pos = this.getPos?.();
+        if (pos === undefined) return;
+
+        const { state, dispatch } = this.view;
+        const selection = NodeSelection.create(state.doc, pos);
+        const selectionChanged = !state.selection.eq(selection);
+        if (selectionChanged) {
+            dispatch(state.tr.setSelection(selection).setMeta('pointer', true));
+        }
+
+        // Once the video is already selected, the click may be on a native
+        // control. Keep that control focused instead of scheduling another
+        // editor-focus operation. This also cancels a first-click focus task
+        // when a control is activated before the task runs.
+        if (!selectionChanged) {
+            if (this.pendingFocusHandle !== null) {
+                window.clearTimeout(this.pendingFocusHandle);
+                this.pendingFocusHandle = null;
+            }
+            return;
+        }
+
+        if (this.pendingFocusHandle !== null) {
+            window.clearTimeout(this.pendingFocusHandle);
+        }
+        this.pendingFocusHandle = window.setTimeout(() => {
+            this.pendingFocusHandle = null;
+            if (this.view.isDestroyed) return;
+
+            // Do not steal focus back if the user moved to another block
+            // before this deferred callback ran.
+            const currentSelection = this.view.state.selection;
+            if (
+                !(currentSelection instanceof NodeSelection) ||
+                currentSelection.from !== selection.from
+            ) return;
+
+            this.view.focus();
+        }, 0);
+    };
+    private readonly handleKeyDown = (event: KeyboardEvent): void => {
+        if (!this.selected) return;
+
+        const direction = mediaKeyDirection(event);
+        if (!direction) return;
+
+        event.preventDefault();
+        this.seekBy(direction === 'backward' ? -MEDIA_SEEK_STEP_SECONDS : MEDIA_SEEK_STEP_SECONDS);
+    };
 
     constructor(node: ProseMirrorNode, view: EditorView, getPos: () => number, decorations: readonly Decoration[]) {
         this.node = node;
@@ -76,8 +158,71 @@ class VideoView implements ProseMirrorNodeView {
 
         wrapper.appendChild(video);
         this.dom = wrapper;
+        wrapper.addEventListener('click', this.handleClick);
+        // Listen on the editor as well as the native media surface. After a
+        // video is selected, the editor normally regains focus; macOS media
+        // keys may then arrive on the editor rather than the <video> element.
+        view.dom.addEventListener('keydown', this.handleKeyDown);
 
         this.applySrc(video, node.attrs);
+    }
+
+    private seekBy(offset: number): void {
+        const video = this.dom.querySelector<HTMLVideoElement>('video');
+        if (!video || !Number.isFinite(video.currentTime)) return;
+
+        const duration = Number.isFinite(video.duration) ? video.duration : Infinity;
+        try {
+            video.currentTime = Math.max(0, Math.min(duration, video.currentTime + offset));
+        } catch {
+            // The media element may not have a seekable source yet.
+        }
+    }
+
+    private registerMediaSession(): void {
+        if (typeof navigator === 'undefined' || !navigator.mediaSession) return;
+
+        const mediaSession = navigator.mediaSession;
+        this.mediaSession = mediaSession;
+
+        const setActionHandler = (
+            action: MediaSessionAction,
+            handler: MediaSessionActionHandler,
+        ): void => {
+            try {
+                mediaSession.setActionHandler(action, handler);
+            } catch {
+                // WebKit exposes MediaSession but may not implement every
+                // action. The keydown listener remains as a local fallback.
+            }
+        };
+
+        setActionHandler('seekbackward', (details) => {
+            this.seekBy(-(details.seekOffset ?? MEDIA_SEEK_STEP_SECONDS));
+        });
+        setActionHandler('seekforward', (details) => {
+            this.seekBy(details.seekOffset ?? MEDIA_SEEK_STEP_SECONDS);
+        });
+        setActionHandler('previoustrack', () => {
+            this.seekBy(-MEDIA_SEEK_STEP_SECONDS);
+        });
+        setActionHandler('nexttrack', () => {
+            this.seekBy(MEDIA_SEEK_STEP_SECONDS);
+        });
+    }
+
+    private unregisterMediaSession(): void {
+        const mediaSession = this.mediaSession;
+        if (!mediaSession) return;
+
+        for (const action of MEDIA_SESSION_SEEK_ACTIONS) {
+            try {
+                mediaSession.setActionHandler(action, null);
+            } catch {
+                // Ignore unsupported WebKit actions during cleanup.
+            }
+        }
+        this.mediaSession = null;
     }
 
     /**
@@ -144,11 +289,13 @@ class VideoView implements ProseMirrorNodeView {
     selectNode(): void {
         this.selected = true;
         this.dom.classList.add('is-selected');
+        this.registerMediaSession();
     }
 
     deselectNode(): void {
         this.selected = false;
         this.dom.classList.remove('is-selected');
+        this.unregisterMediaSession();
     }
 
     deleteNode(): void {
@@ -172,12 +319,19 @@ class VideoView implements ProseMirrorNodeView {
     }
 
     destroy(): void {
+        this.dom.removeEventListener('click', this.handleClick);
+        const video = this.dom.querySelector('video');
+        this.view.dom.removeEventListener('keydown', this.handleKeyDown);
+        this.unregisterMediaSession();
+        if (this.pendingFocusHandle !== null) {
+            window.clearTimeout(this.pendingFocusHandle);
+            this.pendingFocusHandle = null;
+        }
         if (this.pendingLoadHandle !== null) {
             cancelIdle(this.pendingLoadHandle);
             this.pendingLoadHandle = null;
         }
 
-        const video = this.dom.querySelector('video');
         if (video) {
             video.removeAttribute('src');
             video.load();

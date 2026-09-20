@@ -19,11 +19,13 @@ function item(name: string, type: DocTreeItem['type']): DocTreeItem {
 }
 
 describe('notebook folder view filtering', () => {
-  it('keeps folders and Markdown notes while hiding other files', () => {
+  it('keeps folders, notes, images, and videos while hiding other files', () => {
     expect(isNotebookTreeItemVisible(item('projects', 'folder'))).toBe(true);
     expect(isNotebookTreeItemVisible(item('note.md', 'document'))).toBe(true);
     expect(isNotebookTreeItemVisible(item('note.MARKDOWN', 'document'))).toBe(true);
-    expect(isNotebookTreeItemVisible(item('image.png', 'document'))).toBe(false);
+    expect(isNotebookTreeItemVisible(item('image.png', 'document'))).toBe(true);
+    expect(isNotebookTreeItemVisible(item('video.mp4', 'document'))).toBe(true);
+    expect(isNotebookTreeItemVisible(item('archive.zip', 'document'))).toBe(false);
   });
 
   it('hides attachment directories case-insensitively', () => {

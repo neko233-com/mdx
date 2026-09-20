@@ -119,6 +119,7 @@ describe("Codex protocol tool summaries", () => {
       },
     });
     expect(lifecycle?.summary).toBe("Add probe.svg");
+    expect(lifecycle?.targetPath).toBe("/tmp/probe.svg");
 
     const patchEnd = createAgentToolDisplay({
       agentType: "codex",
@@ -131,23 +132,26 @@ describe("Codex protocol tool summaries", () => {
       },
     });
     expect(patchEnd?.summary).toBe("Update first.svg (+1)");
+    expect(patchEnd?.targetPath).toBe("/tmp/first.svg");
   });
 
   it("shows view_image paths for direct and single-tool exec inputs", () => {
-    expect(
-      createAgentToolDisplay({
-        agentType: "codex",
-        toolName: "view_image",
-        input: { path: "/tmp/preview.png" },
-      })?.summary,
-    ).toBe("preview.png");
-    expect(
-      createAgentToolDisplay({
-        agentType: "codex",
-        toolName: "view_image",
-        input: "await tools.view_image({path: '/tmp/wrapped.png'});",
-      })?.summary,
-    ).toBe("wrapped.png");
+    expect(createAgentToolDisplay({
+      agentType: "codex",
+      toolName: "view_image",
+      input: { path: "/tmp/preview.png" },
+    })).toMatchObject({
+      summary: "preview.png",
+      targetPath: "/tmp/preview.png",
+    });
+    expect(createAgentToolDisplay({
+      agentType: "codex",
+      toolName: "view_image",
+      input: "await tools.view_image({path: '/tmp/wrapped.png'});",
+    })).toMatchObject({
+      summary: "wrapped.png",
+      targetPath: "/tmp/wrapped.png",
+    });
   });
 });
 
@@ -458,6 +462,7 @@ describe("OpenCode ACP tool summaries", () => {
     ).toEqual({
       summary: "Agent 评测框架.md",
       title: "D:/Notes/presentation/Agent 评测框架.md",
+      targetPath: "D:/Notes/presentation/Agent 评测框架.md",
       kind: "file",
     });
   });

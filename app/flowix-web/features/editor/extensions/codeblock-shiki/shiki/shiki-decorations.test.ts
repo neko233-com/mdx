@@ -15,7 +15,7 @@ vi.mock(
             : []
         ))
       ),
-      getLoadedLanguages: () => ['javascript'],
+      getLoadedLanguages: () => ['javascript', 'mermaid'],
       getLoadedThemes: () => ['github-light'],
     }),
   }),
@@ -55,6 +55,25 @@ describe('Shiki code block decorations', () => {
     }).find()
 
     expect(decorations).toHaveLength(3)
+    expect(decorations.every(({ from, to }) => from < to)).toBe(true)
+  })
+
+  it('applies Shiki decorations to Mermaid code mode', () => {
+    const codeBlock = schema.node(
+      'codeBlock',
+      { language: 'mermaid', theme: 'github-light' },
+      schema.text('graph TD\nA-->B'),
+    )
+    const doc = schema.node('doc', null, [codeBlock])
+
+    const decorations = getDecorations({
+      doc,
+      name: 'codeBlock',
+      defaultLanguage: 'plaintext',
+      defaultTheme: 'github-light',
+    }).find()
+
+    expect(decorations.length).toBeGreaterThan(0)
     expect(decorations.every(({ from, to }) => from < to)).toBe(true)
   })
 })

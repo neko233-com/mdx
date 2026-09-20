@@ -62,11 +62,14 @@ tauri = { version = "2", features = ["test"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_System_Registry", "Win32_UI_WindowsAndMessaging"] }
+webview2-com = "0.38"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
 objc2-app-kit = "0.3.2"
 objc2-foundation = "0.3.2"
+block2 = "0.6.2"
+objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "WKWebView", "WKPDFConfiguration", "block2"] }
 objc2-authentication-services = { version = "0.3.2", default-features = false, features = [
   "std",
   "ASFoundation",

@@ -48,6 +48,7 @@ mod file_io;
 pub(crate) mod frontmatter;
 mod index_store;
 mod internal_migration;
+mod media_resource;
 mod migration;
 mod notebook;
 mod onboarding;
@@ -68,11 +69,14 @@ pub use file_io::{
 };
 pub use frontmatter::{
     build_md_content, extract_body_content, extract_document_metadata, extract_frontmatter_key,
-    extract_frontmatter_properties, merge_frontmatter, normalize_document_tags,
-    replace_frontmatter_tags, DocumentMetadata, FrontmatterMetadataError, MergeOverrides,
+    extract_frontmatter_properties, is_system_frontmatter_key, merge_frontmatter,
+    normalize_document_tags, normalize_markdown_encoding_boundaries, replace_frontmatter_tags,
+    DocumentMetadata, FrontmatterMetadataError, MergeOverrides, CANONICAL_FRONTMATTER_KEY,
+    LEGACY_FRONTMATTER_KEY, SYSTEM_FRONTMATTER_KEYS,
 };
 pub use index_store::{MemoContentCommit, MemoContentRevision};
 pub use internal_migration::{NotebookInternalMigrationReport, NOTEBOOK_INTERNAL_MIGRATION_KEY};
+pub use media_resource::{media_kind_for_path, MediaResource, MediaResourceKind};
 pub use migration::{DataMigrationReport, NotebookMigrationReport, LATEST_DATA_MIGRATION_VERSION};
 pub use ops::{
     base_filename, filename_from_notebook_relative_path, is_ignored_notebook_relative_path,

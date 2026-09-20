@@ -17,7 +17,10 @@ import {
   areAgentRenderItemsEqual,
   type AgentRenderItem,
 } from "@features/agent/thread-card/messages/tool-grouping";
-import { createAgentThreadCardMessageElement } from "@features/agent/thread-card/messages/message-item-renderer";
+import {
+  createAgentThreadCardMessageElement,
+  disposeAgentThreadCardMessageTree,
+} from "@features/agent/thread-card/messages/message-item-renderer";
 import { recordMessageRenderPlan } from "@features/agent/thread-card/messages/message-render-plan";
 import { MIN_TRANSIENT_DISPLAY_DURATION_MS } from "@features/agent/thread-card/messages/transient-display";
 import {
@@ -72,6 +75,7 @@ export class ThreadMessageRenderController {
   private pendingRenderInput: ThreadMessageRenderInput | null = null;
   private progressiveRenderRafId: number | null = null;
   private progressiveRenderMessages: ThreadState["messages"] | null = null;
+  private progressiveRenderList: HTMLDivElement | null = null;
   private previousIsLoading = false;
   private loadingIndicatorShownAt: number | null = null;
   private loadingIndicatorHideTimer: number | null = null;
@@ -128,6 +132,7 @@ export class ThreadMessageRenderController {
   dispose(): void {
     this.cancelPendingRender();
     this.cancelProgressiveRender();
+    this.disposeRenderedMessages();
     // The standalone conversation detail can recreate this controller while
     // React reuses the same body element (for example during StrictMode
     // effect replay). Do not leave an owned placeholder behind for the next
@@ -156,6 +161,7 @@ export class ThreadMessageRenderController {
 
     if (!input.shouldRenderMessages) {
       recordMessageRenderPlan("hidden", input.messages.length);
+      this.disposeRenderedMessages();
       this.body.replaceChildren();
       /*
        * body.replaceChildren() 会把 loadingIndicator 一起擦掉。下次切回可见
@@ -168,7 +174,6 @@ export class ThreadMessageRenderController {
         this.body.appendChild(this.loadingIndicator);
       }
       this.renderedEmptyState = null;
-      this.resetRenderedMessageCache();
       this.messageViewport.resetForHiddenMessages();
       return;
     }
@@ -235,10 +240,7 @@ export class ThreadMessageRenderController {
        * WebKit 重连节点会重启 @keyframes 计时。 这里只移除旧 list (若有),
        * 走 renderEmptyState 用 insertBefore 放 empty 元素到 indicator 之前。
        */
-      const prevList = this.renderedMessagesList;
-      if (prevList && prevList.parentNode === this.body) {
-        this.body.removeChild(prevList);
-      }
+      this.disposeRenderedMessages();
       this.renderEmptyState(input);
       return;
     }
@@ -256,10 +258,7 @@ export class ThreadMessageRenderController {
      * @keyframes 计时回到 t=0 (关键帧 0%/100% 是底色, 高频 streaming 下亮峰
      * 永远到不了)。
      */
-    const prevList = this.renderedMessagesList;
-    if (prevList && prevList.parentNode === this.body) {
-      this.body.removeChild(prevList);
-    }
+    this.disposeRenderedMessages();
     this.body.insertBefore(list, this.loadingIndicator);
     this.rememberRenderedMessages(
       list,
@@ -297,10 +296,7 @@ export class ThreadMessageRenderController {
     this.cancelProgressiveRender();
     this.progressiveRenderMessages = input.messages;
 
-    const previousList = this.renderedMessagesList;
-    if (previousList?.parentNode === this.body) previousList.remove();
-    this.renderedMessagesList = null;
-    this.renderedMessageRefs = [];
+    this.disposeRenderedMessages();
     this.removeRenderedEmptyState();
 
     const skeleton = this.createThreadCacheSkeleton();
@@ -314,6 +310,7 @@ export class ThreadMessageRenderController {
     );
     const list = document.createElement("div");
     list.className = "agent-thread-card__messages";
+    this.progressiveRenderList = list;
     const context = this.createMessageRenderContext(input.messages, input.isLoading);
     let index = 0;
 
@@ -357,6 +354,7 @@ export class ThreadMessageRenderController {
       }
 
       this.progressiveRenderMessages = null;
+      this.progressiveRenderList = null;
       this.removeRenderedEmptyState();
       this.body.insertBefore(list, this.loadingIndicator);
       this.rememberRenderedMessages(list, renderedItems);
@@ -375,6 +373,10 @@ export class ThreadMessageRenderController {
     if (this.progressiveRenderRafId !== null) {
       cancelAnimationFrame(this.progressiveRenderRafId);
       this.progressiveRenderRafId = null;
+    }
+    if (this.progressiveRenderList) {
+      disposeAgentThreadCardMessageTree(this.progressiveRenderList);
+      this.progressiveRenderList = null;
     }
     this.progressiveRenderMessages = null;
   }
@@ -496,6 +498,15 @@ export class ThreadMessageRenderController {
   private resetRenderedMessageCache(): void {
     this.renderedMessagesList = null;
     this.renderedMessageRefs = [];
+  }
+
+  private disposeRenderedMessages(): void {
+    const list = this.renderedMessagesList;
+    if (list) {
+      disposeAgentThreadCardMessageTree(list);
+      if (list.parentNode === this.body) list.remove();
+    }
+    this.resetRenderedMessageCache();
   }
 
   private rememberRenderedMessages(

@@ -68,10 +68,24 @@ impl MemoFile {
         Ok(manifest)
     }
 
-    /// Global index database path under the user config directory.
-    /// In production this is `~/.flowix/index.db`, located next to the rest of
-    /// the user config so notebook registry data stays together.
+    /// Active notebook index path. Once a notebook-local database exists this
+    /// points at `<notebook>/.flowix/notebook.db`; before first use it falls
+    /// back to the legacy global path for compatibility with old callers.
     pub fn get_index_db_path(&self) -> PathBuf {
+        if let Some(notebook_id) = self.current_notebook_id_value() {
+            if let Some(config) = self.get_notebook_config_by_id(&notebook_id) {
+                let local = PathBuf::from(config.path).join(".flowix/notebook.db");
+                if local.is_file() {
+                    return local;
+                }
+            }
+        }
+        self.get_global_index_db_path()
+    }
+
+    /// Device-local notebook registry database. Memo rows are never written
+    /// here after notebook-local indexing is initialized.
+    pub(crate) fn get_global_index_db_path(&self) -> PathBuf {
         self.config_dir.join("index.db")
     }
 
@@ -98,10 +112,10 @@ impl MemoFile {
     }
 
     pub(super) fn open_index_db(&self) -> std::io::Result<Connection> {
-        if let Some(parent) = self.get_index_db_path().parent() {
+        if let Some(parent) = self.get_global_index_db_path().parent() {
             fs::create_dir_all(parent)?;
         }
-        let mut conn = Connection::open(self.get_index_db_path()).map_err(sqlite_to_io)?;
+        let mut conn = Connection::open(self.get_global_index_db_path()).map_err(sqlite_to_io)?;
         conn.busy_timeout(Duration::from_secs(10))
             .map_err(sqlite_to_io)?;
         // 建表 + 老库兼容:

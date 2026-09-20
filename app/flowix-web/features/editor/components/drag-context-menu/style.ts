@@ -3,9 +3,9 @@ import type { CurrentBlockInfo } from '@features/editor/components/drag-context-
 /**
  * Y offset from block top edge, in px. Computed dynamically from the user's
  * font size / line height settings so the handle stays aligned when those
- * change. At the default `fontSize=15, lineHeight=1.6` the formulas reproduce
- * the original hand-tuned values (paragraph: 3, h1: 5, h2/h3: 3, h4: 2,
- * codeBlock: 2) and scale linearly with user settings otherwise.
+ * change. At the default `fontSize=15, lineHeight=1.8`, body text blocks use
+ * a 27px line box and a 4.5px centered offset; heading offsets remain 5/3/3/2px
+ * and scale linearly with user settings otherwise.
  *
  * Reading guide:
  *   - Text-bearing blocks (paragraph / blockquote / list / table / hr /

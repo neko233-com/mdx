@@ -11,7 +11,7 @@ impl MemoFile {
         sort: &str,
     ) -> std::io::Result<Vec<MemoTodoEntry>> {
         let notebook_id = self.notebook_id_for_index(notebook_id);
-        let conn = self.open_memo_index_db()?;
+        let conn = self.open_memo_index_db_for_notebook_id(&notebook_id)?;
         let order = if sort == "updatedAt" {
             "t.updated_at DESC, t.created_at DESC"
         } else {

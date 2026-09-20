@@ -12,11 +12,11 @@ const buttonVariants = cva(
       variant: {
         default: "bg-primary text-primary-foreground [a]:hover:bg-[color-mix(in_oklch,var(--primary)_80%,transparent)]",
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-[color-mix(in_oklch,var(--input)_30%,transparent)] dark:hover:bg-[color-mix(in_oklch,var(--input)_50%,transparent)]",
+          "border-border bg-background hover:bg-[var(--hover-bg)] hover:text-foreground aria-expanded:bg-[var(--hover-bg)] aria-expanded:text-foreground dark:border-input dark:bg-[color-mix(in_oklch,var(--input)_30%,transparent)] dark:hover:bg-[color-mix(in_oklch,var(--hover-bg)_50%,transparent)]",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary)_80%,transparent)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
-          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-[color-mix(in_oklch,var(--muted)_50%,transparent)]",
+          "hover:bg-[var(--hover-bg)] hover:text-foreground aria-expanded:bg-[var(--hover-bg)] aria-expanded:text-foreground dark:hover:bg-[color-mix(in_oklch,var(--hover-bg)_50%,transparent)]",
         destructive:
           "bg-[color-mix(in_oklch,var(--destructive)_10%,transparent)] text-destructive hover:bg-[color-mix(in_oklch,var(--destructive)_20%,transparent)] dark:bg-[color-mix(in_oklch,var(--destructive)_20%,transparent)] dark:hover:bg-[color-mix(in_oklch,var(--destructive)_30%,transparent)]",
         link: "text-primary underline-offset-4 hover:underline",

@@ -281,13 +281,14 @@ function SelectItem({ children, value, className }: SelectItemProps) {
 		<button
 			type="button"
 			onClick={handleClick}
+			data-selected={isSelected ? "true" : "false"}
 			className={cn(
-				"flex min-h-8 items-center w-full gap-2 rounded-md px-2.5 py-1.5 text-sm text-[var(--foreground)] hover:bg-[var(--muted)] cursor-pointer outline-none",
+				"flex min-h-8 items-center w-full gap-2 rounded-md px-2.5 py-1.5 text-sm text-[var(--foreground)] hover:bg-[var(--hover-bg)] cursor-pointer outline-none",
 				className
 			)}
 		>
 			<span className="flex-1 text-left">{children}</span>
-			{isSelected && <Check className="w-4 h-4 text-[var(--primary)]" />}
+			{isSelected && <Check className="w-4 h-4 text-[var(--brand)]" />}
 		</button>
 	);
 }

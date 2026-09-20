@@ -21,6 +21,8 @@ export function workColumnTargetIdentity(target: WorkColumnTarget): ContentIdent
       return { kind: 'memo', memoId: target.memoId };
     case 'artifact':
       return { kind: 'artifact', pointerMemoId: target.pointerMemoId };
+    case 'media':
+      return { kind: 'media', path: target.filePath };
     case 'external':
       return { kind: 'external', path: target.path };
     case 'agent-conversation':
@@ -42,6 +44,8 @@ export function browserColumnTargetIdentity(
       return target.activeFilePath
         ? { kind: 'external', path: target.activeFilePath }
         : { kind: 'file-browser', folderPath: target.folderPath ?? '' };
+    case 'media':
+      return { kind: 'media', path: target.filePath };
     case 'web':
       return { kind: 'web', url: target.url };
     case 'agent_conversation':

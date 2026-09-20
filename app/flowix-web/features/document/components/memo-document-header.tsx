@@ -7,6 +7,8 @@ import {
   type MemoTitleBodyNavigation,
   type MemoTitleEditorHandle,
 } from './memo-title-editor';
+import type { ClipboardSnapshot } from '@features/editor/extensions/paste-rules/clipboard';
+import type { DocumentEditorMode } from '@features/document/store/document-editor-view-store';
 
 interface MemoDocumentHeaderProps {
   memoId: string;
@@ -15,6 +17,9 @@ interface MemoDocumentHeaderProps {
   editable: boolean;
   autoFocus?: boolean;
   onMoveToBody: (request: MemoTitleBodyNavigation) => void;
+  onPasteToBody?: (snapshot: ClipboardSnapshot) => void;
+  editorMode?: DocumentEditorMode;
+  onToggleEditorMode?: () => void;
   titleRef?: RefObject<MemoTitleEditorHandle | null>;
 }
 
@@ -49,6 +54,9 @@ export function MemoDocumentHeader({
   editable,
   autoFocus = false,
   onMoveToBody,
+  onPasteToBody,
+  editorMode,
+  onToggleEditorMode,
   titleRef,
 }: MemoDocumentHeaderProps) {
   const language = useAppLanguage();
@@ -66,7 +74,11 @@ export function MemoDocumentHeader({
         filename={filename}
         editable={editable}
         autoFocus={autoFocus}
+        allowReadOnlyBoundaryNavigation
         onMoveToBody={onMoveToBody}
+        onPasteToBody={onPasteToBody}
+        editorMode={editorMode}
+        onToggleEditorMode={onToggleEditorMode}
       />
     </div>
   );

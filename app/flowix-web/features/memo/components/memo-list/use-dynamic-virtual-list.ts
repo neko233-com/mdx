@@ -41,11 +41,17 @@ interface Layout<T> {
 
 interface Viewport {
   scrollTop: number;
+  width: number;
   height: number;
 }
 
 function sameViewport(a: Viewport, b: Viewport): boolean {
-  return a.scrollTop === b.scrollTop && a.height === b.height;
+  return a.scrollTop === b.scrollTop && a.width === b.width && a.height === b.height;
+}
+
+interface ScrollAnchor {
+  key: string;
+  offset: number;
 }
 
 function firstIndexWhoseEndExceeds(
@@ -104,8 +110,14 @@ export function useDynamicVirtualList<T>({
   const [layoutVersion, bumpLayoutVersion] = useState(0);
   const [viewport, setViewport] = useState<Viewport>({
     scrollTop: 0,
+    width: 0,
     height: 0,
   });
+  // A dynamic row cannot be virtualized safely while its containing width is
+  // changing. During reflow the loaded prefix is rendered in normal document
+  // flow until every mounted row has settled at the new width.
+  const [isReflowing, setIsReflowing] = useState(true);
+  const isReflowingRef = useRef(true);
   const sizeByKeyRef = useRef(new Map<string, number>());
   const itemKeyByNodeRef = useRef(new Map<Element, string>());
   const measureRefCacheRef = useRef(
@@ -116,38 +128,80 @@ export function useDynamicVirtualList<T>({
   const lastResetKeyRef = useRef(resetKey);
   const lastScrollerWidthRef = useRef<number | null>(null);
   const viewportFrameRef = useRef<number | null>(null);
+  const pendingAnchorRef = useRef<ScrollAnchor | null>(null);
 
   const keyByIndex = useMemo(
     () => items.map((item) => getKey(item)),
     [getKey, items],
   );
 
+  const captureScrollAnchor = useCallback((): ScrollAnchor | null => {
+    const scroller = scrollerRef.current;
+    const currentLayout = layoutRef.current;
+    if (!scroller || !currentLayout || currentLayout.items.length === 0) return null;
+
+    const index = Math.min(
+      currentLayout.items.length - 1,
+      Math.max(
+        0,
+        firstIndexWhoseEndExceeds(
+          currentLayout.offsets,
+          currentLayout.sizes,
+          scroller.scrollTop,
+        ),
+      ),
+    );
+    const key = keyByIndex[index];
+    if (!key) return null;
+    return {
+      key,
+      offset: scroller.scrollTop - currentLayout.offsets[index],
+    };
+  }, [keyByIndex, scrollerRef]);
+
+  const beginReflow = useCallback((preserveAnchor: boolean) => {
+    if (!isReflowingRef.current) {
+      pendingAnchorRef.current = preserveAnchor ? captureScrollAnchor() : null;
+      isReflowingRef.current = true;
+      setIsReflowing(true);
+      sizeByKeyRef.current.clear();
+    } else if (!preserveAnchor) {
+      pendingAnchorRef.current = null;
+      sizeByKeyRef.current.clear();
+    }
+    bumpLayoutVersion((version) => version + 1);
+  }, [captureScrollAnchor]);
+
   const syncViewport = useCallback(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
+    const nextWidth = scroller.clientWidth;
     if (
       lastScrollerWidthRef.current !== null &&
-      lastScrollerWidthRef.current !== scroller.clientWidth
+      lastScrollerWidthRef.current !== nextWidth
     ) {
-      sizeByKeyRef.current.clear();
-      bumpLayoutVersion((version) => version + 1);
+      // Width changes alter line wrapping and therefore the height of every
+      // memo card. Reflow the loaded prefix while preserving the visible memo.
+      beginReflow(true);
     }
-    lastScrollerWidthRef.current = scroller.clientWidth;
+    lastScrollerWidthRef.current = nextWidth;
     const nextViewport = {
       scrollTop: scroller.scrollTop,
+      width: nextWidth,
       height: scroller.clientHeight,
     };
     setViewport((previous) =>
       sameViewport(previous, nextViewport) ? previous : nextViewport,
     );
-  }, [scrollerRef]);
+  }, [beginReflow, scrollerRef]);
 
   useLayoutEffect(() => {
     if (lastResetKeyRef.current === resetKey) return;
     lastResetKeyRef.current = resetKey;
-    sizeByKeyRef.current.clear();
-    bumpLayoutVersion((version) => version + 1);
-  }, [resetKey]);
+    pendingAnchorRef.current = null;
+    if (scrollerRef.current) scrollerRef.current.scrollTop = 0;
+    beginReflow(false);
+  }, [beginReflow, resetKey, scrollerRef]);
 
   const scheduleViewportSync = useCallback(() => {
     if (viewportFrameRef.current !== null) return;
@@ -178,6 +232,10 @@ export function useDynamicVirtualList<T>({
 
   const updateMeasuredSize = useCallback(
     (key: string, measuredSize: number) => {
+      const scroller = scrollerRef.current;
+      // A collapsed list has no meaningful wrapping width. Never retain a
+      // height measured from that zero-width layout for the visible surface.
+      if (scroller && scroller.clientWidth <= 0) return;
       const nextSize = Math.max(MIN_ITEM_SIZE, Math.ceil(measuredSize));
       const previousSize = sizeByKeyRef.current.get(key);
       if (previousSize !== undefined && Math.abs(previousSize - nextSize) < 1) {
@@ -185,10 +243,10 @@ export function useDynamicVirtualList<T>({
       }
 
       const oldPosition = layoutRef.current?.byKey.get(key);
-      const scroller = scrollerRef.current;
       if (
         oldPosition &&
         scroller &&
+        !isReflowingRef.current &&
         oldPosition.start < scroller.scrollTop
       ) {
         scroller.scrollTop += nextSize - (previousSize ?? oldPosition.size);
@@ -199,6 +257,37 @@ export function useDynamicVirtualList<T>({
     },
     [scrollerRef],
   );
+
+  // ResizeObserver is complemented by a synchronous layout read. This makes
+  // reflow deterministic during a divider drag and avoids waiting for a
+  // browser-specific observer delivery when a popup becomes measurable.
+  useLayoutEffect(() => {
+    if (!enabled || !isReflowing || typeof document === 'undefined') return;
+    const scroller = scrollerRef.current;
+    if (!scroller || scroller.clientWidth <= 0 || scroller.clientHeight <= 0) return;
+
+    let changed = false;
+    let allMounted = true;
+    for (const key of keyByIndex) {
+      const node = [...itemKeyByNodeRef.current.entries()]
+        .find(([, currentKey]) => currentKey === key)?.[0];
+      if (!node || !node.isConnected) {
+        allMounted = false;
+        continue;
+      }
+      const nextSize = Math.max(MIN_ITEM_SIZE, Math.ceil(node.getBoundingClientRect().height));
+      if (sizeByKeyRef.current.get(key) !== nextSize) {
+        sizeByKeyRef.current.set(key, nextSize);
+        changed = true;
+      }
+    }
+
+    if (changed) bumpLayoutVersion((version) => version + 1);
+    if (allMounted && keyByIndex.length > 0) {
+      isReflowingRef.current = false;
+      setIsReflowing(false);
+    }
+  }, [enabled, isReflowing, keyByIndex, layoutVersion, scrollerRef]);
 
   useLayoutEffect(() => {
     if (!enabled || typeof ResizeObserver === 'undefined') return;
@@ -303,7 +392,12 @@ export function useDynamicVirtualList<T>({
     // prefix in full; the next measured viewport immediately restores normal
     // virtualization.  This also avoids losing notes in environments without
     // reliable element geometry during startup.
-    if (!Number.isFinite(viewport.height) || viewport.height <= 0) {
+    if (
+      !Number.isFinite(viewport.width) ||
+      viewport.width <= 0 ||
+      !Number.isFinite(viewport.height) ||
+      viewport.height <= 0
+    ) {
       return layout.items.map((item, index) => ({
         key: keyByIndex[index],
         index,
@@ -344,6 +438,19 @@ export function useDynamicVirtualList<T>({
       }));
   }, [enabled, keepAliveKeys, keyByIndex, layout, overscan, viewport]);
 
+  useLayoutEffect(() => {
+    if (isReflowing || !pendingAnchorRef.current) return;
+    const scroller = scrollerRef.current;
+    const currentLayout = layoutRef.current;
+    const anchor = pendingAnchorRef.current;
+    const position = currentLayout?.byKey.get(anchor.key);
+    if (!scroller || !position) return;
+
+    scroller.scrollTop = Math.max(0, position.start + anchor.offset);
+    pendingAnchorRef.current = null;
+    syncViewport();
+  }, [isReflowing, layoutVersion, scrollerRef, syncViewport]);
+
   const onScroll = useCallback(
     (_event: UIEvent<HTMLDivElement>) => {
       if (!enabled) return;
@@ -368,6 +475,11 @@ export function useDynamicVirtualList<T>({
   return {
     totalSize: enabled ? layout.totalSize : 0,
     virtualItems,
+    isVirtualizationReady:
+      enabled &&
+      !isReflowing &&
+      viewport.width > 0 &&
+      viewport.height > 0,
     getMeasureRef,
     onScroll,
   };

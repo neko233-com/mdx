@@ -13,7 +13,6 @@ export default {
 
         card: {
           DEFAULT: "var(--card)",
-          foreground: "var(--card-foreground)",
         },
         popover: {
           DEFAULT: "var(--popover)",
@@ -36,7 +35,6 @@ export default {
         },
         accent: {
           DEFAULT: "var(--accent)",
-          foreground: "var(--accent-foreground)",
         },
       },
       fontSize: {

@@ -256,6 +256,8 @@ export interface NotebookRecord {
 
 export const notebooks = {
   getAll: () => invoke<NotebookRecord[]>('get_notebooks'),
+  getDefaultPath: (name: string) =>
+    invoke<string>('get_default_notebook_path', { name }),
   create: (name: string, path?: string, icon?: string | null) =>
     invoke<NotebookRecord>('create_notebook', { name, path, icon }),
   createFromCloud: (id: string, name: string, path: string, icon?: string | null) =>

@@ -2,10 +2,153 @@ import { Marked } from "marked";
 import { normalizeAgentTypeKey } from "@/lib/agent-types";
 import { sanitizeLinkHref } from "@/lib/safe-link";
 import type { AgentThreadCardInputImage } from "@features/agent/thread-card/composer/composer-image-controller";
+import {
+  getShiki,
+  loadHighlighter,
+  loadLanguage,
+} from "@features/editor/extensions/codeblock-shiki/shiki/shiki-highlighter";
+import { getShikiLanguageDefinition } from "@features/editor/extensions/codeblock-shiki/shiki/shiki-languages";
+import { getTokenStyle } from "@features/editor/extensions/codeblock-shiki/shiki/shiki-decorations";
 
 export const DEFAULT_AGENT_THREAD_CARD_TITLE = "";
 export const AGENT_THREAD_CARD_MESSAGE_CODE_BLOCK_CLASS =
   "agent-thread-card__message-code-block";
+
+const AGENT_SHIKI_THEME_DATASET = "agentShikiTheme";
+const AGENT_THEME_CHANGE_EVENT = "app-theme-changed";
+
+function getAgentCodeBlockLanguage(code: Element): {
+  language: string;
+  label: string;
+} {
+  const languageClass = Array.from(code.classList).find((className) =>
+    className.startsWith("language-"),
+  );
+  const rawLanguage = languageClass?.slice("language-".length) ?? "";
+  const definition = getShikiLanguageDefinition(rawLanguage);
+  const isPlaintext = ["", "plaintext", "text"].includes(
+    rawLanguage.toLowerCase(),
+  );
+
+  return {
+    language: definition?.id ?? "plaintext",
+    label: definition?.label ?? (isPlaintext ? "Text" : rawLanguage),
+  };
+}
+
+/** Add the small, non-interactive language label shown in the code block corner. */
+export function prepareAgentThreadCardCodeBlockLabels(root: ParentNode): void {
+  root
+    .querySelectorAll<HTMLElement>(
+      `pre.${AGENT_THREAD_CARD_MESSAGE_CODE_BLOCK_CLASS} > code`,
+    )
+    .forEach((code) => {
+      const pre = code.parentElement;
+      if (!pre) return;
+      pre.dataset.languageLabel = getAgentCodeBlockLanguage(code).label;
+    });
+}
+
+function readAgentShikiTheme(): string {
+  const theme = getComputedStyle(document.documentElement)
+    .getPropertyValue("--shiki-theme")
+    .trim();
+  return theme || "github-light";
+}
+
+function appendAgentShikiTokens(
+  code: HTMLElement,
+  lines: readonly (readonly {
+    content: string;
+    color?: string;
+    bgColor?: string;
+    fontStyle?: number;
+  }[])[],
+): void {
+  const fragment = document.createDocumentFragment();
+
+  lines.forEach((line, lineIndex) => {
+    line.forEach((token) => {
+      if (!token.content) return;
+      const style = getTokenStyle(token);
+      if (!style) {
+        fragment.append(document.createTextNode(token.content));
+        return;
+      }
+      const span = document.createElement("span");
+      span.setAttribute("style", style);
+      span.textContent = token.content;
+      fragment.append(span);
+    });
+    if (lineIndex < lines.length - 1) fragment.append(document.createTextNode("\n"));
+  });
+
+  code.replaceChildren(fragment);
+}
+
+/** Highlight completed Agent code blocks and refresh them when the app theme changes. */
+export async function highlightAgentThreadCardCodeBlocks(
+  container: ParentNode,
+): Promise<void> {
+  const codeBlocks = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      `pre.${AGENT_THREAD_CARD_MESSAGE_CODE_BLOCK_CLASS} > code`,
+    ),
+  );
+  if (!codeBlocks.length) return;
+
+  try {
+    await loadHighlighter();
+  } catch {
+    return;
+  }
+
+  const highlighter = getShiki();
+  if (!highlighter) return;
+
+  const requestedTheme = readAgentShikiTheme();
+  const theme = highlighter.getLoadedThemes().includes(requestedTheme)
+    ? requestedTheme
+    : highlighter.getLoadedThemes()[0];
+  if (!theme) return;
+
+  await Promise.all(codeBlocks.map(async (code) => {
+    const pre = code.parentElement;
+    if (!pre) return;
+
+    const source = code.textContent ?? "";
+    if (pre.dataset[AGENT_SHIKI_THEME_DATASET] === theme) return;
+
+    const { language } = getAgentCodeBlockLanguage(code);
+
+    if (language !== "plaintext") {
+      try {
+        await loadLanguage(language);
+      } catch {
+        return;
+      }
+    }
+
+    // Theme may have changed while the language grammar was loading. Let the
+    // theme-change pass handle this block with the newer theme instead.
+    if (readAgentShikiTheme() !== theme) return;
+    if (!code.isConnected || code.textContent !== source) return;
+
+    try {
+      const lines = highlighter.codeToTokensBase(source, { lang: language, theme });
+      appendAgentShikiTokens(code, lines);
+      pre.dataset[AGENT_SHIKI_THEME_DATASET] = theme;
+    } catch {
+      // Unsupported or malformed languages remain as the original plain code.
+    }
+  }));
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener(AGENT_THEME_CHANGE_EVENT, () => {
+    void highlightAgentThreadCardCodeBlocks(document);
+  });
+}
 
 export function escapeAgentThreadCardAttr(
   value: string | null | undefined,
@@ -345,6 +488,7 @@ export function fillWithAgentThreadCardMarkdownHtml(
   const template = document.createElement("template");
   template.innerHTML = html;
   container.append(template.content.cloneNode(true));
+  prepareAgentThreadCardCodeBlockLabels(container);
   attachAgentThreadCardMathCopyHandlers(container);
   prepareAgentThreadCardMath(container, mathCopyLabel);
 }

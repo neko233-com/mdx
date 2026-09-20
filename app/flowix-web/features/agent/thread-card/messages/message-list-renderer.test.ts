@@ -535,10 +535,15 @@ describe("continuous tool group rendering", () => {
       ),
     ).toEqual([
       "agent-thread-card__message-tool-icon-wrap",
-      "agent-thread-card__tool-group-running-loading-icon",
+      "agent-thread-card__tool-group-running-loading-wrap",
       "agent-thread-card__message-tool-name",
       "agent-thread-card__message-tool-content",
     ]);
+    expect(
+      runningTool?.querySelector(
+        ".agent-thread-card__tool-group-running-loading-wrap > .agent-thread-card__tool-group-running-loading-icon",
+      ),
+    ).not.toBeNull();
     expect(group.querySelector(".agent-thread-card__tool-group-running-tool"))
       .not.toBeNull();
     expect(

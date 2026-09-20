@@ -2,34 +2,42 @@
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 
-import { canonicalPath } from '@/lib/path';
+import { canonicalDirectoryPath, canonicalPath, parentDirectoryPath } from '@/lib/path';
 import { createLogger } from '@/lib/logger';
 import { toast } from '@/lib/toast';
 import { useI18n } from '@/lib/i18n';
-import { useUserSettings } from '@features/preferences/hooks/use-user-settings';
+import { useShowHiddenNotebookFiles } from '@features/preferences/public/runtime-api';
 import { useDocumentStore } from '@features/document/store';
-import { isMarkdownFilePath } from '@features/editor/code-file';
+import { resourceKindFromPath } from '@features/editor/public/code-file';
 import {
   NotebookFileTree,
   type NotebookFolderCreateRequest,
   type NotebookNoteCreateRequest,
+  type NotebookMoveResult,
+  type NotebookMoveSource,
 } from '@features/memo/components/notebook-file-tree';
 import { useFolderTree } from '@features/memo/components/use-folder-tree';
 import { resolveMemoByPath } from '@features/memo/use-cases/open-by-target';
 import { openMemoSession } from '@features/memo/use-cases/open-memo-session';
-import { openBrowserColumnFileBrowser, openBrowserColumnMemoById } from '@features/workspace/use-cases/browser-column-navigation';
-import { openExternalTarget } from '@features/workspace/use-cases/workspace-navigation';
-import { files, memos, type DocTreeItem, type FileBrowserDirectoriesChangedEvent } from '@platform/tauri/client';
+import {
+  openBrowserColumnFileBrowser,
+  openBrowserColumnMedia,
+  openBrowserColumnMemoById,
+} from '@features/workspace/use-cases/browser-column-navigation';
+import { openExternalTarget, openMediaTarget } from '@features/workspace/use-cases/workspace-navigation';
+import {
+  files,
+  mediaResources,
+  memos,
+  type DocTreeItem,
+  type FileBrowserDirectoriesChangedEvent,
+} from '@platform/tauri/client';
 import { subscribe } from '@platform/tauri/event-bus';
 import type { Notebook } from '@features/memo/store';
 import type { SortType } from '@features/memo/services';
 
 const FILE_BROWSER_DIRECTORIES_CHANGED_EVENT = 'file-browser-directories-changed';
 const logger = createLogger('notebook-folder-view');
-
-function canonicalDirectoryPath(path: string): string {
-  return canonicalPath(path).replace(/\/+$/, '') || '/';
-}
 
 function isInsideHiddenDirectory(item: DocTreeItem, notebookPath: string): boolean {
   const root = canonicalDirectoryPath(notebookPath);
@@ -53,7 +61,10 @@ export function isNotebookTreeItemVisible(
   if (item.type === 'folder') {
     return !['attachment', 'attachments'].includes(item.name.toLowerCase());
   }
-  return isMarkdownFilePath(item.name);
+  const resourceKind = item.resourceKind ?? resourceKindFromPath(item.name);
+  return resourceKind === 'note'
+    || resourceKind === 'image'
+    || resourceKind === 'video';
 }
 
 function memoPath(notebookPath: string, memo: { filename: string; relativePath?: string }): string {
@@ -109,7 +120,7 @@ export function NotebookFolderView({
   isActive?: boolean;
 }) {
   const { t } = useI18n();
-  const showHiddenNotebookFiles = useUserSettings((settings) => settings.showHiddenNotebookFiles);
+  const showHiddenNotebookFiles = useShowHiddenNotebookFiles();
   const tree = useFolderTree(notebook.path, {
     includeHiddenDirectories: showHiddenNotebookFiles,
   });
@@ -209,6 +220,23 @@ export function NotebookFolderView({
 
   const openFile = useCallback(async (filePath: string) => {
     try {
+      if (resourceKindFromPath(filePath) !== 'note') {
+        const resourceKind = resourceKindFromPath(filePath);
+        if (resourceKind === 'image' || resourceKind === 'video') {
+          await openMediaTarget({
+            filePath,
+            notebookId: notebook.id,
+            notebookPath: notebook.path,
+            resourceKind,
+          });
+        } else {
+          await openExternalTarget(filePath, {
+            scopePath: notebook.path,
+            destination: 'main-third',
+          });
+        }
+        return;
+      }
       const memo = await resolveMemoByPath(filePath);
       if (memo?.notebookId === notebook.id) {
         // Keep the file-tree entry point aligned with the memo list. Plugin
@@ -229,6 +257,15 @@ export function NotebookFolderView({
 
   const openFileInNewTab = useCallback(async (filePath: string) => {
     try {
+      if (resourceKindFromPath(filePath) !== 'note') {
+        const resourceKind = resourceKindFromPath(filePath);
+        if (resourceKind === 'image' || resourceKind === 'video') {
+          await openBrowserColumnMedia(filePath, notebook.id, notebook.path, resourceKind);
+        } else {
+          await openBrowserColumnFileBrowser(notebook.path, filePath);
+        }
+        return;
+      }
       const memo = await resolveMemoByPath(filePath);
       if (memo?.notebookId === notebook.id) {
         // The file-tree action explicitly targets the right column. Do not
@@ -243,23 +280,53 @@ export function NotebookFolderView({
     }
   }, [notebook.id, notebook.path, t]);
 
-  const moveNote = useCallback(async (sourcePath: string, targetDirectoryPath: string) => {
-    const memo = await resolveMemoByPath(sourcePath);
-    if (!memo || memo.notebookId !== notebook.id) {
-      throw new Error('selected file is not an indexed note in this notebook');
-    }
+  const moveItem = useCallback(async (sources: NotebookMoveSource[], targetDirectoryPath: string): Promise<NotebookMoveResult> => {
+    const sourcePaths = sources.map((source) => source.path);
     const root = canonicalDirectoryPath(notebook.path);
     const target = canonicalDirectoryPath(targetDirectoryPath);
     if (target !== root && !target.startsWith(`${root}/`)) {
-      throw new Error('destination is outside the notebook');
+      return { movedPaths: [], failedPaths: sourcePaths };
     }
     const parentRelativePath = target === root ? '' : target.slice(root.length + 1);
-    const moved = await memos.moveMemoToDirectory(
-      memo.memoId,
-      notebook.id,
-      parentRelativePath,
-    );
-    useDocumentStore.getState().replaceActiveMemoPath(moved.memo.id, moved.path);
+    const movedPaths: string[] = [];
+    const failedPaths: string[] = [];
+    for (const source of sources) {
+      const sourcePath = source.path;
+      try {
+        const canonicalSourcePath = canonicalPath(sourcePath);
+        const sourceInNotebook = canonicalSourcePath === root
+          || canonicalSourcePath.startsWith(`${root}/`);
+        if (!sourceInNotebook) {
+          const importedPath = await files.importFile(sourcePath, target, notebook.path);
+          movedPaths.push(importedPath);
+          continue;
+        }
+        const memo = source.memoId
+          ? { memoId: source.memoId, notebookId: notebook.id }
+          : source.resourceKind && source.resourceKind !== 'note'
+            ? null
+            : await resolveMemoByPath(sourcePath);
+        if (memo) {
+          if (memo.notebookId !== notebook.id) {
+            throw new Error('selected file belongs to another notebook');
+          }
+          const moved = await memos.moveMemoToDirectory(
+            memo.memoId,
+            notebook.id,
+            parentRelativePath,
+          );
+          movedPaths.push(moved.path);
+          useDocumentStore.getState().replaceActiveMemoPath(moved.memo.id, moved.path);
+        } else {
+          const movedPath = await files.move(sourcePath, target, notebook.path);
+          movedPaths.push(movedPath);
+        }
+      } catch (error) {
+        logger.warn('moving notebook tree item failed', { error, sourcePath, targetDirectoryPath });
+        failedPaths.push(sourcePath);
+      }
+    }
+    return { movedPaths, failedPaths };
   }, [notebook.id, notebook.path]);
 
   const deleteFolder = useCallback(async (folderPath: string) => {
@@ -271,6 +338,19 @@ export function NotebookFolderView({
     const parent = folderPath.slice(0, folderPath.replace(/[\\/]+$/, '').lastIndexOf('/')) || notebook.path;
     await tree.refresh(parent);
     toast.success(t('memo.fileTree.deleted', { name: folderPath.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folderPath }));
+  }, [notebook.path, t, tree.refresh]);
+
+  const deleteResource = useCallback(async (item: DocTreeItem) => {
+    const kind = item.resourceKind ?? resourceKindFromPath(item.name);
+    if (kind !== 'image' && kind !== 'video') return;
+    const ok = await mediaResources.delete(item.fullPath, notebook.path);
+    if (!ok) {
+      toast.error(t('media.fileTree.deleteFailed'));
+      return;
+    }
+    const parent = parentDirectoryPath(item.fullPath, notebook.path);
+    await tree.refresh(parent);
+    toast.success(t('media.fileTree.deleted', { name: item.name }));
   }, [notebook.path, t, tree.refresh]);
 
   // MemoList remains mounted while the middle column shows conversations.
@@ -289,8 +369,9 @@ export function NotebookFolderView({
       onNoteSelect={(filePath) => { void openFile(filePath); }}
       onNoteOpenInNewTab={(filePath) => { void openFileInNewTab(filePath); }}
       onCreateNote={(parentPath, title) => onCreateNote?.(parentPath, title)}
-      onMoveNote={moveNote}
+      onMoveNote={moveItem}
       onDeleteFolder={deleteFolder}
+      onDeleteResource={deleteResource}
     />
   );
 }

@@ -130,7 +130,7 @@ fn create_notebook_registry(
     create_notebook_registry_with_id(name, path, icon, None, memo_file)
 }
 
-fn default_notebook_path(name: &str) -> Result<PathBuf, String> {
+fn default_notebook_path_without_create(name: &str) -> Result<PathBuf, String> {
     let safe_name: String = name
         .chars()
         .map(|ch| {
@@ -149,9 +149,21 @@ fn default_notebook_path(name: &str) -> Result<PathBuf, String> {
     let documents = dirs::document_dir()
         .or_else(|| dirs::home_dir().map(|home| home.join("Documents")))
         .ok_or_else(|| "DOCUMENTS_DIR_UNAVAILABLE".to_string())?;
-    let path = documents.join("flowix").join(safe_name);
+    Ok(documents.join("flowix").join(safe_name))
+}
+
+fn default_notebook_path(name: &str) -> Result<PathBuf, String> {
+    let path = default_notebook_path_without_create(name)?;
     std::fs::create_dir_all(&path).map_err(|error| format!("PATH_CREATE_FAILED: {error}"))?;
     Ok(path)
+}
+
+#[tauri::command]
+pub fn get_default_notebook_path(name: String) -> Result<String, String> {
+    default_notebook_path_without_create(name.trim())?
+        .to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| "PATH_INVALID_UTF8".to_string())
 }
 
 fn create_notebook_registry_with_id(

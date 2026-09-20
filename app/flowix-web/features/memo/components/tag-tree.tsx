@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { HashIcon, PlusIcon } from '@phosphor-icons/react';
+import { PlusIcon } from '@phosphor-icons/react';
 import { SquareMinus } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -20,11 +20,11 @@ import { Button } from '@shared/ui/button';
 import { Input } from '@shared/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@shared/ui/select';
 import {
-  useMemoLibraryMetadataStore,
   useMemoStore,
-  useTagStore,
-  type Notebook,
-} from '@features/memo';
+} from '@features/memo/store/memo-store';
+import { useMemoLibraryMetadataStore } from '@features/memo/store/memo-library-metadata-store';
+import { useTagStore } from '@features/memo/store/tag-store';
+import type { Notebook } from '@features/memo/store/memo-store';
 import {
   persistTagLayout,
   rebaseSelectedTagId,
@@ -48,6 +48,9 @@ import {
 } from '@features/memo/components/tag-reorder';
 import { markTagsCollapsedByAncestor } from '@features/memo/components/tag-collapse';
 import { agent, system } from '@platform/tauri/client';
+import { canUseNativeContextMenu, logNativeContextMenuError, popupNativeContextMenu } from '@platform/tauri/native-context-menu';
+import { loadNativeMenuIcons } from '@platform/tauri/native-menu-icons';
+import { TagSvgIcon } from '@shared/ui/tag-icon';
 
 interface TagTreeProps {
   selectedNotebook: Notebook | null;
@@ -64,6 +67,7 @@ interface TagTreeProps {
 // 笔记本列表区域高度 ── 持久化键 + 读 / 写助手。
 const TAG_COLLAPSED_STORAGE_PREFIX = 'flowix:tag-collapsed:';
 const logger = createLogger('tag-tree');
+const TAG_NATIVE_ICON_NAMES = ['pencil', 'pin', 'list-checks', 'delete'] as const;
 
 function getCollapsedTagsStorageKey(notebookId: string): string {
   return `${TAG_COLLAPSED_STORAGE_PREFIX}${notebookId}`;
@@ -721,6 +725,19 @@ export function TagTree({
                   }
                 }}
                 role="button"
+                onContextMenu={(event) => {
+                  if (!canUseNativeContextMenu()) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void loadNativeMenuIcons(TAG_NATIVE_ICON_NAMES)
+                    .then((icons) => popupNativeContextMenu(event, [
+                      { text: t('memo.tag.rename'), icon: icons.pencil!, action: () => startRename(tag) },
+                      { text: t('memo.tag.pin'), icon: icons.pin!, action: () => void pinTag(tag) },
+                      { text: t('memo.tag.batchManage'), icon: icons['list-checks']!, action: () => setBatchMode(true) },
+                      { text: t('memo.tag.delete'), icon: icons.delete!, action: () => setDeletingTag(tag) },
+                    ]))
+                    .catch((error) => logNativeContextMenuError('tag', error));
+                }}
                 tabIndex={tag.collapsedByAncestor ? -1 : 0}
                 onPointerDown={(event) => handlePointerDown(event, tag.id)}
                 onDoubleClick={(event) => {
@@ -792,10 +809,7 @@ export function TagTree({
                     }
                   }}
                 >
-                  <HashIcon
-                    className="h-3.5 w-3.5"
-                    weight="bold"
-                  />
+                  <TagSvgIcon className="h-4 w-4" />
                   {hasChildren && (
                     <span
                       aria-hidden
@@ -1068,10 +1082,7 @@ export function TagTree({
             height: dragGhost.rect.height,
           }}
         >
-          <HashIcon
-            className="h-3.5 w-3.5 shrink-0 text-[var(--primary)]"
-            weight="bold"
-          />
+          <TagSvgIcon className="h-4 w-4 shrink-0 text-[var(--primary)]" />
           <span className="min-w-0 flex-1 truncate">
             {tagOptions.find((tag) => tag.id === dragGhost.id)?.name ?? ''}
           </span>

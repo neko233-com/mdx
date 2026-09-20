@@ -20,6 +20,8 @@ import { canonicalPath } from '@/lib/path';
 import { createLogger } from '@/lib/logger';
 import { resolveFileBrowserRoot, type FileBrowserTarget } from '@features/workspace/store/file-browser-target';
 import { ResourceFileIcon, ResourceFolderIcon } from './resource-file-icon';
+import { MediaResourceView } from './media-resource-view';
+import { resourceKindFromPath } from '@features/editor/public/code-file';
 
 const FILE_BROWSER_DIRECTORIES_CHANGED_EVENT = 'file-browser-directories-changed';
 const fileBrowserLogger = createLogger('file-browser-watch');
@@ -348,11 +350,22 @@ export function FileBrowserView({ surface: input }: { surface: FileBrowserViewSu
       <div className="relative flex min-h-0 min-w-0 flex-1">
         <div className="min-w-0 flex-1">
           {surface.activeFilePath ? (
-            <DocumentContainer
-              {...surface.documentProps}
-              filePath={surface.activeFilePath}
-              externalScopePath={surface.scopePath}
-            />
+            resourceKindFromPath(surface.activeFilePath) === 'image'
+              || resourceKindFromPath(surface.activeFilePath) === 'video'
+              ? (
+                <MediaResourceView
+                  filePath={surface.activeFilePath}
+                  notebookPath={surface.scopePath}
+                  resourceKind={resourceKindFromPath(surface.activeFilePath) === 'image' ? 'image' : 'video'}
+                />
+              )
+              : (
+                <DocumentContainer
+                  {...surface.documentProps}
+                  filePath={surface.activeFilePath}
+                  externalScopePath={surface.scopePath}
+                />
+              )
           ) : (
             <div className="flex h-full items-center justify-center px-8 text-center text-sm text-[var(--muted-foreground)]">
               从右侧文件树选择文件

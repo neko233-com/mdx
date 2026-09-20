@@ -8,7 +8,7 @@ import {
   TreeStructureIcon,
 } from '@phosphor-icons/react';
 import type { MemoItem } from '@/types/memo-item';
-import { useMemoStore } from '@features/memo';
+import { useMemoStore } from '@features/memo/store/memo-store';
 import { openArtifactTarget } from '@features/workspace/use-cases/workspace-navigation';
 import { plugins, type PluginDescriptor } from '@platform/tauri/client';
 import { AgentPluginWorkbench } from './plugin-agent-workbench';

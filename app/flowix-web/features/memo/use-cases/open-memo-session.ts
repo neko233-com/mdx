@@ -1,6 +1,7 @@
 import { joinNotebookMemoPath } from '@/lib/path';
-import { useDocumentStore } from '@features/document';
-import { useMemoStore, type MemoItem, type Notebook } from '@features/memo';
+import { useDocumentStore } from '@features/document/store/document-store';
+import { useMemoStore, type Notebook } from '@features/memo/store/memo-store';
+import type { MemoItem } from '@/types/memo-item';
 import { memos as memosClient } from '@platform/tauri/client';
 import { createLogger } from '@/lib/logger';
 import {

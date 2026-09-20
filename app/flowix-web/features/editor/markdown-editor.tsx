@@ -1,6 +1,7 @@
 import { Editor, Extension, renderNestedMarkdownContent } from '@tiptap/core';
+import type { JSONContent } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
-import { TextSelection } from '@tiptap/pm/state';
+import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 import Highlight from '@tiptap/extension-highlight';
 import { TaskList } from '@tiptap/extension-task-list';
@@ -9,19 +10,19 @@ import { ListItem } from '@tiptap/extension-list';
 import { Paragraph } from '@tiptap/extension-paragraph';
 import { Markdown } from '@tiptap/markdown';
 import Placeholder from '@tiptap/extension-placeholder';
-import { TextStyle } from '@tiptap/extension-text-style';
-import { Color } from '@tiptap/extension-color';
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useCallback, type ReactNode } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useCallback, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { useShortcutScope, pushHandler } from '@features/shortcuts';
 import { AttachmentLink } from '@features/editor/extensions/attachment-link';
 import { TableBubbleMenu } from '@features/editor/extensions/table/table-bubble-menu';
 import { EditorToolbar } from '@features/editor/components/editor-toolbar';
 import { SelectionBubbleMenu } from '@features/editor/components/selection-bubble-menu';
+import { HeadingOutlineNavigation } from '@features/editor/components/heading-outline-navigation';
 import { DragContextMenu } from '@features/editor/components/drag-context-menu';
 import { attachLinkHoverTooltip } from '@features/editor/components/link-hover-tooltip';
 import { Tag } from '@features/editor/extensions/tag';
 import MarkdownPaste from '@features/editor/extensions/markdown-paste';
-import ManagedPasteRules from '@features/editor/extensions/paste-rules';
+import ManagedPasteRules, { pasteClipboardSnapshot } from '@features/editor/extensions/paste-rules';
+import type { ClipboardSnapshot } from '@features/editor/extensions/paste-rules/clipboard';
 import { LinkSelectionHighlight, MarkdownLink } from '@features/editor/extensions/markdown-link';
 import { NoteReference } from '@features/editor/extensions/note-link';
 import { NoteMention, WikiNoteMention } from '@features/editor/extensions/note-mention';
@@ -40,10 +41,13 @@ import { SKIP_AGENT_THREAD_CARD_CLEANUP_META } from '@features/agent/thread-card
 import { TabAgentRun } from '@features/editor/extensions/tab-agent-run';
 import { TabCharacter } from '@features/editor/extensions/tab-character';
 import { TablePlugin } from '@features/editor/extensions/table/table-plugin';
+import { StableCaret } from '@features/editor/extensions/stable-caret';
 import { useI18n } from '@/lib/i18n';
+import { markDocumentOpenTrace } from '@/lib/document-open-perf';
 
 interface MarkdownEditorProps {
   memoId?: string;
+  transitionId?: number | null;
   content: string;
   editable?: boolean;
   placeholder?: string;
@@ -73,6 +77,7 @@ export interface MarkdownEditorHandle {
   getCurrentMarkdown: () => string;
   focusStart?: () => void;
   moveTitleToBody?: (trailingContent: string) => void;
+  pasteToBody?: (snapshot: ClipboardSnapshot) => boolean;
 }
 
 interface NestedListMarkdownContext {
@@ -196,29 +201,13 @@ function normalizeMarkdownTableEmptyCells(markdown: string): string {
 }
 
 const PreservedParagraph = Paragraph.extend({
-  addAttributes() {
-    return {
-      textAlign: {
-        default: null,
-        parseHTML: element => element.style.textAlign || null,
-        renderHTML: attributes => (
-          attributes.textAlign ? { style: `text-align: ${attributes.textAlign}` } : {}
-        ),
-      },
-    };
-  },
   renderMarkdown(node, h, ctx: MarkdownRenderContext) {
     const content = Array.isArray(node.content) ? node.content : [];
     if (isEmptyParagraphForMarkdown(content, ctx)) {
       return renderEmptyParagraphMarkdown(ctx);
     }
 
-    const renderedContent = h.renderChildren(content);
-    // Markdown itself has no alignment syntax. Keep aligned paragraphs as HTML
-    // so the formatting round-trips through the Markdown editor and renderer.
-    return node.attrs?.textAlign
-      ? `<p style="text-align: ${node.attrs.textAlign}">${renderedContent}</p>`
-      : renderedContent;
+    return h.renderChildren(content);
   },
 });
 
@@ -229,6 +218,119 @@ const MarkdownEscape = Extension.create({
     return h.createTextNode(token.raw || token.text || '');
   },
 });
+
+/** Mark name used only while serializing ambiguous bold boundaries. */
+const HTMLStrongFallback = Extension.create({
+  name: 'htmlStrongFallback',
+  renderMarkdown: (node, h) => `<strong>${h.renderChildren(node)}</strong>`,
+  markdownOptions: {
+    htmlReopen: {
+      open: '<strong>',
+      close: '</strong>',
+    },
+  },
+});
+
+/**
+ * Read compatibility for notes written before the serializer fallback was
+ * added. New notes never use this form; they serialize the ambiguous run as
+ * standard inline HTML instead.
+ */
+const LegacyAdjacentStrongMarkdown = Extension.create({
+  name: 'legacyAdjacentStrongMarkdown',
+  markdownTokenizer: {
+    name: 'strong',
+    level: 'inline',
+    start: '**',
+    tokenize(src, _tokens, lexer) {
+      const match = /^\*\*(?!\s)((?:(?!\*\*)[^\n])+?\S)\*\*(?=[\p{L}\p{N}])/u.exec(src);
+      if (!match) return undefined;
+
+      return {
+        type: 'strong',
+        raw: match[0],
+        text: match[1],
+        tokens: lexer.inlineTokens(match[1]),
+      };
+    },
+  },
+});
+
+function isUnicodeLetterOrNumber(value: string | undefined): boolean {
+  return !!value && /^[\p{L}\p{N}]$/u.test(value);
+}
+
+function isUnicodePunctuation(value: string | undefined): boolean {
+  // Marked's delimiter rules treat both Unicode punctuation and symbols as
+  // punctuation around a closing `**`. Symbols include currency signs,
+  // copyright marks, and emoji, all of which can trigger the same ambiguity.
+  return !!value && /^[\p{P}\p{S}]$/u.test(value);
+}
+
+function markIsBold(mark: { type?: string }): boolean {
+  return mark.type === 'bold' || mark.type === 'htmlStrongFallback';
+}
+
+/**
+ * CommonMark rejects `**text。**下一句` because the closing delimiter is
+ * followed immediately by a letter. Convert only those bold runs to inline
+ * HTML, which is standard Markdown and remains portable across parsers.
+ */
+function markAmbiguousBoldRunsAsHtml(node: JSONContent): JSONContent {
+  if (!Array.isArray(node.content)) return node;
+
+  const content = node.content.map(child => markAmbiguousBoldRunsAsHtml(child));
+  if (node.type !== 'paragraph' && node.type !== 'heading') {
+    return { ...node, content };
+  }
+
+  const nextContent = content.map(child => ({ ...child, marks: child.marks ? [...child.marks] : child.marks }));
+  let index = 0;
+  while (index < nextContent.length) {
+    const child = nextContent[index];
+    if (child.type !== 'text' || !child.marks?.some(markIsBold)) {
+      index += 1;
+      continue;
+    }
+
+    const runStart = index;
+    while (
+      index + 1 < nextContent.length
+      && nextContent[index + 1].type === 'text'
+      && nextContent[index + 1].marks?.some(markIsBold)
+    ) {
+      index += 1;
+    }
+
+    const lastText = nextContent[index].text ?? '';
+    const followingText = nextContent[index + 1]?.type === 'text'
+      ? nextContent[index + 1].text ?? ''
+      : '';
+    const lastCharacters = Array.from(lastText);
+    const lastCharacter = lastCharacters[lastCharacters.length - 1];
+    const followingCharacter = Array.from(followingText)[0];
+    const isAmbiguous = isUnicodePunctuation(lastCharacter)
+      && isUnicodeLetterOrNumber(followingCharacter);
+
+    if (isAmbiguous) {
+      for (let runIndex = runStart; runIndex <= index; runIndex += 1) {
+        const marks = nextContent[runIndex].marks ?? [];
+        nextContent[runIndex].marks = marks.map(mark => (
+          mark.type === 'bold' ? { ...mark, type: 'htmlStrongFallback' } : mark
+        ));
+      }
+    }
+
+    index += 1;
+  }
+
+  return { ...node, content: nextContent };
+}
+
+function serializeEditorMarkdown(editor: Editor): string {
+  const json = markAmbiguousBoldRunsAsHtml(editor.getJSON());
+  return editor.markdown?.serialize(json) ?? editor.getMarkdown();
+}
 
 function isEmptyParagraphNode(node: unknown): boolean {
   if (!node || typeof node !== 'object') return false;
@@ -358,13 +460,69 @@ function getEditableBodyStart(editor: Editor): EditableBodyStart {
   };
 }
 
+function isBlankEditorDocument(editor: Editor): boolean {
+  const { block, blockIndex } = getEditableBodyStart(editor);
+  return Boolean(
+    block &&
+    blockIndex === editor.state.doc.childCount - 1 &&
+    block.type.name === 'paragraph' &&
+    block.textContent.trim() === '',
+  );
+}
+
 function createEmptyParagraph(editor: Editor, text?: string): ProseMirrorNode {
   const paragraph = editor.state.schema.nodes.paragraph;
   return paragraph.create(null, text ? editor.state.schema.text(text) : undefined);
 }
 
+/**
+ * WebKit can fail to place the native caret in an empty paragraph immediately
+ * after a non-editable block NodeView. The first click then only focuses the
+ * editor and a second click is needed before typing works. Resolve that
+ * paragraph explicitly while a media block is selected.
+ */
+function focusEmptyParagraphAfterMedia(
+  view: Editor['view'],
+  event: MouseEvent,
+): boolean {
+  if (event.button !== 0) return false;
+
+  const selection = view.state.selection;
+  if (
+    !(selection instanceof NodeSelection) ||
+    (selection.node.type.name !== 'image' && selection.node.type.name !== 'videoAttachment')
+  ) return false;
+
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return false;
+
+  const paragraph = target.closest('p');
+  if (
+    !(paragraph instanceof HTMLElement) ||
+    !view.dom.contains(paragraph) ||
+    paragraph.textContent !== '' ||
+    paragraph.closest('[contenteditable="false"]')
+  ) return false;
+
+  try {
+    const textPosition = view.posAtDOM(paragraph, 0);
+    const nextSelection = TextSelection.create(view.state.doc, textPosition);
+    if (!nextSelection.$from.parent.isTextblock || !nextSelection.empty) return false;
+
+    view.dispatch(view.state.tr.setSelection(nextSelection).setMeta('pointer', true));
+    view.focus();
+    event.preventDefault();
+    return true;
+  } catch {
+    // The DOM may have been replaced between the pointer event and the
+    // position lookup (for example while a NodeView is updating).
+    return false;
+  }
+}
+
 export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({
   memoId,
+  transitionId = null,
   content,
   editable = true,
   placeholder,
@@ -387,14 +545,15 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   // placeholder 是 mount effect 的输入字符串，但本身不应成为 mount 的依赖：
   // i18n 切换会让 resolvedPlaceholder 重新生成，导致 Editor 被 destroy→重建，
   // 重建间隙各 extension 读 view.dom 触发 "editor view is not available"。
-  // 这里把最新值放在 ref 里：mount 时读一次初值，运行时通过下面的同步 effect
-  // 原地更新 Placeholder.options 并 dispatch meta 触发重新装饰。
+  // 这里把最新值放在 ref 里：mount 时读取，placeholder 回调始终拿最新值；
+  // 运行时通过下面的同步 effect dispatch meta 触发重新装饰。
   const resolvedPlaceholderRef = useRef(resolvedPlaceholder);
   resolvedPlaceholderRef.current = resolvedPlaceholder;
   const elementRef = useRef<HTMLDivElement>(null);
   const editorMountRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const [editorInstance, setEditorInstance] = useState<Editor | null>(null);
+  const firstFrameTraceRef = useRef<number | null>(null);
   const [isScrolling, setIsScrolling] = useState(false);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const serializeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -421,12 +580,14 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   const onEditingFinishedRef = useRef(onEditingFinished);
   const onFocusTitleRef = useRef(onFocusTitle);
   const onAppendToTitleRef = useRef(onAppendToTitle);
+  const editableRef = useRef(editable);
   onEditorScrollRef.current = onEditorScroll;
   onChangeRef.current = onChange;
   onSearchPanelOpenChangeRef.current = onSearchPanelOpenChange;
   onEditingFinishedRef.current = onEditingFinished;
   onFocusTitleRef.current = onFocusTitle;
   onAppendToTitleRef.current = onAppendToTitle;
+  editableRef.current = editable;
 
   const clearSerializeTimer = useCallback(() => {
     if (serializeTimerRef.current) {
@@ -481,7 +642,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       contentChars: contentRef.current.length,
       ...meta,
     });
-  }, []);
+    markDocumentOpenTrace(transitionId, `editor:${label}`, {
+      contentChars: contentRef.current.length,
+      stageElapsedMs: Math.round((performance.now() - startedAt) * 10) / 10,
+      ...meta,
+    });
+  }, [transitionId]);
 
   // 注册 'editor' scope — 挂载期间 editor.undo / editor.redo 生效,
   // 卸载后 pop, 防止在 memo 列表/弹窗里按 ⌘Z 误触发。
@@ -549,6 +715,28 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     editor.commands.focus('start');
   }, []);
 
+  const handleEditorSurfaceMouseDown = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !editableRef.current) return;
+
+    const editor = editorRef.current;
+    const editorMount = editorMountRef.current;
+    if (!editor || editor.isDestroyed || !editorMount || !isBlankEditorDocument(editor)) {
+      return;
+    }
+
+    // ProseMirror owns clicks on its descendants and can place the caret from
+    // the pointer coordinates. For a blank document, handle the whole editor
+    // surface explicitly because a click below the empty paragraph can still
+    // produce no selection in WebKit/WebView.
+    const target = event.target;
+    if (target !== event.currentTarget && !(target instanceof Node && editorMount.contains(target))) {
+      return;
+    }
+
+    focusBodyStart();
+    event.preventDefault();
+  }, [focusBodyStart]);
+
   const moveTitleToBody = useCallback((trailingContent: string) => {
     const editor = editorRef.current;
     if (!editor || editor.isDestroyed || !editor.isEditable) return;
@@ -564,6 +752,26 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     editor.view.dispatch(tr);
     editor.view.focus();
   }, []);
+
+  const pasteToBody = useCallback((snapshot: ClipboardSnapshot) => {
+    const editor = editorRef.current;
+    if (!editor || editor.isDestroyed || !editor.isEditable) return false;
+
+    const { block, position } = getEditableBodyStart(editor);
+    if (!block) {
+      const tr = editor.state.tr.insert(position, createEmptyParagraph(editor));
+      tr.setSelection(TextSelection.near(tr.doc.resolve(position + 1), 1));
+      editor.view.dispatch(tr);
+    } else {
+      const selection = TextSelection.near(
+        editor.state.doc.resolve(Math.min(position + 1, editor.state.doc.content.size)),
+        1,
+      );
+      editor.view.dispatch(editor.state.tr.setSelection(selection));
+    }
+
+    return pasteClipboardSnapshot(editor, snapshot, memoId);
+  }, [memoId]);
 
   const handleBackspaceAtBodyStart = useCallback(() => {
     const editor = editorRef.current;
@@ -614,7 +822,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     },
     focusStart: focusBodyStart,
     moveTitleToBody,
-  }), [focusBodyStart, moveTitleToBody, serializePendingChanges]);
+    pasteToBody,
+  }), [focusBodyStart, moveTitleToBody, pasteToBody, serializePendingChanges]);
 
   useEffect(() => {
     if (!editorMountRef.current || !content) {
@@ -638,14 +847,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         clipboardTextSerializer(content) {
           return content.content.textBetween(0, content.content.size, '\n', '\n');
         },
+        handleDOMEvents: {
+          mousedown: (view, event) => focusEmptyParagraphAfterMedia(view, event),
+        },
         handleKeyDown: (_view, event) => {
-          if (!editable || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) {
+          if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) {
             return false;
-          }
-
-          if (event.key === 'Backspace' && handleBackspaceAtBodyStart()) {
-            event.preventDefault();
-            return true;
           }
 
           const { selection } = editor.state;
@@ -654,6 +861,16 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           if (event.key === 'ArrowUp' && selection.from === getEditableBodyStart(editor).position + 1) {
             event.preventDefault();
             onFocusTitleRef.current?.();
+            return true;
+          }
+
+          // Boundary navigation remains available in a read-only host. Only
+          // mutations (such as promoting the first body line) require the
+          // current editable state.
+          if (!editableRef.current) return false;
+
+          if (event.key === 'Backspace' && handleBackspaceAtBodyStart()) {
+            event.preventDefault();
             return true;
           }
 
@@ -675,14 +892,14 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         PreservedParagraph,
         PreservedListItem,
         MarkdownEscape,
+        HTMLStrongFallback,
+        LegacyAdjacentStrongMarkdown,
         AttachmentLink.configure({ memoId }),
         MarkdownLink,
         LinkSelectionHighlight,
-        CodeBlockShiki,
+        CodeBlockShiki.configure({ traceId: transitionId }),
         MathBlock,
         WebCard,
-        TextStyle,
-        Color,
         Highlight.configure({ multicolor: true }),
         TablePlugin,
         TaskList,
@@ -696,17 +913,33 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           },
         }),
         Placeholder.configure({
-          placeholder: resolvedPlaceholderRef.current,
           showOnlyCurrent: true,
+          // `showOnlyCurrent` uses an inclusive range check. A block
+          // NodeSelection starts exactly at the end of the preceding block,
+          // so an empty paragraph immediately before a selected video/image
+          // would otherwise be treated as the current block and show its
+          // placeholder. Node selections have no text caret, so that boundary
+          // paragraph is not an editable current block.
+          placeholder: ({ editor, node, pos }) => {
+            const selection = editor.state.selection;
+            if (
+              selection instanceof NodeSelection &&
+              selection.from === pos + node.nodeSize
+            ) {
+              return '';
+            }
+            return resolvedPlaceholderRef.current;
+          },
         }),
         Tag,
-        ManagedPasteRules,
+        ManagedPasteRules.configure({ memoId }),
         MarkdownPaste,
         Frontmatter.configure({ memoId }),
         NoteReference,
         NoteMention,
         WikiNoteMention,
         TagMention,
+        StableCaret,
         AgentThreadCard,
         SlashMenu,
         TabCharacter,
@@ -740,12 +973,18 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       },
     });
     normalizeTaskItemPlaceholders(editor);
+    let codeBlockCount = 0;
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'codeBlock') codeBlockCount += 1;
+    });
     logEditorPerf('MarkdownEditor:create', mountStartedAt, {
       initialChars: initialContent.length,
       docSize: editor.state.doc.content.size,
+      codeBlockCount,
     });
 
     onBeforeCreate?.(editor);
+    editor.getMarkdown = () => serializeEditorMarkdown(editor);
     editorRef.current = editor;
     setEditorInstance(editor);
     const editorDom = editor.view.dom;
@@ -821,8 +1060,46 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     serializePendingChanges,
   ]);
 
-  // 语言切换时，原地把 Placeholder extension 的 placeholder 字符串换掉，
-  // 再 dispatch 一条带 'placeholder-update' meta 的空事务触发装饰重算。
+  useLayoutEffect(() => {
+    if (!editorInstance || transitionId === null || firstFrameTraceRef.current === transitionId) {
+      return;
+    }
+
+    firstFrameTraceRef.current = transitionId;
+    markDocumentOpenTrace(transitionId, 'editor:react-commit', {
+      domNodes: editorMountRef.current?.querySelectorAll('*').length ?? 0,
+    });
+
+    let firstFrameId: number | null = null;
+    let secondFrameId: number | null = null;
+    const scheduleFrame = (callback: FrameRequestCallback) => {
+      if (typeof requestAnimationFrame === 'function') {
+        return requestAnimationFrame(callback);
+      }
+      return window.setTimeout(() => callback(performance.now()), 16);
+    };
+
+    firstFrameId = scheduleFrame(() => {
+      secondFrameId = scheduleFrame(() => {
+        markDocumentOpenTrace(transitionId, 'editor:first-visible-frame', {
+          domNodes: editorMountRef.current?.querySelectorAll('*').length ?? 0,
+        });
+      });
+    });
+
+    return () => {
+      if (firstFrameId !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(firstFrameId);
+      }
+      if (secondFrameId !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(secondFrameId);
+      }
+    };
+  }, [editorInstance, transitionId]);
+
+  // 语言切换时，placeholder 回调会读取最新的 ref；dispatch 一条带
+  // 'placeholder-update' meta 的空事务触发重新装饰。不能把回调改回字符串，
+  // 否则视频/图片 NodeSelection 位于空段落边界时的抑制逻辑会丢失。
   // 不重建 Editor — 重建会让 view.dom 瞬间失效，extension 子树的 unmount
   // 路径里读 view.dom 会触发 "The editor view is not available"。
   useEffect(() => {
@@ -832,7 +1109,6 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       (ext) => ext.name === 'placeholder',
     );
     if (!placeholderExt) return;
-    placeholderExt.options.placeholder = resolvedPlaceholder;
     editor.view.dispatch(
       editor.state.tr.setMeta('placeholder-update', true),
     );
@@ -902,10 +1178,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         onSearchPanelOpenChangeRef.current?.(true);
       }, { isActive: editorIsFocused }),
       pushHandler('editor.undo', () => {
-        editorRef.current?.commands.undo();
+        return editorRef.current?.commands.undo() ?? false;
       }, { isActive: editorIsFocused }),
       pushHandler('editor.redo', () => {
-        editorRef.current?.commands.redo();
+        return editorRef.current?.commands.redo() ?? false;
       }, { isActive: editorIsFocused }),
       // 块元素切换 (⌘1-4 / ⌘0 / ⌘⇧7-9) — 与 drag-context-menu items.tsx
       // 里的菜单项一一对应, 走同一组 Tiptap chain().focus().toggleXxx() 命令。
@@ -941,35 +1217,6 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     };
   }, []);
 
-  // 主题切换时强制 Shiki 重新着色。
-  //
-  // 链路: useApplyTheme.apply() 写完 --shiki-theme 后 dispatch 'app-theme-changed' →
-  // 本 effect 收到事件 → 在下一帧给 PM view 发一个带 'shikiPluginForceDecoration'
-  // meta 的空事务, shiki-plugin.ts 的 state.apply 据此重跑 getDecorations。
-  // 用 rAF 而非同步触发是为了与浏览器布局/绘制合批, 避免 CSS var 写入和
-  // decoration 重建在同一 microtask 里冲突 (rAF 还顺带去抖, 多次连续切换主题
-  // 时只触发一次 dispatch)。
-  useEffect(() => {
-    let rafId: number | null = null;
-    const handleThemeChange = () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        const editor = editorRef.current;
-        if (!editor || editor.isDestroyed) return;
-        editor.view.dispatch(
-          editor.state.tr.setMeta('shikiPluginForceDecoration', true)
-        );
-      });
-    };
-
-    window.addEventListener('app-theme-changed', handleThemeChange);
-    return () => {
-      window.removeEventListener('app-theme-changed', handleThemeChange);
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, []);
-
   return (
     <div className={`markdown-editor ${className || ''}`}>
       <SearchReplacePanel
@@ -977,7 +1224,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         visible={searchPanelOpen}
         onClose={() => onSearchPanelOpenChangeRef.current?.(false)}
       />
-      <div ref={elementRef} className="editor-content">
+      <div
+        ref={elementRef}
+        className="editor-content"
+        onMouseDown={handleEditorSurfaceMouseDown}
+      >
+        {editorInstance && <HeadingOutlineNavigation editor={editorInstance} />}
         {header}
         <div ref={editorMountRef} className="editor-document-body" />
         {editorInstance && <DragContextMenu editor={editorInstance} />}

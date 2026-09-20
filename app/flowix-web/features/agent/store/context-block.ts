@@ -1,5 +1,6 @@
 import type { AgentTypeKey } from "@/types/agent";
-import { getActiveDocumentDraft, useDocumentStore } from "@features/document";
+import { getActiveDocumentDraft } from "@features/document/store/document-session-service";
+import { useDocumentStore } from "@features/document/store/document-store";
 import { CONTEXT_PROMPT_MARKER } from "@features/agent/message";
 import { useMemoStore } from "@features/memo/store/memo-store";
 import { useTagStore } from "@features/memo/store/tag-store";

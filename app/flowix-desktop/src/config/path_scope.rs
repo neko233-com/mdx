@@ -48,6 +48,24 @@ pub fn path_is_inside(path: &Path, root: &Path) -> bool {
     path.starts_with(root)
 }
 
+/// Returns true when a path resolves inside a reserved child directory of a
+/// scope. This keeps internal notebook data protected even when the requested
+/// path does not exist yet.
+pub fn path_is_inside_reserved_directory(path: &Path, root: &Path, reserved: &str) -> bool {
+    let Some(path) = canonical_existing_or_parent(path) else {
+        return false;
+    };
+    let Some(root) = canonical_existing_or_parent(root) else {
+        return false;
+    };
+    let Ok(relative) = path.strip_prefix(root) else {
+        return false;
+    };
+    relative
+        .components()
+        .any(|component| matches!(component, Component::Normal(value) if value == reserved))
+}
+
 #[cfg(test)]
 #[path = "path_scope_tests.rs"]
 mod boundary_tests;

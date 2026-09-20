@@ -60,6 +60,7 @@ async function performInitialization(): Promise<void> {
       tagId ?? null,
       current.colorFilter,
       current.activePluginId,
+      current.activeCustomFilterId,
     );
 
     const memoLoadApplied = await current.loadMemos({
@@ -89,6 +90,7 @@ async function performInitialization(): Promise<void> {
         : null,
       afterLoad.colorFilter,
       afterLoad.activePluginId,
+      afterLoad.activeCustomFilterId,
     );
     if (
       afterLoad.selectedNotebook?.id !== selectedNotebook.id

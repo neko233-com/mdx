@@ -30,7 +30,7 @@
  * 替代 row-reverse, 不破坏 assistant 左对齐)。 */
 .markdown-editor .agent-thread-card__message--user {
   width: 100%;
-  margin-top: 1rem;
+  margin-top: 0;
   max-width: 100%;
   padding: 0;
   justify-items: end;
@@ -109,6 +109,7 @@
 
 .markdown-editor .agent-thread-card__message-context-compaction {
   align-self: flex-start;
+  padding-top: 8px;
   font-size: calc(var(--app-font-size, 15px) * 0.9);
   line-height: 1.4;
   font-style: italic;
@@ -448,7 +449,7 @@
   align-items: flex-start;
   gap: 6px;
   padding: 4px 0;
-  background: transparent;
+  background: var(--document-bg);
   color: var(--muted-foreground);
   font-size: calc(var(--app-font-size, 15px) * 0.9);
   line-height: 18px;
@@ -461,10 +462,13 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  padding-top: 6px;
+  padding-bottom: 6px;
   padding-left: 4px;
   padding-right: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
+  background: var(--card);
   color: var(--muted-foreground);
 }
 
@@ -473,7 +477,6 @@
   align-items: center;
   align-self: stretch;
   gap: 6px;
-  min-height: 30px;
   width: 100%;
   min-width: 0;
   padding: 2px 6px 2px 0;
@@ -529,6 +532,19 @@
   animation: agent-thread-card-tool-group-running-loading 1s linear infinite;
 }
 
+/* The spinner is 12px visually, but its flex item must use the same 18px
+ * first-line track as the tool icon and label. Without this wrapper the
+ * spinner is aligned by its own box and appears a few pixels too high. */
+.markdown-editor .agent-thread-card__tool-group-running-loading-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  line-height: 18px;
+}
+
 .markdown-editor .agent-thread-card__tool-group-header-loading-icon {
   margin-left: auto;
 }
@@ -559,7 +575,8 @@
 .markdown-editor .agent-thread-card__tool-group-completed-tools {
   display: none;
   min-width: 0;
-  padding-left: 18px;
+  padding-top: 6px;
+  padding-left: 24px;
 }
 
 .markdown-editor .agent-thread-card__tool-group--expanded
@@ -580,19 +597,20 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding-left: 18px;
+  padding-left: 24px;
 }
 
 .markdown-editor
   .agent-thread-card__tool-group-running-tool
   .agent-thread-card__message-tool-icon-wrap {
-  align-self: center;
+  /* 与结束态工具行保持一致：工具 icon 顶部对齐。 */
+  align-self: flex-start;
 }
 
 .markdown-editor .agent-thread-card__tool-group-running-tool {
   display: flex;
-  align-items: center;
-  padding-left: 1px;
+  align-items: flex-start;
+  padding: 6px 0;
 }
 
 .markdown-editor .agent-thread-card__tool-group--expanded
@@ -721,6 +739,17 @@
   line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.markdown-editor .agent-thread-card__message-tool-summary--link {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.markdown-editor .agent-thread-card__message-tool-summary--link:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .markdown-editor .agent-thread-card__message-tool-input {

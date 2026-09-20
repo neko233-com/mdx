@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
-import { useMemoStore, type Notebook } from '@features/memo';
+import { useMemoStore, type Notebook } from '@features/memo/store/memo-store';
 import { TagTree } from '@features/memo/components/tag-tree';
 
 interface MemoListNavigationDrawerProps {

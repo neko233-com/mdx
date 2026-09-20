@@ -53,3 +53,43 @@ export function extractMemoIdFromPath(_path: string): string | null {
 export function canonicalPath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+/g, '/');
 }
+
+export function canonicalDirectoryPath(path: string): string {
+  const canonical = canonicalPath(path);
+  const trimmed = canonical.replace(/\/+$/, '');
+  return trimmed || (canonical.startsWith('/') ? '/' : canonical);
+}
+
+export function parentDirectoryPath(filePath: string, notebookPath: string): string {
+  const canonicalFilePath = canonicalPath(filePath).replace(/\/+$/, '');
+  const separatorIndex = canonicalFilePath.lastIndexOf('/');
+  const parent = separatorIndex >= 0
+    ? canonicalFilePath.slice(0, separatorIndex)
+    : notebookPath;
+  return canonicalDirectoryPath(parent || notebookPath);
+}
+
+export function samePath(left: string, right: string): boolean {
+  return canonicalPath(left) === canonicalPath(right);
+}
+
+export function uniquePaths(paths: string[]): string[] {
+  const seen = new Set<string>();
+  return paths.filter((path) => {
+    const key = canonicalPath(path);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function fileNameFromPath(filePath: string): string {
+  const canonicalFilePath = canonicalPath(filePath).replace(/\/+$/, '');
+  return canonicalFilePath.slice(canonicalFilePath.lastIndexOf('/') + 1);
+}
+
+export function pathInDirectory(directoryPath: string, filePath: string): string {
+  const directory = canonicalDirectoryPath(directoryPath);
+  const name = fileNameFromPath(filePath);
+  return directory === '/' ? `/${name}` : `${directory}/${name}`;
+}

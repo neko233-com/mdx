@@ -1,7 +1,7 @@
 import YAML from 'yaml';
 import type { DocumentIdentity } from '@features/document/store/document-identity';
 
-const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---(?:\n|$)/;
+const FRONTMATTER_RE = /^\uFEFF?(?:[ \t]*\n)*---\n([\s\S]*?)\n---(?:\n|$)/;
 
 function normalizeYamlValue(value: unknown, preserveMappingOrder = false): unknown {
   if (Array.isArray(value)) return value.map((item) => normalizeYamlValue(item));
@@ -18,6 +18,9 @@ function normalizeYamlValue(value: unknown, preserveMappingOrder = false): unkno
 function normalizeBody(body: string): string {
   return body
     .replace(/^\n+/, '')
+    // Legacy imports could displace a file-leading UTF-8 BOM behind injected
+    // frontmatter. Ignore only that body-boundary marker for dirty checks.
+    .replace(/^\uFEFF/, '')
     .replace(/\n+$/, '');
 }
 

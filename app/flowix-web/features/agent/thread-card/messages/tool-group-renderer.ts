@@ -1,6 +1,7 @@
 import { translate, type AppLanguage } from "@/lib/i18n";
 import {
   createAgentThreadCardMessageElement,
+  disposeAgentThreadCardMessageTree,
 } from "@features/agent/thread-card/messages/message-item-renderer";
 import {
   isFailedToolMessage,
@@ -16,6 +17,16 @@ import {
 } from "@features/agent/thread-card/agent-thread-card-icons";
 
 type ToolGroup = Extract<AgentRenderItem, { kind: "tool-group" }>;
+
+function replaceChildrenWithCleanup(
+  parent: HTMLElement,
+  ...children: HTMLElement[]
+): void {
+  for (const child of Array.from(parent.children)) {
+    disposeAgentThreadCardMessageTree(child);
+  }
+  parent.replaceChildren(...children);
+}
 
 function parseEventTimestamp(
   event: Record<string, unknown> | undefined,
@@ -149,11 +160,18 @@ export function createToolGroupElement(options: {
     element.classList.add("agent-thread-card__tool-group-running-tool");
     const loadingIcon = createToolRunningLoadingIcon();
     loadingIcon.setAttribute("aria-hidden", "true");
+    // Keep the spinner on the same 18px alignment track as the tool icon and
+    // first text line. The SVG itself is intentionally 12px, so inserting it
+    // directly into the flex row makes it sit higher than the other items.
+    const loadingIconWrap = document.createElement("span");
+    loadingIconWrap.className =
+      "agent-thread-card__tool-group-running-loading-wrap";
+    loadingIconWrap.append(loadingIcon);
     const toolName = element.querySelector(
       ".agent-thread-card__message-tool-name",
     );
-    if (toolName) toolName.before(loadingIcon);
-    else element.prepend(loadingIcon);
+    if (toolName) toolName.before(loadingIconWrap);
+    else element.prepend(loadingIconWrap);
     return element;
   };
 
@@ -162,20 +180,20 @@ export function createToolGroupElement(options: {
       ? currentGroup.completedTools
       : currentGroup.completedTools.filter(isFailedToolMessage);
     if (visibleTools.length === 0) {
-      completedTools.replaceChildren();
+      replaceChildrenWithCleanup(completedTools);
       return;
     }
     const renderedTools = visibleTools
       .map((tool) => renderTool(tool, currentContext))
       .filter((element): element is HTMLElement => element !== null);
-    completedTools.replaceChildren(...renderedTools);
+    replaceChildrenWithCleanup(completedTools, ...renderedTools);
   };
 
   const syncRunningTools = () => {
     const renderedTools = currentGroup.runningTools
       .map(createRunningTool)
       .filter((element): element is HTMLElement => element !== null);
-    runningTools.replaceChildren(...renderedTools);
+    replaceChildrenWithCleanup(runningTools, ...renderedTools);
   };
 
   const label = document.createElement("span");

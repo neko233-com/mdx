@@ -5,11 +5,11 @@ import { CaretDownIcon } from '@phosphor-icons/react';
 import { Input } from '@shared/ui/input';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@shared/ui/dropdown-menu';
 import { useI18n } from '@/lib/i18n';
-import { PRESETS, PROPERTY_KINDS, resolvePreset, type PropertyPreset } from '@features/document/properties/presets';
-import type { PropertyFieldConfig } from '@/lib/constants';
+import { CUSTOM_PROPERTY_KINDS, resolvePropertyPreset, type PropertyPreset } from '@features/document/properties/presets';
 import { cn } from '@/lib/utils';
 import { useComposingValue } from '@shared/hooks/use-composing-value';
 import type { PropertyRow, PropertyType } from './property-row-model';
+import type { PropertyFieldType } from '@/lib/constants';
 
 export type PopoverAnchor = { top: number; left: number; width: number; height: number };
 
@@ -23,15 +23,18 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function getPropertyTypeLabelKey(kind: PropertyType) {
-  return `document.properties.type.${kind === 'MultiSelect' ? 'multiSelect' : kind.toLowerCase()}` as
+  return `document.properties.type.${kind === 'MultiSelect' ? 'multiSelect' : kind === 'Tag' ? 'tag' : kind === 'Tags' ? 'tags' : kind === 'Color' ? 'color' : kind.toLowerCase()}` as
     | 'document.properties.type.text'
+    | 'document.properties.type.boolean'
     | 'document.properties.type.number'
     | 'document.properties.type.date'
     | 'document.properties.type.url'
     | 'document.properties.type.icon'
     | 'document.properties.type.select'
     | 'document.properties.type.multiSelect'
-    | 'document.properties.type.list';
+    | 'document.properties.type.tag'
+    | 'document.properties.type.tags'
+    | 'document.properties.type.color';
 }
 
 /**
@@ -50,9 +53,8 @@ function AddFieldPanel({
   initialName,
   initialType,
   initialOptions,
-  savedFields,
+  presets,
   onPickPreset,
-  onPickSavedField,
   onSubmit,
   registerFlush,
 }: {
@@ -60,10 +62,9 @@ function AddFieldPanel({
   initialName: string;
   initialType: PropertyType;
   initialOptions: string[];
-  savedFields: PropertyFieldConfig[];
+  presets: PropertyPreset[];
   onPickPreset: (preset: PropertyPreset) => void;
-  onPickSavedField: (field: PropertyFieldConfig) => void;
-  onSubmit: (payload: { name: string; type: PropertyType; options?: string[] }) => void;
+  onSubmit: (payload: { name: string; type: PropertyFieldType; options?: string[] }) => void;
   /**
    * 父级在需要"关闭前先尝试保存"时调用: 例如 overlay 点击 / Escape。
    * 我们提供一个无参 flush 函数, 内部用 ref 读取最新 draft state:
@@ -98,7 +99,7 @@ function AddFieldPanel({
     if (!canSubmit) return;
     onSubmit({
       name: draftName.trim(),
-      type: draftType,
+      type: draftType as PropertyFieldType,
       options: showOptions ? draftOptions : undefined,
     });
   };
@@ -118,7 +119,7 @@ function AddFieldPanel({
       const showOpts = draftType === 'Select' || draftType === 'MultiSelect';
       onSubmitRef.current({
         name: draftName.trim(),
-        type: draftType,
+        type: draftType as PropertyFieldType,
         options: showOpts ? draftOptions : undefined,
       });
       return true;
@@ -176,15 +177,14 @@ function AddFieldPanel({
       </div>
 
       {/* 下: 常用属性 (推荐 + 已保存合并, 顺序: 内置在前, 用户自定义在后) */}
-      {mode === 'edit' && (
+      {(mode === 'add' || mode === 'edit') && (
         <div className="flex flex-col gap-1.5">
           <span className="px-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
             {t('document.properties.addFieldPanel.common')}
           </span>
           <CommonPropertyChips
-            savedFields={savedFields}
+            presets={presets}
             onPickPreset={onPickPreset}
-            onPickSavedField={onPickSavedField}
           />
         </div>
       )}
@@ -197,20 +197,17 @@ function AddFieldPanel({
  * 不再使用之前行内的 DropdownMenu, 但样式保持一致 (h-8, px-2, caret)。
  */
 export function CommonPropertyChips({
-  savedFields,
+  presets,
   onPickPreset,
-  onPickSavedField,
   disabled = false,
 }: {
-  savedFields: PropertyFieldConfig[];
+  presets: PropertyPreset[];
   onPickPreset: (preset: PropertyPreset) => void;
-  onPickSavedField: (field: PropertyFieldConfig) => void;
   disabled?: boolean;
 }) {
-  const { t } = useI18n();
   return (
     <div className="flex flex-wrap gap-1.5">
-      {PRESETS.map((preset) => (
+      {presets.map((preset) => (
         <button
           key={preset.key}
           type="button"
@@ -218,18 +215,7 @@ export function CommonPropertyChips({
           onClick={() => onPickPreset(preset)}
           className="inline-flex h-6 w-fit items-center rounded-full border border-[var(--border)] bg-[var(--muted)] px-2.5 text-xs text-[var(--foreground)] shadow-sm transition-colors hover:bg-[var(--muted)]/70 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <span className="truncate">{t(preset.labelKey)}</span>
-        </button>
-      ))}
-      {savedFields.map((field) => (
-        <button
-          key={field.key}
-          type="button"
-          disabled={disabled}
-          onClick={() => onPickSavedField(field)}
-          className="inline-flex h-6 w-fit items-center rounded-full border border-[var(--border)] bg-[var(--muted)] px-2.5 text-xs text-[var(--foreground)] shadow-sm transition-colors hover:bg-[var(--muted)]/70 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <span className="truncate">{field.name}</span>
+          <span className="truncate">{preset.label}</span>
         </button>
       ))}
     </div>
@@ -269,7 +255,7 @@ function PropertyTypePicker({
         sideOffset={6}
         className="z-[150] min-w-[120px] rounded-xl border-[var(--border-popup)] p-1 shadow-[0_4px_24px_-3px_rgb(0_0_0_/_0.24)]"
       >
-        {PROPERTY_KINDS.map((kind) => (
+        {CUSTOM_PROPERTY_KINDS.map((kind) => (
           <DropdownMenuItem
             key={kind}
             onClick={() => onChange(kind)}
@@ -392,12 +378,10 @@ function getAnchoredPopoverPosition(anchor: PopoverAnchor, popoverHeight: number
 export function AnchoredPropertyPopover({
   popoverState,
   rows,
-  savedFields,
+  presets,
   addPresetRow,
   addCustomField,
-  addSavedCustomField,
   switchRowToPreset,
-  switchRowToSavedCustomField,
   updateRowFromEdit,
   onCancel,
 }: {
@@ -408,13 +392,11 @@ export function AnchoredPropertyPopover({
     anchor: PopoverAnchor | null;
   };
   rows: PropertyRow[];
-  savedFields: PropertyFieldConfig[];
+  presets: PropertyPreset[];
   addPresetRow: (preset: PropertyPreset) => void;
-  addCustomField: (payload: { name: string; type: PropertyType; options?: string[] }) => void;
-  addSavedCustomField: (field: PropertyFieldConfig) => void;
+  addCustomField: (payload: { name: string; type: PropertyFieldType; options?: string[] }) => void;
   switchRowToPreset: (id: string, preset: PropertyPreset) => void;
-  switchRowToSavedCustomField: (id: string, field: PropertyFieldConfig) => void;
-  updateRowFromEdit: (id: string, payload: { name: string; type: PropertyType; options?: string[] }) => void;
+  updateRowFromEdit: (id: string, payload: { name: string; type: PropertyFieldType; options?: string[] }) => void;
   onCancel: () => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -506,12 +488,10 @@ export function AnchoredPropertyPopover({
         <PopoverPanelBody
           popoverState={popoverState}
           rows={rows}
-          savedFields={savedFields}
+          presets={presets}
           addPresetRow={addPresetRow}
           addCustomField={addCustomField}
-          addSavedCustomField={addSavedCustomField}
           switchRowToPreset={switchRowToPreset}
-          switchRowToSavedCustomField={switchRowToSavedCustomField}
           updateRowFromEdit={updateRowFromEdit}
           registerFlush={handleRegisterFlush}
         />
@@ -530,12 +510,10 @@ export function AnchoredPropertyPopover({
 function PopoverPanelBody({
   popoverState,
   rows,
-  savedFields,
+  presets,
   addPresetRow,
   addCustomField,
-  addSavedCustomField,
   switchRowToPreset,
-  switchRowToSavedCustomField,
   updateRowFromEdit,
   registerFlush,
 }: {
@@ -546,13 +524,11 @@ function PopoverPanelBody({
     anchor: PopoverAnchor | null;
   };
   rows: PropertyRow[];
-  savedFields: PropertyFieldConfig[];
+  presets: PropertyPreset[];
   addPresetRow: (preset: PropertyPreset) => void;
-  addCustomField: (payload: { name: string; type: PropertyType; options?: string[] }) => void;
-  addSavedCustomField: (field: PropertyFieldConfig) => void;
+  addCustomField: (payload: { name: string; type: PropertyFieldType; options?: string[] }) => void;
   switchRowToPreset: (id: string, preset: PropertyPreset) => void;
-  switchRowToSavedCustomField: (id: string, field: PropertyFieldConfig) => void;
-  updateRowFromEdit: (id: string, payload: { name: string; type: PropertyType; options?: string[] }) => void;
+  updateRowFromEdit: (id: string, payload: { name: string; type: PropertyFieldType; options?: string[] }) => void;
   /**
    * 透传给 AddFieldPanel: 让表单内部注册一个 "关闭前先尝试保存" 的回调。
    * AnchoredPropertyPopover 会拿这个回调在 overlay 点击 / Escape 时调用。
@@ -566,9 +542,8 @@ function PopoverPanelBody({
         initialName=""
         initialType="Text"
         initialOptions={[]}
-        savedFields={savedFields}
+        presets={presets}
         onPickPreset={addPresetRow}
-        onPickSavedField={addSavedCustomField}
         onSubmit={addCustomField}
         registerFlush={registerFlush}
       />
@@ -581,7 +556,7 @@ function PopoverPanelBody({
   const row = popoverState.rowId
     ? rows.find((r) => r.id === popoverState.rowId) ?? null
     : null;
-  const initialName = row ? (row.customLabel ?? row.key) : '';
+  const initialName = row ? (row.preset?.label ?? row.key) : '';
   const initialType = row ? row.type : 'Text';
   const initialOptions = row
     ? [...(row.options ?? row.preset?.options ?? [])]
@@ -589,11 +564,8 @@ function PopoverPanelBody({
   const handlePickPreset = row
     ? (preset: PropertyPreset) => switchRowToPreset(row.id, preset)
     : addPresetRow;
-  const handlePickSavedField = row
-    ? (field: PropertyFieldConfig) => switchRowToSavedCustomField(row.id, field)
-    : addSavedCustomField;
   const handleSubmit = row
-    ? (payload: { name: string; type: PropertyType; options?: string[] }) =>
+    ? (payload: { name: string; type: PropertyFieldType; options?: string[] }) =>
         updateRowFromEdit(row.id, payload)
     : addCustomField;
 
@@ -603,9 +575,8 @@ function PopoverPanelBody({
       initialName={initialName}
       initialType={initialType}
       initialOptions={initialOptions}
-      savedFields={savedFields}
+      presets={presets}
       onPickPreset={handlePickPreset}
-      onPickSavedField={handlePickSavedField}
       onSubmit={handleSubmit}
       registerFlush={registerFlush}
     />
@@ -615,8 +586,7 @@ function PopoverPanelBody({
 /**
  * 行内 key cell 触发按钮 — 替代之前的 PresetKeyCell (后者自身有 picker,
  * 与 AddFieldPanel 编辑模式重复)。 显示逻辑继承原 PresetKeyCell 的
- * trigger 部分: 命中 preset → mapped label; 命中 customLabel →
- * customLabel; 否则 raw key + Custom 徽章; 空 → placeholder。
+ * trigger 部分: 命中统一预设 → label; 否则 raw key + Custom 徽章; 空 → placeholder。
  *
  * 点击后由父组件的 openEditPopover 接管, 通过动态 anchor 把同一个
  * AddFieldPanel 弹窗挪到按钮下方, mode='edit' 预填当前行状态。
@@ -633,18 +603,16 @@ export function PropertyKeyButton({
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
   const { t } = useI18n();
-  const preset = resolvePreset(row.key);
-  const isReservedMemoId = row.key.trim() === 'key';
+  const preset = row.preset ?? resolvePropertyPreset(row.key);
+  const isReservedMemoId = row.key.trim() === 'key' || row.key.trim() === 'flowix_key';
 
   let display: React.ReactNode;
   if (preset) {
-    display = <span className="min-w-0 flex-1 truncate">{t(preset.labelKey)}</span>;
+    display = <span className="min-w-0 flex-1 truncate">{preset.label}</span>;
   } else if (isReservedMemoId) {
     display = (
-      <span className="font-mono text-xs text-[var(--muted-foreground)]">key</span>
+      <span className="font-mono text-xs text-[var(--muted-foreground)]">{row.key.trim()}</span>
     );
-  } else if (row.customLabel?.trim()) {
-    display = <span className="min-w-0 flex-1 truncate">{row.customLabel}</span>;
   } else if (row.key.trim()) {
     display = (
       <span className="flex min-w-0 flex-1 items-center gap-2">

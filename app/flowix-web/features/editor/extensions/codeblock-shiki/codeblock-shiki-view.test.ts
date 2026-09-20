@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Editor, Node } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 
@@ -15,11 +15,11 @@ const TestAtomBlock = Node.create({
   },
 })
 
-function createPlainTextView() {
+function createPlainTextView(language = 'plaintext') {
   return createCodeBlockShikiView({
     node: {
       attrs: {
-        language: 'plaintext',
+        language,
         theme: 'github-light',
       },
       textContent: 'alpha\nbeta\ngamma',
@@ -59,8 +59,9 @@ describe('CodeBlockShikiView DOM contract', () => {
     expect(pre?.querySelector('.code-block-mermaid-preview')).toBeNull()
 
     expect(nodeView.dom.querySelector(':scope > .code-block-header')).not.toBeNull()
-    expect(nodeView.dom.querySelector(':scope > .code-block-language-dropdown')).not.toBeNull()
-    expect(nodeView.dom.querySelector(':scope > .code-block-mermaid-preview')).not.toBeNull()
+    expect(nodeView.dom.querySelector(':scope > .code-block-language-dropdown')).toBeNull()
+    expect(document.body.querySelector('.code-block-language-dropdown')).toBeNull()
+    expect(nodeView.dom.querySelector(':scope > .code-block-mermaid-preview')).toBeNull()
 
     nodeView.destroy()
   })
@@ -69,6 +70,53 @@ describe('CodeBlockShikiView DOM contract', () => {
     const nodeView = createPlainTextView()
 
     expect(nodeView.dom.firstElementChild).toBe(nodeView.dom.querySelector(':scope > pre.code-block-editor'))
+
+    nodeView.destroy()
+  })
+
+  it('renders the language dropdown through the document body', () => {
+    const nodeView = createPlainTextView()
+    const languageButton = nodeView.dom.querySelector<HTMLButtonElement>('.code-block-language-selector')
+
+    expect(document.body.querySelector('.code-block-language-dropdown')).toBeNull()
+
+    languageButton?.click()
+    const dropdown = document.body.querySelector<HTMLElement>('.code-block-language-dropdown')
+    expect(dropdown).not.toBeNull()
+    expect(dropdown?.parentElement).toBe(document.body)
+    expect(dropdown?.style.display).toBe('block')
+
+    languageButton?.click()
+    expect(dropdown?.style.display).toBe('none')
+
+    nodeView.destroy()
+    expect(document.body.contains(dropdown)).toBe(false)
+  })
+
+  it('creates Mermaid-only controls only for Mermaid blocks', () => {
+    const plainNodeView = createPlainTextView()
+    expect(plainNodeView.dom.querySelector('.code-block-mode-tabs')).toBeNull()
+    expect(plainNodeView.dom.querySelector('.code-block-mermaid-preview')).toBeNull()
+    plainNodeView.destroy()
+
+    const mermaidNodeView = createPlainTextView('mermaid')
+    expect(mermaidNodeView.dom.querySelector('.code-block-mode-tabs')).not.toBeNull()
+    expect(mermaidNodeView.dom.querySelector('.code-block-mermaid-preview')).not.toBeNull()
+    mermaidNodeView.destroy()
+  })
+
+  it('initializes clipboard handling on first use without losing the first copy', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const nodeView = createPlainTextView()
+    const copyButton = nodeView.dom.querySelector<HTMLButtonElement>('.code-block-copy-btn')
+
+    expect(copyButton?.querySelector('svg')).not.toBeNull()
+    copyButton?.click()
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('alpha\nbeta\ngamma'))
 
     nodeView.destroy()
   })

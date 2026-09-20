@@ -13,6 +13,36 @@ import type {
   UsageInfo,
 } from '@/types/agent';
 
+export type NotebookAgentFileKind = 'skill' | 'agent';
+
+export interface NotebookAgentFile {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  body: string;
+  path: string;
+  frontmatter: Record<string, string>;
+}
+
+export interface NotebookMcpDefinition {
+  command?: string;
+  args?: string[];
+  url?: string;
+  transport?: 'stdio' | 'streamable-http' | 'http' | string;
+  enabled?: boolean;
+  description?: string;
+  [key: string]: unknown;
+}
+
+export interface NotebookAgentWorkspace {
+  version: 1;
+  rootPath: string;
+  mcpServers: Record<string, NotebookMcpDefinition>;
+  skills: NotebookAgentFile[];
+  agents: NotebookAgentFile[];
+}
+
 export interface AgentConfig {
   provider: string;
   /** Harness custom-provider route ID. Empty for built-in catalog providers. */
@@ -397,6 +427,10 @@ export const agent = {
     invoke<unknown>('codex_project_mcp_upsert', { cwd, name, definition, expectedVersion: expectedVersion ?? null }),
   writeCodexProjectSkill: (cwd: string, name: string, description: string, instructions: string) =>
     invoke<{ path: string }>('codex_project_skill_write', { cwd, name, description, instructions }),
+  readNotebookAgentWorkspace: (cwd: string) =>
+    invoke<NotebookAgentWorkspace>('notebook_agent_workspace_read', { cwd }),
+  writeNotebookAgentWorkspace: (cwd: string, workspace: NotebookAgentWorkspace) =>
+    invoke<NotebookAgentWorkspace>('notebook_agent_workspace_write', { cwd, workspace }),
   updateCodexThreadSettings: (args: {
     threadId: string;
     model?: string;

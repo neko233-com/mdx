@@ -5,6 +5,7 @@ import type {
   WorkColumnContentPresentation,
   ResolveWorkColumnContentInput,
   WorkColumnSurfaceCapability,
+  WorkColumnSurfaceChrome,
 } from './types';
 
 export interface WorkColumnDocumentHeaderPresentation {
@@ -24,6 +25,7 @@ export type WorkColumnHeaderPresentation =
 
 export interface WorkColumnPresentation {
   header: WorkColumnHeaderPresentation;
+  chrome: WorkColumnSurfaceChrome;
   capabilities: readonly WorkColumnSurfaceCapability[];
   content: WorkColumnContentPresentation;
 }
@@ -67,6 +69,7 @@ export function resolveWorkColumnPresentation(
 
   return {
     header,
+    chrome: definition?.chrome ?? 'document',
     capabilities: definition?.capabilities ?? [],
     content,
   };

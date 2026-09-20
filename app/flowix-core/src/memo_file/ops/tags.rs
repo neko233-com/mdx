@@ -144,7 +144,7 @@ impl MemoFile {
             .unwrap_or_else(|| self.current_notebook_id_for_index());
 
         // 4. 冲突检查: new_path 在该 notebook 是否已存在
-        let conn = self.open_memo_index_db()?;
+        let conn = self.open_memo_index_db_for_notebook_id(&notebook_id_owned)?;
         let prefix = format!("{old_path}/");
         let mut catalog_stmt = conn
             .prepare(
@@ -342,7 +342,7 @@ impl MemoFile {
             report.affected_memos += 1;
         }
 
-        let mut catalog_conn = self.open_memo_index_db()?;
+        let mut catalog_conn = self.open_memo_index_db_for_notebook_id(&notebook_id_owned)?;
         let catalog_tx = catalog_conn.transaction().map_err(sqlite_to_io)?;
         for old in &catalog_paths {
             catalog_tx
@@ -431,7 +431,7 @@ impl MemoFile {
             .map(str::to_string)
             .unwrap_or_else(|| self.current_notebook_id_for_index());
 
-        let conn = self.open_memo_index_db()?;
+        let conn = self.open_memo_index_db_for_notebook_id(&notebook_id_owned)?;
 
         // 3. collect every tag path to delete: `tag_path` itself + every
         //    subtree tag at any depth.
@@ -560,7 +560,7 @@ impl MemoFile {
             report.affected_memos += 1;
         }
 
-        let mut catalog_conn = self.open_memo_index_db()?;
+        let mut catalog_conn = self.open_memo_index_db_for_notebook_id(&notebook_id_owned)?;
         let catalog_tx = catalog_conn.transaction().map_err(sqlite_to_io)?;
         for deleted in &report.deleted_tags {
             catalog_tx

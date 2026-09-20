@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import type { Editor } from '@tiptap/core'
-import { getCurrentBlockInfo } from '@features/editor/components/drag-context-menu/block-info'
+import {
+  activateAgentThreadCard,
+  getBlockInfoForInteraction,
+  type CurrentBlockInfo,
+} from '@features/editor/components/drag-context-menu/block-info'
 import {
   applyMenuItem,
   deleteBlock,
@@ -8,11 +13,8 @@ import {
   unpinBlock,
 } from '@features/editor/components/drag-context-menu/actions'
 import {
-  cancelBlockDrag,
-  dropBlockDragAt,
-  startBlockDrag,
-  updateBlockDragPosition,
-} from '@features/editor/extensions/block-drag'
+  useBlockDragGesture,
+} from '@features/editor/components/drag-context-menu/use-block-drag-gesture'
 import { renderDragIcon } from '@features/editor/components/drag-context-menu/icons'
 import type { BlockMenuItem } from '@features/editor/components/drag-context-menu/items'
 import { HANDLE_SIZE } from '@features/editor/components/drag-context-menu/style'
@@ -30,20 +32,11 @@ interface MenuViewportPosition {
   top: number
 }
 
-interface PointerBlockDragState {
-  pointerId: number
-  startX: number
-  startY: number
-  started: boolean
-}
-
 const MENU_GAP = 8
 const MENU_VIEWPORT_PADDING = 8
 // 底部状态栏 (h-6 = 24px) 会遮挡太贴近视口底部的弹窗 —
 // 留出 30px 净空让菜单至少停在状态栏之上约 6px。
 const MENU_BOTTOM_CLEARANCE = 30
-const BLOCK_DRAG_START_THRESHOLD_PX = 4
-
 export function DragContextMenu({ editor }: DragContextMenuProps) {
   // 字体/行高 (Preferences → Format) — 走窄 selector, 只在这两值变化时
   // 重渲染, 避免 theme / personalize / shortcuts 改动把整个组件拉一遍。
@@ -55,13 +48,35 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
   const [menuPosition, setMenuPosition] = useState<MenuViewportPosition | null>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [menuInputMode, setMenuInputMode] = useState<'mouse' | 'keyboard'>('mouse')
+  const [menuTarget, setMenuTarget] = useState<CurrentBlockInfo | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const ignoreBlur = useRef(false)
   const menuOpenRef = useRef(false)
-  const didStartDrag = useRef(false)
-  const pointerDragRef = useRef<PointerBlockDragState | null>(null)
+  const openMenuRef = useRef<() => void>(() => {})
   const state = useDragHandlePosition(editor, fontSize, lineHeight, ignoreBlur, menuOpenRef)
+  const handleTap = useCallback(() => openMenuRef.current(), [])
+
+  const handleBlockDragStart = useCallback(() => {
+    setShowMenu(false)
+    setIsHovered(false)
+    setMenuTarget(null)
+  }, [])
+  const {
+    isDragging,
+    interactionBlockInfoRef,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel,
+    onLostPointerCapture,
+  } = useBlockDragGesture({
+    editor,
+    blockInfo: state.blockInfo,
+    ignoreBlurRef: ignoreBlur,
+    onDragStart: handleBlockDragStart,
+    onTap: handleTap,
+  })
 
   useEffect(() => {
     menuOpenRef.current = showMenu
@@ -72,7 +87,10 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
       if (!ignoreBlur.current) {
         setShowMenu(false)
         setIsHovered(false)
+        setMenuTarget(null)
+        interactionBlockInfoRef.current = null
         unpinBlock(editor)
+        window.requestAnimationFrame(state.refresh)
       }
     }
 
@@ -80,7 +98,7 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
     return () => {
       editor.off('blur', handleBlur)
     }
-  }, [editor])
+  }, [editor, state.refresh])
 
   const updateMenuPosition = useCallback(() => {
     if (!containerRef.current || !menuRef.current) return
@@ -105,7 +123,10 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
     setMenuPosition(null)
     setIsHovered(false)
     setShowMenu(false)
-  }, [editor])
+    setMenuTarget(null)
+    interactionBlockInfoRef.current = null
+    window.requestAnimationFrame(state.refresh)
+  }, [editor, interactionBlockInfoRef, state.refresh])
 
   useLayoutEffect(() => {
     if (!showMenu) return
@@ -138,27 +159,23 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
     }
   }, [showMenu, editor, closeMenu])
 
-  // Click outside the handle dismisses the menu + drops the pin.
+  // Click outside both the handle and the portalled menu dismisses the menu
+  // and drops the pin.
   useEffect(() => {
     if (!showMenu) return
 
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setShowMenu(false)
-        // 关闭时强制清零 hover: 鼠标此时已在 handle 之外, mouseleave 不可靠
-        // (在 child 被卸载/容器位置并发变化的窗口里会丢), 不主动清就会
-        // 把脏 hover=true 带到下一次 handle 出现的位置。
-        setIsHovered(false)
-        unpinBlock(editor)
-      }
+      const target = e.target as Node
+      if (containerRef.current?.contains(target) || menuRef.current?.contains(target)) return
+      closeMenu()
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [showMenu, editor])
+  }, [showMenu, closeMenu])
 
   const onMenuItem = useCallback((item: BlockMenuItem) => {
-    applyMenuItem(editor, item)
+    applyMenuItem(editor, item, menuTarget)
     setShowMenu(false)
     // 鼠标停在菜单项上(handle 之外),hover 态必须强制清零;
     // 否则 applyMenuItem 触发 selectionUpdate 把 handle 挪到新位置后,
@@ -167,30 +184,40 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
     // The transformed block may be at a different position; drop the pin
     // so the next selectionUpdate can re-pin to the new block.
     unpinBlock(editor)
-  }, [editor])
+    setMenuTarget(null)
+  }, [editor, menuTarget])
 
   const onDelete = useCallback(() => {
-    deleteBlock(editor)
+    deleteBlock(editor, menuTarget)
     setShowMenu(false)
     // 同 onMenuItem: 鼠标在菜单项上(handle 外),hover 态强制清零。
     setIsHovered(false)
     // The deleted node is gone — drop the pin. The plugin's docChanged
     // handler additionally re-validates any stale pin position.
     unpinBlock(editor)
-  }, [editor])
-  const menuActions = useBlockMenuActions(onMenuItem, onDelete)
+    setMenuTarget(null)
+  }, [editor, menuTarget])
+  const menuActions = useBlockMenuActions(
+    onMenuItem,
+    onDelete,
+    menuTarget?.typeName,
+  )
 
-  const openMenu = () => {
-    const info = getCurrentBlockInfo(editor)
-    if (info) {
-      pinBlock(editor, info)
-    }
+  const openMenu = useCallback(() => {
+    const info = interactionBlockInfoRef.current ?? getBlockInfoForInteraction(editor, state.blockInfo)
+    if (!info) return
+
+    setMenuTarget(info)
+    interactionBlockInfoRef.current = null
+    activateAgentThreadCard(editor, info)
+    pinBlock(editor, info)
     setMenuPosition(null)
     setIsHovered(false)
     setSelectedIndex(0)
     setMenuInputMode('mouse')
     setShowMenu(true)
-  }
+  }, [editor, interactionBlockInfoRef, state.blockInfo])
+  openMenuRef.current = openMenu
 
   const handleMenuHover = (index: number) => {
     setMenuInputMode('mouse')
@@ -277,120 +304,54 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
     }
   }
 
-  const suppressNextClickAfterDrag = () => {
-    window.setTimeout(() => {
-      didStartDrag.current = false
-    }, 0)
-  }
-
-  const releasePointerCapture = (target: HTMLElement, pointerId: number) => {
-    if (target.hasPointerCapture(pointerId)) {
-      target.releasePointerCapture(pointerId)
-    }
-  }
-
   return (
-    <div
-      ref={containerRef}
-      role="button"
-      aria-haspopup="menu"
-      aria-expanded={showMenu}
-      tabIndex={state.visible ? 0 : -1}
-      className={`drag-context-menu-handle${showMenu ? ' active' : ''}`}
-      style={{
-        position: 'absolute',
-        left: `${state.x}px`,
-        top: `${state.y}px`,
-        width: `${HANDLE_SIZE}px`,
-        height: `${HANDLE_SIZE}px`,
-        display: state.visible ? 'flex' : 'none',
-        alignItems: 'center',
-        justifyContent: 'center',
-        pointerEvents: 'auto',
-        zIndex: 100,
-        background: showMenu ? 'var(--brand)' : (isHovered ? 'var(--muted)' : 'transparent'),
-        color: showMenu ? 'var(--primary-foreground)' : 'var(--brand)',
-        borderRadius: '4px',
-        cursor: 'grab',
-        boxShadow: 'none',
-      }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onMouseDown={(e) => {
-        ignoreBlur.current = true
-        window.setTimeout(() => {
-          ignoreBlur.current = false
-        }, 0)
-        if (showMenu) {
-          e.preventDefault()
-        }
-      }}
-      onKeyDown={onHandleKeyDown}
-      onPointerDown={(e) => {
-        if (e.button !== 0) return
-        ignoreBlur.current = true
-        pointerDragRef.current = {
-          pointerId: e.pointerId,
-          startX: e.clientX,
-          startY: e.clientY,
-          started: false,
-        }
-        e.currentTarget.setPointerCapture(e.pointerId)
-      }}
-      onPointerMove={(e) => {
-        const drag = pointerDragRef.current
-        if (!drag || drag.pointerId !== e.pointerId) return
-        const dx = e.clientX - drag.startX
-        const dy = e.clientY - drag.startY
-        if (!drag.started) {
-          if (Math.hypot(dx, dy) < BLOCK_DRAG_START_THRESHOLD_PX) return
-          const started = startBlockDrag(editor, state.blockInfo)
-          if (!started) {
-            pointerDragRef.current = null
+    <>
+      <div
+        ref={containerRef}
+        role="button"
+        aria-haspopup="menu"
+        aria-expanded={showMenu}
+        tabIndex={state.visible ? 0 : -1}
+        className={`drag-context-menu-handle${showMenu ? ' active' : ''}`}
+        style={{
+          position: 'absolute',
+          left: `${state.x}px`,
+          top: `${state.y}px`,
+          width: `${HANDLE_SIZE}px`,
+          height: `${HANDLE_SIZE}px`,
+          display: state.visible ? 'flex' : 'none',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'auto',
+          zIndex: 1,
+          background: showMenu ? 'var(--brand)' : (isHovered ? 'var(--muted)' : 'transparent'),
+          color: showMenu ? 'var(--primary-foreground)' : 'var(--brand)',
+          borderRadius: '4px',
+          cursor: isDragging ? 'grabbing' : 'pointer',
+          touchAction: 'none',
+          boxShadow: 'none',
+        }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        onMouseDown={(e) => {
+          ignoreBlur.current = true
+          window.setTimeout(() => {
             ignoreBlur.current = false
-            return
+          }, 0)
+          if (showMenu) {
+            e.preventDefault()
           }
-          drag.started = true
-          didStartDrag.current = true
-          setShowMenu(false)
-          setIsHovered(false)
-          if (state.blockInfo) pinBlock(editor, state.blockInfo)
-        }
-        updateBlockDragPosition(editor, e.clientX, e.clientY)
-        e.preventDefault()
-      }}
-      onPointerUp={(e) => {
-        const drag = pointerDragRef.current
-        if (!drag || drag.pointerId !== e.pointerId) return
-        pointerDragRef.current = null
-        if (drag.started) {
-          dropBlockDragAt(editor, e.clientX, e.clientY)
-          unpinBlock(editor)
-          suppressNextClickAfterDrag()
-        }
-        ignoreBlur.current = false
-        releasePointerCapture(e.currentTarget, e.pointerId)
-      }}
-      onPointerCancel={(e) => {
-        const drag = pointerDragRef.current
-        if (!drag || drag.pointerId !== e.pointerId) return
-        pointerDragRef.current = null
-        if (drag.started) {
-          cancelBlockDrag(editor)
-          unpinBlock(editor)
-          suppressNextClickAfterDrag()
-        }
-        ignoreBlur.current = false
-        releasePointerCapture(e.currentTarget, e.pointerId)
-      }}
-      onClick={() => {
-        if (didStartDrag.current) return
-        toggleMenu()
-        ignoreBlur.current = false
-      }}
-    >
-      {renderDragIcon(state.blockInfo)}
-      {showMenu && (
+        }}
+        onKeyDown={onHandleKeyDown}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onLostPointerCapture={onLostPointerCapture}
+      >
+        {renderDragIcon(state.blockInfo)}
+      </div>
+      {showMenu && typeof document !== 'undefined' && createPortal(
         <BlockActionMenu
           actions={menuActions}
           selectedIndex={selectedIndex}
@@ -401,9 +362,10 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
           style={getMenuStyle(menuPosition)}
           onHover={handleMenuHover}
           onKeyDown={handleMenuKeyDown}
-        />
+        />,
+        document.body,
       )}
-    </div>
+    </>
   )
 }
 

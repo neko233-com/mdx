@@ -597,6 +597,8 @@ export type AgentToolDisplayKind =
 export interface AgentToolDisplay {
   summary?: string;
   title?: string;
+  /** Absolute/local file path used when the compact summary is clicked. */
+  targetPath?: string;
   kind?: AgentToolDisplayKind;
 }
 

@@ -7,7 +7,7 @@
  * - `z-index` 取 40：高于 LoadingOverlay 的 z-30、低于 bubble menu（如 link-edit-popup
  *   z-9999、drag-context-menu 的 z-999999）—— 蒙层不应挡交互弹层。
  * - 主题色走 `var(--card)` / `var(--foreground)` / `var(--muted-foreground)`，
- *   light / dark / rock 三套主题自动适配。
+ *   各主题自动适配。
  */
 import { useI18n } from '@/lib/i18n';
 

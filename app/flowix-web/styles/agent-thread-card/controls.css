@@ -7,11 +7,10 @@
  * 语义解耦靠具体 className (--collapse / --delete / --fullscreen /
  * --open-panel) 维持, 视觉同源靠共享基类统一 ── 两件事各司其职。
  *
- * ── 颜色用 var(--muted-foreground) 而非硬编码 #888 ──
- *   - 三套主题 (light/dark/rock) 都定义了 --muted-foreground, 与
+ * ── 颜色用 var(--muted-foreground), 跟随主题 ──
+ *   - 各主题都定义了 --muted-foreground, 与
  *     __meta 等"次要文字"位置用同一 token, 跨主题视觉一致。
- *   - 硬编码 #888 在 dark 主题下偏亮 (与 muted-foreground 不匹配),
- *     rock 主题下色彩倾向也不对 ── 改 token 后自动跟随主题。
+ *   - 原先的固定灰色在暗色和暖色主题下都不匹配 ── 改 token 后自动跟随主题。
  *
  * 选类名 __icon-btn (而非 __header-btn) ── 后续若 composer / footer
  * 等位置出现同款方形按钮可直接复用同一基类, 不必再起一个名字。 */
@@ -225,7 +224,7 @@
  *   - border-radius 0.5px 让两端圆滑, 避免 1px 实心方块的"硬边"感。
  *
  * ── 颜色 ──
- *   - var(--border) ── 跨三套主题 (light/dark/rock) 都有定义, 与卡片
+ *   - var(--border) ── 各主题都有定义, 与卡片
  *     其它 1px 描边 (e.g. agent-type-badge) 用同一 token, 视觉一致。
  *   - 不用 var(--muted-foreground) ── 那是文字色 token, 在分割线这
  *     种"非文字"几何元素上复用偏亮, 会让分割线变成"第二条文字"。 */
@@ -325,18 +324,18 @@
   width: 100%;
   min-height: 0;
   overflow: hidden;
-  background: var(--editor-block-bg, var(--document-bg));
+  background: var(--agent-bg, var(--document-bg));
 }
 
 .agent-conversation-detail {
-  background: var(--editor-block-bg, var(--document-bg));
+  background: var(--agent-bg, var(--document-bg));
 }
 
 /* 独立 Agent 对话标题栏与消息区使用完全相同的纯色背景。
  * 只作用于 AgentConversationTitlebar, 不覆盖布局级 --bg-titlebar, 因此
  * 普通文档标题栏、偏好设置标题栏和 WindowsTitlebarControls 保持原样。 */
 .agent-conversation-titlebar {
-  background-color: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
+  background-color: var(--agent-bg, var(--document-bg));
   background-image: none;
 }
 
@@ -344,12 +343,35 @@
  * class is intentionally independent of fullscreen state so Browser Column
  * conversations and fullscreen embedded Thread Cards cannot drift apart. */
 .agent-surface-titlebar {
-  background-color: var(--agent-surface-bg, var(--editor-block-bg, var(--document-bg)));
+  background-color: var(--agent-bg, var(--document-bg));
   background-image: linear-gradient(
     to bottom,
     color-mix(in oklch, var(--primary) 3%, transparent),
     transparent
   );
+}
+
+/* Media resources share the same surface background as conversations, while
+ * keeping their own semantic chrome type. */
+.media-surface-titlebar {
+  background-color: var(--agent-bg, var(--document-bg));
+  background-image: none;
+}
+
+/* WebView native video controls are painted inside the replaced element and
+ * may ignore the element's border-radius at the corners. Clip the complete
+ * rendered layer so the controls' gray overlay follows the same radius,
+ * without introducing a sizing wrapper that could crop the video. */
+.media-resource-video {
+  clip-path: inset(0 round 0.5rem);
+}
+
+/* The native WebKit controls panel is darker than the media surface by
+ * default. Keep the native controls, but make their gray mask lighter and
+ * semi-transparent so the video remains visible underneath. */
+.media-resource-video::-webkit-media-controls-panel {
+  background-color: rgb(96 96 96 / 50%);
+  background-image: none;
 }
 
 /* Keep the relocated control's shape identical to the Thread Card's former

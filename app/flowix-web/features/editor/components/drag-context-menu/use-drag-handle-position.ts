@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { CurrentBlockInfo } from '@features/editor/components/drag-context-menu/block-info'
 import { computeHandlePosition } from '@features/editor/components/drag-context-menu/positioning'
@@ -8,6 +8,10 @@ interface DragHandlePositionState {
   x: number
   y: number
   blockInfo: CurrentBlockInfo | null
+}
+
+interface DragHandlePositionResult extends DragHandlePositionState {
+  refresh: () => void
 }
 
 const HIDDEN_STATE: DragHandlePositionState = {
@@ -38,10 +42,12 @@ export function useDragHandlePosition(
   lineHeight: number,
   ignoreBlurRef?: RefObject<boolean>,
   keepVisibleRef?: RefObject<boolean>,
-): DragHandlePositionState {
+): DragHandlePositionResult {
   const [state, setState] = useState<DragHandlePositionState>(HIDDEN_STATE)
   const frameRef = useRef<number | null>(null)
   const trailingResizeRef = useRef<number | null>(null)
+  const refreshRef = useRef<() => void>(() => {})
+  const refresh = useCallback(() => refreshRef.current(), [])
 
   useEffect(() => {
     // editor 可能被销毁后这条 effect 还触发 (e.g. 切换文档/语言时父组件
@@ -78,6 +84,7 @@ export function useDragHandlePosition(
         updateDragHandle()
       })
     }
+    refreshRef.current = scheduleUpdate
 
     const scheduleTrailingResizeUpdate = () => {
       if (trailingResizeRef.current != null) {
@@ -98,7 +105,10 @@ export function useDragHandlePosition(
     const handleBlur = () => {
       if (keepVisibleRef?.current) return
       if (ignoreBlurRef?.current) return
-      commitState(HIDDEN_STATE)
+      // A nested AgentThreadCard composer causes the outer editor to blur.
+      // Recompute after the browser updates activeElement so the positioning
+      // layer can resolve the card NodeView instead of hiding the handle.
+      scheduleUpdate()
     }
     const handleResize = () => {
       scheduleUpdate()
@@ -106,8 +116,22 @@ export function useDragHandlePosition(
     }
 
     editor.on('selectionUpdate', updateDragHandle)
+    // Undo/redo changes the document and may restore the same NodeSelection
+    // anchor. Tiptap only emits selectionUpdate when the selection itself
+    // changes, so listen to update as well to remeasure a restored NodeView.
+    editor.on('update', updateDragHandle)
     editor.on('focus', updateDragHandle)
     editor.on('blur', handleBlur)
+    editorDom.addEventListener('focusin', scheduleUpdate)
+    const handleFocusOut = () => {
+      // Moving from the nested composer to the handle itself is an intentional
+      // interaction. The handle sets ignoreBlur before the browser moves focus;
+      // keep the current card anchor through that hand-off so the menu does
+      // not disappear between pointerdown and click.
+      if (ignoreBlurRef?.current || keepVisibleRef?.current) return
+      scheduleUpdate()
+    }
+    editorDom.addEventListener('focusout', handleFocusOut)
     scrollTarget.addEventListener('scroll', scheduleUpdate, { passive: true })
 
     const resizeObserver = new ResizeObserver(handleResize)
@@ -128,13 +152,17 @@ export function useDragHandlePosition(
 
     return () => {
       mounted = false
+      refreshRef.current = () => {}
       if (frameRef.current != null) cancelAnimationFrame(frameRef.current)
       if (trailingResizeRef.current != null) window.clearTimeout(trailingResizeRef.current)
       frameRef.current = null
       trailingResizeRef.current = null
       editor.off('selectionUpdate', updateDragHandle)
+      editor.off('update', updateDragHandle)
       editor.off('focus', updateDragHandle)
       editor.off('blur', handleBlur)
+      editorDom.removeEventListener('focusin', scheduleUpdate)
+      editorDom.removeEventListener('focusout', handleFocusOut)
       scrollTarget.removeEventListener('scroll', scheduleUpdate)
       editorDom.removeEventListener('load', handleLoadedAsset, true)
       editorDom.removeEventListener('loadedmetadata', handleLoadedAsset, true)
@@ -143,5 +171,5 @@ export function useDragHandlePosition(
     }
   }, [editor, fontSize, lineHeight, ignoreBlurRef, keepVisibleRef])
 
-  return state
+  return { ...state, refresh }
 }

@@ -8,7 +8,8 @@ import {
   type NotebookSortEntry,
   type SortType,
 } from '@platform/tauri/client';
-import type { MemoColor, Notebook } from '@features/memo';
+import type { MemoColor } from '@/types/memo-item';
+import type { Notebook } from '@features/memo/store/memo-store';
 
 export type { FilterType, SortType } from '@platform/tauri/client';
 
@@ -34,6 +35,7 @@ export const memoRepository = {
 
 export const notebookRepository = {
   list: (): Promise<Notebook[]> => notebooks.getAll(),
+  getDefaultPath: (name: string) => notebooks.getDefaultPath(name),
   create: (name: string, path?: string, icon?: string | null) =>
     notebooks.create(name, path, icon),
   createFromCloud: (id: string, name: string, path: string, icon?: string | null) =>

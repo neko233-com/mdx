@@ -9,10 +9,8 @@ export interface MainStatusBarHostProps {
   onEditNotebook(notebook: Notebook): void;
   onDeleteNotebook(notebook: Notebook): void;
   onCreateNotebook(): void;
-  todoCount: number;
   onOpenTodos(): void;
   onToggleNoteNavigation(): void;
-  onOpenAgentConversationView(): void;
   dshDownload: DshDownloadProgress | null;
   updater: AppUpdaterState;
 }
@@ -21,10 +19,8 @@ export function MainStatusBarHost(props: MainStatusBarHostProps) {
   return (
     <StatusBar
       {...props}
-      onOpenPreferences={() => windows.openPreferences()}
       onOpenMcpPreferences={() => windows.openPreferences('mcp')}
       onOpenDshPreferences={() => windows.openPreferences('dsh')}
     />
   );
 }
-
