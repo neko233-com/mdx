@@ -656,6 +656,8 @@ const zhCN = {
     "editor.table.insertColumnAfter": "右侧插入列",
     "editor.table.deleteColumn": "删除列",
     "editor.table.deleteTable": "删除表格",
+    "editor.table.headerRow": "表头",
+    "editor.table.headerColumn": "列头",
 
     // agent
     "agent.permission.default": "默认",

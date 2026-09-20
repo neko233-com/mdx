@@ -61,7 +61,8 @@ export function BlockActionMenu({
                   itemRefs.current[index] = node
                 }}
                 type="button"
-                role="menuitem"
+                role={action.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+                aria-checked={action.checked}
                 onMouseMove={(event) => handleItemMouseMove(event, index)}
                 onClick={action.onSelect}
                 className={`group relative flex h-7 min-h-7 w-full items-center justify-start gap-3 rounded-lg px-2 py-0 text-left text-sm text-[var(--foreground)] transition-colors${mouseHoverEnabled ? ' hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]' : ''}${index === selectedIndex ? ' bg-[var(--brand)] text-[var(--primary-foreground)]' : ''}`}

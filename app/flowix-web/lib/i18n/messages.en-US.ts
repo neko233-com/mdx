@@ -677,6 +677,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "editor.table.insertColumnAfter": "Insert column right",
     "editor.table.deleteColumn": "Delete column",
     "editor.table.deleteTable": "Delete table",
+    "editor.table.headerRow": "Header row",
+    "editor.table.headerColumn": "Header column",
 
     // agent
     "agent.permission.default": "Default",
