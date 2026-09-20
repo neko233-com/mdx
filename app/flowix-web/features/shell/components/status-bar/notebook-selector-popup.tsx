@@ -356,11 +356,13 @@ export function NotebookSelectorPopup({
             aria-label={t('status.switchNotebook')}
             title={t('status.switchNotebook')}
           >
-            <NotebookIcon
-              icon={selectedNotebook?.icon}
-              name={selectedNotebook?.name}
-              className="h-4 w-4 rounded text-[12px] font-semibold !text-[var(--foreground)]"
-            />
+            {selectedNotebook?.icon && (
+              <NotebookIcon
+                icon={selectedNotebook.icon}
+                name={selectedNotebook.name}
+                className="h-4 w-4 rounded text-[12px] font-semibold !text-[var(--foreground)]"
+              />
+            )}
             {selectedNotebook?.name && (
               <span className="w-fit max-w-20 min-w-0 truncate text-xs text-[var(--muted-foreground)]">
                 {selectedNotebook.name}
