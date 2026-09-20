@@ -120,6 +120,32 @@ describe("ComposerFolderController", () => {
     editor.destroy();
   });
 
+  it("opens the reference menu when @ follows text without a space", () => {
+    const { editor, controller } = setup();
+    type(editor, "请操作@main");
+
+    expect(document.querySelector(".agent-composer-slash-menu")).not.toBeNull();
+    expect(document.querySelector(".agent-composer-slash-menu__name")?.textContent)
+      .toBe("flowix-main");
+
+    controller.dispose();
+    editor.destroy();
+  });
+
+  it("does not show an empty menu when folders and notes have no matches", async () => {
+    const listNotes = vi.fn(async () => [] as readonly MentionNoteItem[]);
+    const { editor, controller } = setup([], { listNotes });
+    type(editor, "请操作 @不存在");
+
+    expect(document.querySelector(".agent-composer-slash-menu")).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    expect(listNotes).toHaveBeenCalledWith("不存在");
+    expect(document.querySelector(".agent-composer-slash-menu")).toBeNull();
+
+    controller.dispose();
+    editor.destroy();
+  });
+
   it("inserts a removable folder card and serializes it as an @ mention", () => {
     const { input, editor, controller } = setup();
     type(editor, "请操作 @flow");

@@ -167,6 +167,10 @@ const codeEditorTheme = EditorView.theme({
     color: 'var(--document-foreground, var(--foreground, #1f2937))',
     backgroundColor: 'transparent',
     fontSize: 'var(--code-editor-font-size, 13px)',
+    // Source text must show the characters users typed. In particular, do
+    // not render ASCII operators such as `-->` as typographic ligatures.
+    fontVariantLigatures: 'none',
+    fontFeatureSettings: '"liga" 0, "clig" 0, "calt" 0',
   },
   '&.cm-focused': {
     outline: 'none',
@@ -175,6 +179,8 @@ const codeEditorTheme = EditorView.theme({
     overflow: 'auto',
     fontFamily: "'Inter', 'Microsoft YaHei', '微软雅黑', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
     lineHeight: 'var(--code-editor-line-height, 1.65)',
+    fontVariantLigatures: 'none',
+    fontFeatureSettings: '"liga" 0, "clig" 0, "calt" 0',
   },
   '.cm-content': {
     minHeight: '100%',

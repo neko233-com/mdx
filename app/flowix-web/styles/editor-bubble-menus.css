@@ -526,6 +526,12 @@
   font-weight: 500;
 }
 
+/* Middle-column navigation submenus (tags / filter / sort / view) use the
+ * shared mention label class, but their item text should remain regular. */
+.memo-navigation-submenu-item .mention-note-title {
+  font-weight: 400;
+}
+
 .mention-note-dropdown:not(.is-keyboard-navigation) .mention-note-item:hover .mention-note-title,
 .mention-note-dropdown:not(.is-keyboard-navigation) .mention-note-item:focus-visible .mention-note-title,
 .mention-note-dropdown .mention-note-item.is-selected .mention-note-title,

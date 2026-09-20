@@ -42,6 +42,7 @@ export function useDragHandlePosition(
   lineHeight: number,
   ignoreBlurRef?: RefObject<boolean>,
   keepVisibleRef?: RefObject<boolean>,
+  interactionInfoRef?: RefObject<CurrentBlockInfo | null>,
 ): DragHandlePositionResult {
   const [state, setState] = useState<DragHandlePositionState>(HIDDEN_STATE)
   const frameRef = useRef<number | null>(null)
@@ -64,7 +65,14 @@ export function useDragHandlePosition(
 
     const updateDragHandle = () => {
       if (!mounted) return
-      const pos = computeHandlePosition(editor, fontSize, lineHeight, !keepVisibleRef?.current)
+      const preferredInfo = keepVisibleRef?.current ? interactionInfoRef?.current : null
+      const pos = computeHandlePosition(
+        editor,
+        fontSize,
+        lineHeight,
+        !keepVisibleRef?.current,
+        preferredInfo,
+      )
       if (!pos || !pos.visible) {
         commitState(HIDDEN_STATE)
         return
@@ -169,7 +177,7 @@ export function useDragHandlePosition(
       window.removeEventListener('resize', scheduleUpdate)
       resizeObserver.disconnect()
     }
-  }, [editor, fontSize, lineHeight, ignoreBlurRef, keepVisibleRef])
+  }, [editor, fontSize, lineHeight, ignoreBlurRef, keepVisibleRef, interactionInfoRef])
 
   return { ...state, refresh }
 }

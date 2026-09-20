@@ -1,4 +1,4 @@
-import { assistantChunkText, isPlanSteerPromptEvent, itemFromEvent, projectHistoryMessages, projectNotifications, projectTurns, stableAssistantStreamItemId, stableItemId, stableTurnId, textOf, turnEndStatus } from './event-projector.js'
+import { assistantChunkText, isPlanSteerPromptEvent, itemFromEvent, projectHistoryMessages, projectNotifications, projectTurns, stableAssistantStreamItemId, stableItemId, stableTurnId, textOf, turnEndError, turnEndStatus } from './event-projector.js'
 
 // Native adapter for Flowix's bundled DeepSeek Harness runtime.
 // It deliberately imports no Flowix bridge package. The host supplies a Cordis ctx.
@@ -286,7 +286,7 @@ export class NativeDshAdapter {
       this.emit({ jsonrpc: '2.0', method: 'item/started', params: { threadId, turnId, sourceSeq: event.seq, item } })
       if (event.type === 'user/message' || event.type === 'assistant/message' || event.type === 'tool/result' || event.type === 'approval/decided') this.emit({ jsonrpc: '2.0', method: 'item/completed', params: { threadId, turnId, sourceSeq: event.seq, item } })
     }
-    if (event.type === 'turn/end') { const turnId = this.activeTurns.get(threadId) || stableTurnId(threadId, turn ?? event.seq); this.activeTurns.delete(threadId); this.emit({ jsonrpc: '2.0', method: 'turn/completed', params: { threadId, turnId, sourceSeq: event.seq, turn: { id: turnId, threadId, status: turnEndStatus(event.data), items: [] } } }) }
+    if (event.type === 'turn/end') { const turnId = this.activeTurns.get(threadId) || stableTurnId(threadId, turn ?? event.seq); this.activeTurns.delete(threadId); const failure = turnEndError(event.data); this.emit({ jsonrpc: '2.0', method: 'turn/completed', params: { threadId, turnId, sourceSeq: event.seq, turn: { id: turnId, threadId, status: turnEndStatus(event.data), items: [], ...(failure ? { error: failure } : {}) } } }) }
   }
 
   async startThread(id, config = {}) {

@@ -431,8 +431,27 @@ function normalizeTaskItemPlaceholders(editor: Editor): void {
     deletions
       .sort((a, b) => b.from - a.from)
       .forEach(({ from, to }) => tr.delete(from, to));
+    tr.setMeta('addToHistory', false);
     view.dispatch(tr);
   }
+}
+
+/**
+ * An authoritative external document replacement starts a new undo domain.
+ * Reusing the existing history plugin would leave steps from the previous
+ * document mapped against the replacement. Remove and re-register the same
+ * plugin instance so its state is initialized empty without rebuilding the
+ * editor view or its NodeViews.
+ */
+function resetEditorHistory(editor: Editor): void {
+  const historyPlugin = editor.state.plugins.find((plugin) => {
+    const key = (plugin as unknown as { key?: string }).key;
+    return key?.startsWith('history$') === true;
+  });
+  if (!historyPlugin) return;
+
+  editor.unregisterPlugin('history');
+  editor.registerPlugin(historyPlugin);
 }
 
 interface EditableBodyStart {
@@ -675,6 +694,21 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     if (!editor || normalizedNextContent === contentRef.current) {
       return;
     }
+
+    // A local edit can reach the document buffer before contentRef is updated
+    // by the debounced serializer (notably after an async image upload). If
+    // the incoming content is already exactly what ProseMirror currently
+    // serializes, it is only a reconciliation echo. Calling setContent here
+    // would unnecessarily destroy the editor's history and make the previous
+    // paste appear non-undoable.
+    const currentEditorContent = normalizeMarkdownTableEmptyCells(
+      serializeEditorMarkdown(editor),
+    );
+    if (normalizedNextContent === currentEditorContent) {
+      contentRef.current = normalizedNextContent;
+      return;
+    }
+
     clearSerializeTimer();
     pendingSerializeDirtyRef.current = false;
 
@@ -693,6 +727,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         .setContent(normalizedNextContent, { contentType: 'markdown', emitUpdate: false })
         .run();
       normalizeTaskItemPlaceholders(editor);
+      resetEditorHistory(editor);
     } finally {
       isApplyingExternalContentRef.current = false;
     }
@@ -762,7 +797,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
 
     const { block, position } = getEditableBodyStart(editor);
     if (!block) {
-      const tr = editor.state.tr.insert(position, createEmptyParagraph(editor));
+      const tr = editor.state.tr
+        .insert(position, createEmptyParagraph(editor))
+        .setMeta('addToHistory', false);
       tr.setSelection(TextSelection.near(tr.doc.resolve(position + 1), 1));
       editor.view.dispatch(tr);
     } else {

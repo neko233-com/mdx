@@ -11,8 +11,6 @@ export type PasteKind =
   | 'markdown-table'
   | 'html-table'
   | 'tsv-table'
-  | 'rich-inline-html'
-  | 'rich-html'
   | 'markdown-block';
 
 export interface PasteContext {

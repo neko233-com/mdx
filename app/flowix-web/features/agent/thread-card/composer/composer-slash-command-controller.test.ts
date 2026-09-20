@@ -122,16 +122,16 @@ describe('ComposerSlashCommandController', () => {
     type(editor, '/goal');
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
-    expect(editor.getMarkdown()).toBe('[/goal](flowix://slash/deepseek-harness/goal)');
+    expect(editor.getMarkdown()).toBe('[/goal](flowix://slash/deepseek-harness/goal) ');
     expect(composer.querySelector('.agent-thread-card__slash-token')?.textContent).toBe('/goal');
     expect(composer.querySelector('.agent-thread-card__slash-token--control')).not.toBeNull();
     const wrapper = composer.querySelector('.agent-thread-card__slash-token-wrapper');
-    expect(wrapper?.childNodes).toHaveLength(3);
-    expect(wrapper?.firstChild?.textContent).toBe('\u200B');
+    expect(wrapper?.childNodes).toHaveLength(2);
+    expect(wrapper?.firstChild?.textContent).toBe('/goal');
     expect(wrapper?.lastChild?.textContent).toBe('\u200B');
 
     editor.commands.insertContent('继续输入');
-    expect(editor.getMarkdown()).toBe('[/goal](flowix://slash/deepseek-harness/goal)继续输入');
+    expect(editor.getMarkdown()).toBe('[/goal](flowix://slash/deepseek-harness/goal) 继续输入');
 
     editor.commands.focus('start');
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
@@ -147,7 +147,7 @@ describe('ComposerSlashCommandController', () => {
 
     editor.commands.insertContent('继续描述目标');
 
-    expect(editor.getMarkdown()).toBe('[/goal](flowix://slash/codex/goal)继续描述目标');
+    expect(editor.getMarkdown()).toBe('[/goal](flowix://slash/codex/goal) 继续描述目标');
     expect(editor.getJSON().content?.[0]?.type).toBe('paragraph');
     expect(editor.getJSON().content?.[0]?.content).toHaveLength(2);
     controller.dispose();
@@ -255,7 +255,7 @@ describe('ComposerSlashCommandController', () => {
     )].find((candidate) => candidate.textContent?.includes('/goal'));
     item?.click();
 
-    expect(editor.getMarkdown()).toBe('[/goal](flowix://slash/deepseek-harness/goal)');
+    expect(editor.getMarkdown()).toBe('[/goal](flowix://slash/deepseek-harness/goal) ');
     expect(document.querySelector('.agent-composer-slash-menu')).toBeNull();
     controller.dispose();
     editor.destroy();

@@ -25,6 +25,16 @@
     );
 }
 
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) .editor-video-attachment[data-video-align="left"] {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) .editor-video-attachment[data-video-align="right"] {
+  margin-left: auto;
+  margin-right: 0;
+}
+
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) .editor-video-attachment.is-selected {
   outline: 1px solid var(--brand);
   outline-offset: 0px;
@@ -160,6 +170,16 @@
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) .editor-image-attachment[data-image-align="left"] {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) .editor-image-attachment[data-image-align="right"] {
+  margin-left: auto;
+  margin-right: 0;
+}
+
 /* macOS WebKit 的 Live Text 会在可选中的图片上识别并高亮图片内文字。
  * 图片仍由 ProseMirror 通过 click 进入 NodeSelection, 因此这里禁用的是
  * 原生文本选择, 不会影响点击选中、外框描边或 drag handle。 */
@@ -265,7 +285,7 @@
   left: 50%;
   width: 2px;
   border-radius: 999px;
-  background: color-mix(in oklch, var(--foreground) 18%, transparent);
+  background: var(--brand);
   transform: translateX(-50%);
 }
 

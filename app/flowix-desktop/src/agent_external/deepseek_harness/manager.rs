@@ -504,8 +504,23 @@ impl DeepSeekHarnessManager {
                                 current_run_id,
                             ).await;
                         }
-                        Projection::Completed { buffered, reason } => {
+                        Projection::Completed {
+                            buffered,
+                            reason,
+                            error_message,
+                            error_details,
+                        } => {
                             self.emit_buffered(buffered, &app_handle, current_run_id).await;
+                            if let (Some(message), Some(details)) = (error_message, error_details) {
+                                self.emit_structured_run_error(
+                                    &app_handle,
+                                    &thread_id,
+                                    message,
+                                    details,
+                                    current_run_id,
+                                )
+                                .await;
+                            }
                             let finished_run_id = active_run_id.take().expect("active run id");
                             let finished_stream_end = active_stream_end.take().expect("stream end flag");
                             projector = None;
@@ -579,6 +594,16 @@ impl DeepSeekHarnessManager {
         ) {
             self.emit_buffered(finished_projector.finish(), &app_handle, &finished_run_id)
                 .await;
+            if terminal_reason.as_deref() == Some("runtime_crashed") {
+                self.emit_run_error(
+                    &app_handle,
+                    &thread_id,
+                    "DeepSeek Harness event subscription closed before the turn completed"
+                        .to_string(),
+                    &finished_run_id,
+                )
+                .await;
+            }
             if self
                 .runs
                 .remove_if_matches(&thread_id, &finished_run_id)
@@ -832,9 +857,24 @@ impl DeepSeekHarnessManager {
                                 run_id,
                             ).await;
                         }
-                        Projection::Completed { buffered, reason } => {
+                        Projection::Completed {
+                            buffered,
+                            reason,
+                            error_message,
+                            error_details,
+                        } => {
                             tracing::info!(target: "dsh_appserver", thread_id, run_id, reason = reason.as_deref().unwrap_or("<none>"), "App Server turn reached terminal notification");
                             self.emit_buffered(buffered, app_handle, run_id).await;
+                            if let (Some(message), Some(details)) = (error_message, error_details) {
+                                self.emit_structured_run_error(
+                                    app_handle,
+                                    thread_id,
+                                    message,
+                                    details,
+                                    run_id,
+                                )
+                                .await;
+                            }
                             break reason;
                         }
                     }
@@ -847,6 +887,15 @@ impl DeepSeekHarnessManager {
         };
         let buffered = projector.finish();
         self.emit_buffered(buffered, app_handle, run_id).await;
+        if terminal_reason.as_deref() == Some("runtime_crashed") {
+            self.emit_run_error(
+                app_handle,
+                thread_id,
+                "DeepSeek Harness event subscription closed before the turn completed".to_string(),
+                run_id,
+            )
+            .await;
+        }
         host.unsubscribe(&session_id, run_id).await;
         Ok(terminal_reason.filter(|reason| reason != "completed"))
     }

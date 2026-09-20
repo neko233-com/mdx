@@ -4,11 +4,13 @@ import {
   headingMenuItems,
   listMenuItems,
   blockMenuItems,
+  imageMenuItems,
   type BlockMenuItem,
 } from '@features/editor/components/drag-context-menu/items'
+import type { ImageAlignment } from '@features/editor/components/drag-context-menu/items'
 import { useI18n } from '@/lib/i18n'
 
-export type BlockMenuActionGroup = 'heading' | 'list' | 'block' | 'mode' | 'danger'
+export type BlockMenuActionGroup = 'heading' | 'list' | 'block' | 'image' | 'mode' | 'danger'
 
 export interface BlockMenuAction {
   id: string
@@ -24,9 +26,29 @@ export function useBlockMenuActions(
   onMenuItem: (item: BlockMenuItem) => void,
   onDelete: () => void,
   blockTypeName?: string,
+  onImageAlign?: (alignment: ImageAlignment) => void,
 ): BlockMenuAction[] {
   const { t } = useI18n()
   return useMemo(() => {
+    if (blockTypeName === 'image' || blockTypeName === 'videoAttachment') {
+      return [
+        ...imageMenuItems.map((item): BlockMenuAction => ({
+          id: `image-align-${item.alignment}`,
+          group: 'image',
+          icon: item.icon,
+          label: t(item.displayKey),
+          onSelect: () => onImageAlign?.(item.alignment),
+        })),
+        {
+          id: 'delete',
+          group: 'danger',
+          icon: <TrashSimpleIcon size={16} weight="bold" />,
+          label: t('editor.block.delete'),
+          onSelect: onDelete,
+        },
+      ]
+    }
+
     const actions: BlockMenuAction[] = [
       ...headingMenuItems.map((item): BlockMenuAction => ({
         id: item.kind === 'heading' ? `h${item.level}` : 'paragraph',
@@ -69,5 +91,5 @@ export function useBlockMenuActions(
     return blockTypeName === 'agentThreadCard'
       ? actions.filter((action) => action.id === 'delete')
       : actions
-  }, [blockTypeName, onMenuItem, onDelete, t])
+  }, [blockTypeName, onMenuItem, onDelete, onImageAlign, t])
 }

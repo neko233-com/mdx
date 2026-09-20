@@ -2,7 +2,7 @@ import type { Editor } from '@tiptap/core'
 import { NodeSelection } from 'prosemirror-state'
 import { menuPinPluginKey } from '@features/editor/extensions/menu-pin'
 import { getCurrentBlockInfo, type CurrentBlockInfo } from '@features/editor/components/drag-context-menu/block-info'
-import type { BlockMenuItem } from '@features/editor/components/drag-context-menu/items'
+import type { BlockMenuItem, ImageAlignment } from '@features/editor/components/drag-context-menu/items'
 import { terminateAgentThreadCardRuntime } from '@features/agent/thread-card/agent-thread-card-cleanup'
 
 /**
@@ -109,4 +109,30 @@ export function deleteBlock(editor: Editor, target?: CurrentBlockInfo | null): b
     return true
   }
   return false
+}
+
+export function setImageAlignment(
+  editor: Editor,
+  alignment: ImageAlignment,
+  target?: CurrentBlockInfo | null,
+): boolean {
+  if (
+    editor.isDestroyed ||
+    editor.view.isDestroyed ||
+    (target?.typeName !== 'image' && target?.typeName !== 'videoAttachment')
+  ) return false
+  const node = editor.state.doc.nodeAt(target.pos)
+  if (
+    !node ||
+    node.type.name !== target.typeName ||
+    node.nodeSize !== target.nodeSize ||
+    editor.view.nodeDOM(target.pos) !== target.dom
+  ) return false
+
+  editor.view.focus()
+  editor.view.dispatch(editor.view.state.tr.setNodeMarkup(target.pos, undefined, {
+    ...node.attrs,
+    align: alignment,
+  }))
+  return true
 }

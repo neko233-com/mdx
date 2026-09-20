@@ -14,6 +14,9 @@
 	color: var(--document-foreground, var(--foreground, #1f2937));
 	background: transparent;
 	font-size: var(--code-editor-font-size, var(--code-font-size, 14px));
+	/* Keep source operators visually identical to their stored text. */
+	font-variant-ligatures: none;
+	font-feature-settings: "liga" 0, "clig" 0, "calt" 0;
 }
 
 .code-editor > .cm-editor.cm-focused {
@@ -31,6 +34,8 @@
 	z-index: 0;
 	font-family: var(--code-editor-font-family, var(--code-font-family));
 	line-height: var(--code-editor-line-height, var(--code-line-height, 1.8));
+	font-variant-ligatures: none;
+	font-feature-settings: "liga" 0, "clig" 0, "calt" 0;
 	overflow-anchor: none;
 }
 

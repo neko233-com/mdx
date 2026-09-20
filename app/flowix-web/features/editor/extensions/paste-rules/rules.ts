@@ -1,4 +1,5 @@
 import type { Editor, JSONContent } from '@tiptap/core';
+import { closeHistory } from '@tiptap/pm/history';
 import { mergeFrontmatterYaml } from '@features/document/properties/frontmatter-model';
 import type { ManagedPasteRule, PasteContext, PasteRuleResult } from '@features/editor/extensions/paste-rules/types';
 import { handleFileUpload } from '@features/editor/extensions/attachment-link/upload/plugin';
@@ -12,16 +13,7 @@ import {
   looksLikeMarkdownBlock,
   parseMarkdownForPaste,
 } from '@features/editor/extensions/paste-rules/markdown';
-import {
-  HTML_TABLE_RE,
-  RICH_HTML_RE,
-  hasMeaningfulInlineHtml,
-  isStandaloneHtmlTable,
-} from '@features/editor/extensions/paste-rules/html';
-import {
-  isInternalEditorHtml,
-  sanitizeExternalHtml,
-} from '@features/editor/extensions/paste-rules/html-sanitizer';
+import { HTML_TABLE_RE, isStandaloneHtmlTable } from '@features/editor/extensions/paste-rules/html';
 import {
   htmlTableToTableContent,
   looksLikeTsvTable,
@@ -30,10 +22,32 @@ import {
 
 const ASSET_MARKDOWN_LINK_RE = /^\s*!?\[[^\]\n]*\]\((?:asset:\/\/|https?:\/\/asset\.localhost\/)[^)]+\)\s*$/i;
 
+/**
+ * Managed paste rules must still produce one user-visible history event.
+ * Starting a fresh history group here also prevents a paste from merging
+ * into the immediately preceding typing transaction.
+ */
+function insertPastedContent(content: JSONContent | string, editor: Editor): boolean {
+  // Keep the pure rule tests lightweight: production editors always expose
+  // Tiptap's chain API, while these tests use a minimal command stub.
+  if (typeof editor.chain !== 'function') {
+    return editor.commands.insertContent(content);
+  }
+
+  return editor
+    .chain()
+    .command(({ tr }) => {
+      closeHistory(tr);
+      return true;
+    })
+    .insertContent(content)
+    .run();
+}
+
 function insertMarkdownPaste(markdown: string, editor: Editor): boolean {
   const parsed = parseMarkdownForPaste(markdown, editor);
   return mergePastedFrontmatterIntoExisting(parsed, editor)
-    || editor.commands.insertContent(parsed);
+    || insertPastedContent(parsed, editor);
 }
 
 function mergePastedFrontmatterIntoExisting(parsed: JSONContent | string, editor: Editor): boolean {
@@ -50,19 +64,26 @@ function mergePastedFrontmatterIntoExisting(parsed: JSONContent | string, editor
     String(currentFrontmatter.attrs.yamlContent ?? ''),
     String(pastedFrontmatter.attrs?.yamlContent ?? ''),
   );
-  const tr = editor.state.tr.setNodeMarkup(0, undefined, {
-    ...currentFrontmatter.attrs,
-    yamlContent,
-  });
-  editor.view.dispatch(tr);
-
   const rest = pastedNodes.slice(1);
-  if (rest.length === 0) return true;
+  const chain = editor
+    .chain()
+    .command(({ tr }) => {
+      closeHistory(tr);
+      tr.setNodeMarkup(0, undefined, {
+        ...currentFrontmatter.attrs,
+        yamlContent,
+      });
+      return true;
+    });
 
-  return editor.commands.insertContent({
-    ...parsed,
-    content: rest,
-  });
+  if (rest.length === 0) return chain.run();
+
+  return chain
+    .insertContent({
+      ...parsed,
+      content: rest,
+    })
+    .run();
 }
 
 export function createManagedPasteRules(options: {
@@ -95,10 +116,10 @@ export function createManagedPasteRules(options: {
         const hit = tryMatchPhysicalMemoPath(text.trim());
         if (!hit || !editor.schema.nodes.noteReference) return 'continue';
 
-        editor.commands.insertContent({
+        insertPastedContent({
           type: 'noteReference',
           attrs: hit,
-        });
+        }, editor);
         return 'handled';
       },
     },
@@ -158,7 +179,7 @@ export function createManagedPasteRules(options: {
       run: ({ html, editor }) => {
         const content = htmlTableToTableContent(html);
         if (!content) return 'default';
-        return editor.commands.insertContent(content) ? 'handled' : 'default';
+        return insertPastedContent(content, editor) ? 'handled' : 'default';
       },
     },
     {
@@ -173,31 +194,9 @@ export function createManagedPasteRules(options: {
       run: ({ text, editor }) => {
         const content = tsvToTableContent(text);
         if (!content) return 'continue';
-        return editor.commands.insertContent(content)
+        return insertPastedContent(content, editor)
           ? 'handled'
           : 'continue';
-      },
-    },
-    {
-      id: 'rich-html',
-      kind: 'rich-html',
-      priority: 700,
-      match: ({ html }) => html.trim().length > 0 && RICH_HTML_RE.test(html) && !isInternalEditorHtml(html),
-      run: ({ html, editor }) => {
-        const sanitized = sanitizeExternalHtml(html);
-        if (sanitized.trim().length > 0) editor.commands.insertContent(sanitized);
-        return 'handled';
-      },
-    },
-    {
-      id: 'rich-inline-html',
-      kind: 'rich-inline-html',
-      priority: 650,
-      match: ({ html }) => html.trim().length > 0 && hasMeaningfulInlineHtml(html) && !isInternalEditorHtml(html),
-      run: ({ html, editor }) => {
-        const sanitized = sanitizeExternalHtml(html);
-        if (sanitized.trim().length > 0) editor.commands.insertContent(sanitized);
-        return 'handled';
       },
     },
     {

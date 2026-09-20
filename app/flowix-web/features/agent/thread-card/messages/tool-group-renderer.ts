@@ -86,9 +86,13 @@ function getToolGroupLabel(group: ToolGroup, language: AppLanguage): string {
     (tool) => !tool.isLoading && !isFailedToolMessage(tool),
   ).length;
   const key =
-    group.status === "failed"
-      ? "agent.tools.failedSteps"
-      : "agent.tools.completedSteps";
+    group.status === "running"
+      ? completedCount > 0
+        ? "agent.tools.runningSteps"
+        : "agent.tools.processing"
+      : group.status === "failed"
+        ? "agent.tools.failedSteps"
+        : "agent.tools.completedSteps";
   return translate(language, key, {
     count: group.status === "failed" ? group.totalCount : completedCount,
   });

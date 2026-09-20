@@ -129,12 +129,11 @@ cross-feature dependencies are protected by the same public-entrypoint rule.
 Shell panel geometry and visibility transitions are coordinated by
 `useMainPanelController`. It owns the single viewport-width snapshot, left
 navigation resizing, Memo-list resizing, browser-column split geometry,
-collapse coupling, and trackpad swipe transitions. `useResizablePanels`
+collapse coupling. `useResizablePanels`
 receives that viewport snapshot instead of registering a second resize
 listener. Layout rendering consumes the controller's widths and commands and
-does not implement panel constraints itself. The pure swipe transition table
-has a focused unit-test contract so future panel additions cannot silently
-change the existing two-panel gesture semantics.
+does not implement panel constraints itself. Panel visibility is changed
+through explicit controls rather than a global trackpad gesture.
 
 Browser-column chrome consumes Workspace through
 `features/workspace/public/browser-column-api`. The API supplies a derived,

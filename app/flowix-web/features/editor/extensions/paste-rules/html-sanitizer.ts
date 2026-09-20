@@ -15,7 +15,7 @@ const REMOVE_WITH_CONTENT = new Set([
 const ALLOWED_TAGS = new Set([
   'a', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'figcaption',
   'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li',
-  'mark', 'ol', 'p', 'pre', 's', 'span', 'strong', 'sub', 'sup', 'table', 'tbody',
+  'mark', 'ol', 'p', 'pre', 's', 'strong', 'sub', 'sup', 'table', 'tbody',
   'td', 'tfoot', 'th', 'thead', 'tr', 'u', 'ul',
 ]);
 
@@ -130,6 +130,17 @@ function sanitizeChildren(parent: HTMLElement): void {
     }
 
     sanitizeAttributes(element);
+
+    // A span has no meaning in the editor schema by itself. Browsers commonly
+    // add spans for copied presentation styles (font, colour, size, etc.); once
+    // those styles have been removed, keep only the span's children.
+    if (tagName === 'span' && semanticTags.length === 0) {
+      while (element.firstChild) {
+        element.parentNode?.insertBefore(element.firstChild, element);
+      }
+      element.remove();
+      return;
+    }
 
     if (ALLOWED_TAGS.has(tagName) || semanticTags.length > 0) return;
 

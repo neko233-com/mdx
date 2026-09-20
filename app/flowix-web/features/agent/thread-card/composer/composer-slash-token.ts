@@ -66,7 +66,7 @@ export const ComposerSlashToken = Node.create<ComposerSlashTokenOptions>({
       "data-composer-slash": command,
       ...(agentType ? { "data-composer-slash-agent": agentType } : {}),
       class: "agent-thread-card__slash-token-wrapper",
-    }, "\u200B", ["button", {
+    }, ["button", {
       class: slashTokenClass(command),
       type: "button",
     }, `/${command}`], "\u200B"];
@@ -110,12 +110,11 @@ export const ComposerSlashToken = Node.create<ComposerSlashTokenOptions>({
 
   addNodeView() {
     return ({ node, view, getPos }) => {
-      // Keep the atom's visual card separate from its caret landing points.
-      // contentEditable=false prevents the browser from treating the button
-      // as a new editable line when the atom is the last child of the
-      // paragraph. The two text-node spacers mirror noteReference and are
-      // deliberately real TextNodes: a span boundary is not a reliable caret
-      // anchor in Chromium/WebKit.
+      // Keep the atom's visual card separate from its terminal caret landing
+      // point. The trailing text node is deliberately real: a span boundary
+      // is not a reliable caret anchor in Chromium/WebKit. There is no
+      // leading spacer because it makes the native caret render inside the
+      // chip, unlike the other composer reference cards.
       const wrapper = document.createElement("span");
       wrapper.className = "agent-thread-card__slash-token-wrapper";
       wrapper.contentEditable = "false";
@@ -140,11 +139,7 @@ export const ComposerSlashToken = Node.create<ComposerSlashTokenOptions>({
         view.focus();
       });
 
-      wrapper.append(
-        document.createTextNode("\u200B"),
-        button,
-        document.createTextNode("\u200B"),
-      );
+      wrapper.append(button, document.createTextNode("\u200B"));
 
       return {
         dom: wrapper,
@@ -262,10 +257,13 @@ export function insertComposerSlashToken(
 ): void {
   const { selection } = editor.state;
   editor.chain().focus().deleteRange({ from: 1, to: selection.to })
-    .insertContent({
-      type: "composerSlashToken",
-      attrs: { command, agentType: agentType ?? null },
-    }).run();
+    .insertContent([
+      {
+        type: "composerSlashToken",
+        attrs: { command, agentType: agentType ?? null },
+      },
+      { type: "text", text: " " },
+    ]).run();
 }
 
 /** Convert persisted slash chips back into the provider command/prompt line. */

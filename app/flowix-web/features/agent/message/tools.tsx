@@ -258,19 +258,19 @@ export const TOOLS: readonly AgentToolMeta[] = [
     agentType: "codex",
     name: "list_mcp_resources",
     labelKey: "agent.tools.explored",
-    iconPath: TOOL_ICON_PATHS.plug,
+    iconPath: TOOL_ICON_PATHS.eject,
   },
   {
     agentType: "codex",
     name: "list_mcp_resource_templates",
     labelKey: "agent.tools.explored",
-    iconPath: TOOL_ICON_PATHS.plug,
+    iconPath: TOOL_ICON_PATHS.eject,
   },
   {
     agentType: "codex",
     name: "read_mcp_resource",
     labelKey: "agent.tools.explored",
-    iconPath: TOOL_ICON_PATHS.plug,
+    iconPath: TOOL_ICON_PATHS.eject,
   },
   {
     agentType: "codex",
@@ -313,7 +313,7 @@ export const TOOLS: readonly AgentToolMeta[] = [
     agentType: "codex",
     name: "mcp_tool_call",
     labelKey: "agent.tools.mcpToolCall",
-    iconPath: TOOL_ICON_PATHS.plug,
+    iconPath: TOOL_ICON_PATHS.eject,
   },
   {
     agentType: "codex",

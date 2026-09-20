@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { TextHOneIcon, TextHTwoIcon, TextHThreeIcon, TextHFourIcon, TextTIcon, ListBulletsIcon, ListNumbersIcon, CheckSquareIcon, QuotesIcon, CodeIcon } from '@phosphor-icons/react'
+import { TextHOneIcon, TextHTwoIcon, TextHThreeIcon, TextHFourIcon, TextTIcon, ListBulletsIcon, ListNumbersIcon, CheckSquareIcon, QuotesIcon, CodeIcon, TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon } from '@phosphor-icons/react'
 import type { I18nKey } from '@/lib/i18n'
 
 /**
@@ -26,6 +26,13 @@ export type BlockMenuItem =
 export type ListMenuItem = Extract<BlockMenuItem, { kind: 'list' }>
 export type HeadingMenuItem = Extract<BlockMenuItem, { kind: 'heading' | 'paragraph' }>
 export type BlockFormatMenuItem = Extract<BlockMenuItem, { kind: 'block' }>
+export type ImageAlignment = 'left' | 'center' | 'right'
+
+export type ImageMenuItem = {
+  alignment: ImageAlignment
+  icon: ReactNode
+  displayKey: I18nKey
+}
 
 const ICON_PROPS = { size: 16, weight: 'bold' as const }
 
@@ -48,4 +55,10 @@ export const listMenuItems: ListMenuItem[] = [
 export const blockMenuItems: BlockFormatMenuItem[] = [
   { kind: 'block', blockType: 'blockquote', icon: <QuotesIcon {...ICON_PROPS} />, displayKey: 'editor.slash.label.quote' },
   { kind: 'block', blockType: 'codeBlock', icon: <CodeIcon {...ICON_PROPS} />, displayKey: 'editor.slash.label.codeBlock' },
+]
+
+export const imageMenuItems: ImageMenuItem[] = [
+  { alignment: 'left', icon: <TextAlignLeftIcon {...ICON_PROPS} />, displayKey: 'editor.image.align.left' },
+  { alignment: 'center', icon: <TextAlignCenterIcon {...ICON_PROPS} />, displayKey: 'editor.image.align.center' },
+  { alignment: 'right', icon: <TextAlignRightIcon {...ICON_PROPS} />, displayKey: 'editor.image.align.right' },
 ]

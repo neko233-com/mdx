@@ -70,6 +70,7 @@ import menuHistorySvg from '@/assets/menu-icons/history.svg?raw';
 import menuDeleteSvg from '@/assets/menu-icons/delete.svg?raw';
 import {
   canUseNativeContextMenu,
+  nativeMenuWidth,
   nativeMenuPositionBelowEnd,
   popupNativeContextMenu,
   type NativeContextMenuItems,
@@ -890,7 +891,10 @@ export function MemoActions({
   };
 
   const showNativeMoreMenu = async (event: ReactMouseEvent<HTMLButtonElement>) => {
-    const popupPosition = nativeMenuPositionBelowEnd(event.currentTarget, 200);
+    const popupPosition = nativeMenuPositionBelowEnd(
+      event.currentTarget,
+      nativeMenuWidth('documentActions'),
+    );
     const {
       linkIcon,
       copyIcon,

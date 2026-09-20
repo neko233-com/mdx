@@ -8,13 +8,13 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@shared/ui/dropdown-menu';
-import { useI18n, type I18nKey } from '@/lib/i18n';
-import { ArrowLeftToLine, ArrowRightToLine, Palette, Plug, Settings, Type } from 'lucide-react';
-import { StarFourIcon } from '@phosphor-icons/react';
-import { AgentIcon } from '@features/agent/components/agent-icon';
+import { useI18n } from '@/lib/i18n';
+import { ArrowLeftToLine, ArrowRightToLine } from 'lucide-react';
+import { PREFERENCE_TAB_GROUPS } from '@features/preferences/preferences-tab-config';
 import { ShortcutKbd } from '@shared/ui/shortcut-kbd';
 import productLogo from '@/assets/productlogo.png';
 import { cn } from '@/lib/utils';
+import { openUrl } from '@platform/tauri/opener';
 
 interface NotebookIconMenuProps {
   noteNavigationVisible: boolean;
@@ -34,39 +34,8 @@ const NOTEBOOK_ICON_MENU_CLASS =
 const NOTEBOOK_ICON_MENU_ITEM_CLASS =
   'group h-7 items-center justify-start gap-1.5 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]';
 const NOTEBOOK_ICON_MENU_DIVIDER_CLASS = 'mx-1 my-1 h-px bg-[var(--border-popup)] opacity-60';
-
-// 偏好设置分组下的分区直达项, 图标与偏好设置窗口侧栏保持一致。
-const PREFERENCE_SHORTCUTS: {
-  tab: string;
-  labelKey: I18nKey;
-  icon: React.ReactNode;
-}[] = [
-  {
-    tab: 'format',
-    labelKey: 'memo.list.notebookMenu.editorFormat',
-    icon: <Type className="h-4 w-4 shrink-0" />,
-  },
-  {
-    tab: 'theme',
-    labelKey: 'memo.list.notebookMenu.appearanceTheme',
-    icon: <Palette className="h-4 w-4 shrink-0" />,
-  },
-  {
-    tab: 'dsh',
-    labelKey: 'preferences.tabs.dsh',
-    icon: <AgentIcon typeKey="deepseek-harness" alt="" className="h-4 w-4 shrink-0 object-contain" />,
-  },
-  {
-    tab: 'mcp',
-    labelKey: 'preferences.tabs.mcp',
-    icon: <Plug className="h-4 w-4 shrink-0" />,
-  },
-  {
-    tab: 'aiAgent',
-    labelKey: 'memo.list.notebookMenu.otherAgents',
-    icon: <StarFourIcon className="h-4 w-4 shrink-0" weight="regular" />,
-  },
-];
+const OFFICIAL_SITE_URL = 'https://flowix.cc';
+const COMMUNITY_URL = 'https://github.com/text2future/flowix';
 
 /**
  * 中间列顶部的图标 (统一展示产品图标):
@@ -84,6 +53,10 @@ export function NotebookIconMenu({
   const [open, setOpen] = useState(false);
   const openTimerRef = useRef<number | null>(null);
   const closeTimerRef = useRef<number | null>(null);
+  const visiblePreferenceGroups = PREFERENCE_TAB_GROUPS.map((group) => ({
+    ...group,
+    tabs: group.tabs.filter((tab) => !['cloudSync', 'connections', 'tools', 'history'].includes(tab.id)),
+  }));
 
   const cancelOpen = useCallback(() => {
     if (openTimerRef.current !== null) {
@@ -188,26 +161,39 @@ export function NotebookIconMenu({
         </DropdownMenuItem>
         {/* 与筛选/排序等其它下拉窗一致的分割线样式 */}
         <div role="separator" aria-hidden="true" className={NOTEBOOK_ICON_MENU_DIVIDER_CLASS} />
-        <DropdownMenuLabel className="shrink-0 px-2 py-1 text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-          {t('memo.list.notebookMenu.preferences')}
+        {visiblePreferenceGroups.map((group) => (
+          <div key={group.labelKey}>
+            <DropdownMenuLabel className="shrink-0 px-2 py-1 text-xs font-normal uppercase tracking-wider text-[var(--muted-foreground)]">
+              {t(group.labelKey)}
+            </DropdownMenuLabel>
+            {group.tabs.map((tab) => (
+              <DropdownMenuItem
+                key={tab.id}
+                onClick={() => onOpenPreferences(tab.id)}
+                className={NOTEBOOK_ICON_MENU_ITEM_CLASS}
+              >
+                {tab.icon}
+                <span>{t(tab.labelKey)}</span>
+              </DropdownMenuItem>
+            ))}
+          </div>
+        ))}
+        <div role="separator" aria-hidden="true" className={NOTEBOOK_ICON_MENU_DIVIDER_CLASS} />
+        <DropdownMenuLabel className="shrink-0 px-2 py-1 text-xs font-normal uppercase tracking-wider text-[var(--muted-foreground)]">
+          {t('memo.list.notebookMenu.about')}
         </DropdownMenuLabel>
         <DropdownMenuItem
-          onClick={() => onOpenPreferences()}
+          onClick={() => void openUrl(OFFICIAL_SITE_URL)}
           className={NOTEBOOK_ICON_MENU_ITEM_CLASS}
         >
-          <Settings className="h-4 w-4 shrink-0" />
-          <span>{t('preferences.title')}</span>
+          <span>{t('memo.list.notebookMenu.officialWebsite')}</span>
         </DropdownMenuItem>
-        {PREFERENCE_SHORTCUTS.map(({ tab, labelKey, icon }) => (
-          <DropdownMenuItem
-            key={tab}
-            onClick={() => onOpenPreferences(tab)}
-            className={NOTEBOOK_ICON_MENU_ITEM_CLASS}
-          >
-            {icon}
-            <span>{t(labelKey)}</span>
-          </DropdownMenuItem>
-        ))}
+        <DropdownMenuItem
+          onClick={() => void openUrl(COMMUNITY_URL)}
+          className={NOTEBOOK_ICON_MENU_ITEM_CLASS}
+        >
+          <span>{t('memo.list.notebookMenu.community')}</span>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

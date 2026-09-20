@@ -58,6 +58,7 @@ export function computeHandlePosition(
   fontSize: number,
   lineHeight: number,
   requireFocus = true,
+  preferredInfo?: CurrentBlockInfo | null,
 ): HandlePosition | HandleHidden | null {
   const view = editor.view
   if (!view) return null
@@ -66,11 +67,11 @@ export function computeHandlePosition(
   // intentionally blurred while the composer is active, but the card still
   // needs its block handle for moving the card itself.
   const focusedAgentThreadCard = getFocusedAgentThreadCardInfo(editor)
-  if (requireFocus && !view.hasFocus() && !focusedAgentThreadCard) return null
+  if (requireFocus && !view.hasFocus() && !focusedAgentThreadCard && !preferredInfo) return null
 
   const editorDom = view.dom as HTMLElement
   const editorContent = editorDom.closest('.editor-content') as HTMLElement | null
-  const info = focusedAgentThreadCard ?? getBlockInfoForInteraction(editor)
+  const info = preferredInfo ?? focusedAgentThreadCard ?? getBlockInfoForInteraction(editor)
   if (!info || !editorContent) return null
 
   // Anchor the handle on the visible block element. Table node DOM may be the

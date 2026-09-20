@@ -403,12 +403,34 @@ pub fn resolve_external_failure(
 pub fn classify_agent_error(message: &str, source: &str) -> AgentErrorDetails {
     let status_code = extract_status_code(message);
     let lower = message.to_ascii_lowercase();
-    let category = if status_code == Some(429)
+    // A provider may use HTTP 429 for both transient throttling and a hard
+    // plan/quota ceiling. Keep those states distinct: retrying the latter is
+    // noisy and cannot succeed until the user changes the account/plan.
+    let quota_exhausted = lower.contains("token plan")
+        || lower.contains("usage limit")
+        || lower.contains("usage_limit")
+        || lower.contains("quota exceeded")
+        || lower.contains("quota_exceeded")
+        || lower.contains("insufficient balance")
+        || lower.contains("insufficient_balance")
+        || lower.contains("insufficient credit")
+        || lower.contains("balance insufficient")
+        || lower.contains("5 hour")
+        || lower.contains("5-hour")
+        || message.contains("用量上限")
+        || message.contains("套餐")
+        || message.contains("积分补充")
+        || message.contains("积分不足")
+        || message.contains("余额不足")
+        || message.contains("配额耗尽")
+        || message.contains("配额不足")
+        || message.contains("额度不足");
+    let category = if quota_exhausted {
+        "quota_exhausted"
+    } else if status_code == Some(429)
         || lower.contains("rate limit")
         || lower.contains("rate-limited")
-        || lower.contains("usage limit")
         || lower.contains("too many requests")
-        || lower.contains("quota exceeded")
     {
         "rate_limited"
     } else if matches!(status_code, Some(401 | 403))
@@ -463,7 +485,7 @@ pub fn classify_agent_error(message: &str, source: &str) -> AgentErrorDetails {
     };
 
     let retryable = match category {
-        "rate_limited" if lower.contains("usage limit") || lower.contains("5 hour") => false,
+        "quota_exhausted" => false,
         "rate_limited" | "provider" | "network" => true,
         _ => false,
     };
@@ -561,6 +583,25 @@ mod error_tests {
         assert_eq!(details.retry_after.as_deref(), Some("60"));
         assert_eq!(details.request_id.as_deref(), Some("req-2"));
         assert!(details.retryable);
+    }
+
+    #[test]
+    fn separates_hard_quota_exhaustion_from_transient_429s() {
+        let quota = classify_agent_error(
+            "HTTP 429: Token Plan usage limit reached; please top up credits",
+            "protocol",
+        );
+        assert_eq!(quota.category, "quota_exhausted");
+        assert!(!quota.retryable);
+
+        let chinese_quota = classify_agent_error("余额不足，无法继续请求", "protocol");
+        assert_eq!(chinese_quota.category, "quota_exhausted");
+        assert!(!chinese_quota.retryable);
+
+        let transient =
+            classify_agent_error("HTTP 429 Too Many Requests; retry-after: 3", "protocol");
+        assert_eq!(transient.category, "rate_limited");
+        assert!(transient.retryable);
     }
 
     #[test]

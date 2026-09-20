@@ -10,7 +10,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use super::shared::{emit_stream_end_once, ExternalWatchdogFinalizedRun};
-use crate::agent_wire::{AgentChunk, AgentUserMessage};
+use crate::agent_wire::{AgentChunk, AgentErrorDetails, AgentUserMessage};
 
 #[async_trait]
 pub trait ExternalLifecycleEmitter: Send + Sync {
@@ -66,6 +66,28 @@ pub trait ExternalLifecycleEmitter: Send + Sync {
     ) {
         let message = crate::agent_external::safe_user_error_message(&message);
         let error_details = crate::agent_external::classify_agent_error(&message, "runtime");
+        self.emit_structured_run_error(app_handle, thread_id, message, error_details, run_id)
+            .await;
+    }
+
+    /// Emit a provider failure that has already been classified at the
+    /// protocol boundary. Keeping this separate from `emit_run_error` avoids
+    /// losing status/request/quota semantics by parsing the message again at
+    /// the lifecycle boundary.
+    async fn emit_structured_run_error(
+        &self,
+        app_handle: &tauri::AppHandle,
+        thread_id: &str,
+        message: String,
+        mut error_details: AgentErrorDetails,
+        run_id: &str,
+    ) {
+        let message = crate::agent_external::safe_user_error_message(&message);
+        if let Some(upstream_message) = error_details.upstream_message.as_deref() {
+            error_details.upstream_message = Some(crate::agent_external::safe_user_error_message(
+                upstream_message,
+            ));
+        }
         self.emit_and_persist_lifecycle_chunk(
             app_handle,
             &AgentChunk::Error {

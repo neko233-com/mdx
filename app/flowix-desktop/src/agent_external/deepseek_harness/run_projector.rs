@@ -1,7 +1,7 @@
 use super::event_adapter::{append_thinking_segments, append_thinking_segments_with_metadata};
 use super::protocol::{AdaptedEvent, ThinkingSegment, ThinkingTagParser};
 use crate::agent_external::{AgentChunkMetadata, StreamingEmitBuffer};
-use crate::agent_wire::AgentChunk;
+use crate::agent_wire::{AgentChunk, AgentErrorDetails};
 
 pub(crate) enum Projection {
     Buffered,
@@ -13,6 +13,8 @@ pub(crate) enum Projection {
     Completed {
         buffered: Vec<(AgentChunk, AgentChunkMetadata)>,
         reason: Option<String>,
+        error_message: Option<String>,
+        error_details: Option<AgentErrorDetails>,
     },
 }
 
@@ -96,7 +98,11 @@ impl RunEventProjector {
                     chunk,
                 }
             }
-            AdaptedEvent::Completed(reason) => {
+            AdaptedEvent::Completed {
+                reason,
+                error_message,
+                error_details,
+            } => {
                 append_thinking_segments(
                     &mut self.buffer,
                     self.thinking.finish(),
@@ -105,6 +111,8 @@ impl RunEventProjector {
                 Projection::Completed {
                     buffered: self.buffer.flush_with_metadata(),
                     reason,
+                    error_message,
+                    error_details,
                 }
             }
             AdaptedEvent::Ignore => Projection::Buffered,
@@ -167,13 +175,23 @@ mod tests {
             thread_id: "t".into(),
             text: "<think>why".into(),
         }));
-        let Projection::Completed { buffered, reason } =
-            projector.accept(AdaptedEvent::Completed(Some("completed".into())))
+        let Projection::Completed {
+            buffered,
+            reason,
+            error_message,
+            error_details,
+        } = projector.accept(AdaptedEvent::Completed {
+            reason: Some("completed".into()),
+            error_message: None,
+            error_details: None,
+        })
         else {
             panic!("expected completion")
         };
         assert!(!buffered.is_empty());
         assert_eq!(reason.as_deref(), Some("completed"));
+        assert!(error_message.is_none());
+        assert!(error_details.is_none());
     }
 
     #[test]

@@ -635,19 +635,23 @@
   border-top: 1px solid var(--border);
 }
 
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) table tr:first-child td:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):first-child,
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) table tr:first-child th:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):first-child {
   border-top-left-radius: 8px;
 }
 
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) table tr:first-child td:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):last-child,
 .markdown-editor .tiptap:not(.agent-thread-card__composer-editor) table tr:first-child th:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):last-child {
   border-top-right-radius: 8px;
 }
 
-.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) table tr:last-child td:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):first-child {
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) table tr:last-child td:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):first-child,
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) table tr:last-child th:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):first-child {
   border-bottom-left-radius: 8px;
 }
 
-.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) table tr:last-child td:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):last-child {
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) table tr:last-child td:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):last-child,
+.markdown-editor .tiptap:not(.agent-thread-card__composer-editor) table tr:last-child th:where(:not(.agent-thread-card__message, .agent-thread-card__message *)):last-child {
   border-bottom-right-radius: 8px;
 }
 

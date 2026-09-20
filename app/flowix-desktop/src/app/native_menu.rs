@@ -5,6 +5,10 @@ use tauri::{Emitter, Manager};
 
 const SELECT_ALL_MENU_ID: &str = "flowix.select-all";
 const SELECT_ALL_EVENT: &str = "flowix://editor-select-all";
+const UNDO_MENU_ID: &str = "flowix.undo";
+const UNDO_EVENT: &str = "flowix://editor-undo";
+const REDO_MENU_ID: &str = "flowix.redo";
+const REDO_EVENT: &str = "flowix://editor-redo";
 const FILE_SUBMENU_ID: &str = "flowix.file";
 const EDIT_SUBMENU_ID: &str = "flowix.edit";
 const VIEW_SUBMENU_ID: &str = "flowix.view";
@@ -84,23 +88,26 @@ fn menu_labels(language: &str) -> MenuLabels {
 
 /// Installs Flowix's application menu and routes native menu actions.
 ///
-/// Tauri's predefined macOS Select All invokes Cocoa's `selectAll:` responder.
-/// That consumes Cmd+A before WebKit can deliver KeyA to ProseMirror, so this
-/// menu uses a regular item and forwards it to the focused WebView instead.
+/// Tauri's predefined macOS edit items invoke Cocoa's responder chain. That
+/// consumes their accelerators before ProseMirror can handle them, so Select
+/// All, Undo, and Redo use regular items forwarded to the focused WebView.
 pub fn configure(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     builder
         .enable_macos_default_menu(false)
         .menu(build_app_menu)
         .on_menu_event(|app, event| {
-            if event.id().as_ref() != SELECT_ALL_MENU_ID {
-                return;
-            }
+            let event_name = match event.id().as_ref() {
+                SELECT_ALL_MENU_ID => SELECT_ALL_EVENT,
+                UNDO_MENU_ID => UNDO_EVENT,
+                REDO_MENU_ID => REDO_EVENT,
+                _ => return,
+            };
             if let Some(window) = app
                 .webview_windows()
                 .into_values()
                 .find(|window| window.is_focused().unwrap_or(false))
             {
-                let _ = window.emit(SELECT_ALL_EVENT, ());
+                let _ = window.emit(event_name, ());
             }
         })
 }
@@ -169,6 +176,19 @@ fn build_app_menu_for_language(
         true,
         Some("CmdOrCtrl+A"),
     )?;
+    // Cocoa's predefined Undo/Redo items operate on WebKit's native undo
+    // manager. ProseMirror transactions (managed paste, async attachments,
+    // atom deletion) do not live in that stack, so route the accelerators to
+    // the focused WebView and let NativeEditMenuBridge choose the native title
+    // field or the ProseMirror command explicitly.
+    let undo = MenuItem::with_id(app, UNDO_MENU_ID, labels.undo, true, Some("CmdOrCtrl+Z"))?;
+    let redo = MenuItem::with_id(
+        app,
+        REDO_MENU_ID,
+        labels.redo,
+        true,
+        Some("CmdOrCtrl+Shift+Z"),
+    )?;
 
     Menu::with_items(
         app,
@@ -213,8 +233,8 @@ fn build_app_menu_for_language(
                 labels.edit,
                 true,
                 &[
-                    &PredefinedMenuItem::undo(app, Some(labels.undo))?,
-                    &PredefinedMenuItem::redo(app, Some(labels.redo))?,
+                    &undo,
+                    &redo,
                     &PredefinedMenuItem::separator(app)?,
                     &PredefinedMenuItem::cut(app, Some(labels.cut))?,
                     &PredefinedMenuItem::copy(app, Some(labels.copy))?,

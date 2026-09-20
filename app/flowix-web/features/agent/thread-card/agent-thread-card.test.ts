@@ -330,7 +330,7 @@ describe("AgentThreadCard NodeView streaming", () => {
     expect(editor.state.doc.child(2).type.name).toBe("agentThreadCard");
   });
 
-  it("persists the card title and fullscreen state in markdown for reload", async () => {
+  it("persists the card binding and UI state while keeping title legacy-only", async () => {
     const {
       parseAgentThreadCardMarkdown,
       renderAgentThreadCardMarkdown,
@@ -354,16 +354,51 @@ describe("AgentThreadCard NodeView streaming", () => {
       },
     });
 
-    expect(markdown).toContain('title="Investigate refresh regression"');
-    expect(markdown).toContain('fullscreen="true"');
+    expect(markdown).toContain(
+      '<!-- flowix:agent-thread-card {"version":1,"instanceId":"instance-title-reload"',
+    );
+    expect(markdown).not.toContain('"title":"Investigate refresh regression"');
+    expect(markdown).toContain('"fullscreen":true');
     const parsed = parseAgentThreadCardMarkdown({ attrs: markdown }).attrs;
-    expect(parsed.title).toBe("Investigate refresh regression");
+    expect(parsed.title).toBe("");
     expect(parsed.fullscreen).toBe(true);
     expect(parsed.inputImages).toEqual([{
       path: "/tmp/pasted.png",
       mimeType: "image/png",
       name: "pasted.png",
     }]);
+
+    const legacy =
+      '::agent-thread-card{instanceId="legacy-instance" threadId="legacy-thread" title="Legacy card" agentType="codex" collapsed="false" fullscreen="true" inputDraft="hello%20world" inputImages="%5B%5D"}\n';
+    const legacyParsed = parseAgentThreadCardMarkdown({ attrs: legacy }).attrs;
+    expect(legacyParsed.instanceId).toBe("legacy-instance");
+    expect(legacyParsed.title).toBe("Legacy card");
+    expect(legacyParsed.inputDraft).toBe("hello world");
+  });
+
+  it("parses the versioned comment as an Agent Thread Card node", async () => {
+    const { AgentThreadCard } = await import("@features/agent/thread-card");
+    const { Markdown } = await import("@tiptap/markdown");
+    const host = document.createElement("div");
+    document.body.append(host);
+    const source =
+      '<!-- flowix:agent-thread-card {"version":1,"instanceId":"comment-instance","threadId":"comment-thread","title":"Comment card","agentType":"codex","agentRoleMemoId":"","agentRoleName":"","collapsed":false,"fullscreen":false,"inputDraft":"","inputImages":[]} -->\n';
+
+    editor = new Editor({
+      element: host,
+      extensions: [StarterKit, AgentThreadCard, Markdown],
+      content: source,
+      contentType: "markdown",
+    });
+
+    expect(editor.state.doc.firstChild?.type.name).toBe("agentThreadCard");
+    expect(editor.state.doc.firstChild?.attrs.instanceId).toBe("comment-instance");
+    expect(editor.getMarkdown()).toContain(
+      '<!-- flowix:agent-thread-card {"version":1,"instanceId":"comment-instance"',
+    );
+    expect(editor.getMarkdown()).not.toContain('"title":"Comment card"');
+    expect(editor.getMarkdown()).not.toContain('"agentRoleMemoId"');
+    expect(editor.getMarkdown()).not.toContain('"agentRoleName"');
   });
 
   it("does not create a conversation instance during a Tiptap can() dry run", async () => {
@@ -2880,7 +2915,7 @@ describe("AgentThreadCard NodeView streaming", () => {
     expect(cards[0]!.classList.contains("ProseMirror-selectednode")).toBe(false);
   });
 
-  it("blurs a focused card input before outside pointer interactions", async () => {
+  it("preserves card focus for editor controls and blurs for outside pointers", async () => {
     const { AgentThreadCard } =
       await import("@features/agent/thread-card");
     const host = document.createElement("div");
@@ -2888,6 +2923,9 @@ describe("AgentThreadCard NodeView streaming", () => {
     document.body.append(host);
     const outsideButton = document.createElement("button");
     document.body.append(outsideButton);
+    const editorControl = document.createElement("button");
+    editorControl.dataset.editorPreserveFocusOnPointerdown = "true";
+    document.body.append(editorControl);
 
     editor = new Editor({
       element: host,
@@ -2912,6 +2950,15 @@ describe("AgentThreadCard NodeView streaming", () => {
     expect(input).not.toBeNull();
     host.scrollTop = 123;
     input!.focus();
+    expect(document.activeElement).toBe(input);
+
+    editorControl.dispatchEvent(
+      new MouseEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+      }),
+    );
     expect(document.activeElement).toBe(input);
 
     outsideButton.dispatchEvent(

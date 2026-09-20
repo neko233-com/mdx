@@ -51,7 +51,7 @@ function pressUndo(editor: Editor): KeyboardEvent {
   const event = new KeyboardEvent('keydown', {
     key: 'z',
     code: 'KeyZ',
-    metaKey: true,
+    ctrlKey: true,
     bubbles: true,
     cancelable: true,
   });
@@ -320,7 +320,7 @@ describe('MarkdownEditor select all', () => {
 
   });
 
-  it('undoes content pasted directly into the document with Command+Z', async () => {
+  it('undoes content pasted directly into the document with Ctrl+Z', async () => {
     let editor: Editor | null = null;
     await act(async () => {
       root.render(
@@ -347,10 +347,45 @@ describe('MarkdownEditor select all', () => {
     expect(editor!.getMarkdown()).toBe('Before');
   });
 
+  it('unwraps presentation-only spans from a webpage paste and keeps native undo', async () => {
+    let editor: Editor | null = null;
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content="Before "
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    const initial = editor!.getMarkdown();
+    act(() => {
+      editor!.commands.setTextSelection(editor!.state.doc.content.size - 1);
+      editor!.view.focus();
+      pasteClipboard(
+        editor!,
+        'Web text',
+        '<span style="font-family: Arial; color: rgb(20, 30, 40); font-size: 14px">Web text</span>',
+      );
+    });
+
+    expect(editor!.getMarkdown()).toBe('Before Web text');
+    expect(editor!.getMarkdown()).not.toContain('<span');
+    expect(editor!.getMarkdown()).not.toContain('&lt;span');
+    expect(editor!.getHTML()).not.toContain('<span');
+
+    act(() => {
+      pressUndo(editor!);
+    });
+    expect(editor!.getMarkdown()).toBe(initial);
+  });
+
   it.each([
     ['markdown blocks', '\n\n## Pasted heading\n\nPasted body', ''],
     ['rich HTML', 'Bold paste', '<p><strong>Bold paste</strong></p>'],
-  ])('undoes %s handled by managed paste rules with Command+Z', async (_label, text, html) => {
+  ])('undoes %s paste with Ctrl+Z', async (_label, text, html) => {
     let editor: Editor | null = null;
     await act(async () => {
       root.render(
@@ -374,6 +409,171 @@ describe('MarkdownEditor select all', () => {
       pressUndo(editor!);
     });
     expect(editor!.getMarkdown()).toBe('Before');
+  });
+
+  it('keeps history when an external prop echoes a local edit before serialization settles', async () => {
+    let editor: Editor | null = null;
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content="Before"
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      editor!.commands.setTextSelection(editor!.state.doc.content.size - 1);
+      editor!.view.focus();
+      editor!.commands.insertContent(' local');
+      // Simulate the document buffer echoing the just-produced content while
+      // MarkdownEditor's debounced serializer still has the old contentRef.
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={editor!.getMarkdown()}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      pressUndo(editor!);
+    });
+    expect(editor!.getMarkdown()).toBe('Before');
+  });
+
+  it('keeps a managed frontmatter paste as one undo event', async () => {
+    let editor: Editor | null = null;
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={'---\nflowix_key: abc12345\n---\nBefore'}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    const initial = editor!.getMarkdown();
+    act(() => {
+      editor!.commands.setTextSelection(editor!.state.doc.content.size - 1);
+      editor!.view.focus();
+      pasteClipboard(
+        editor!,
+        '---\ntags: [pasted]\n---\nPasted body',
+      );
+    });
+
+    expect(editor!.getMarkdown()).not.toBe(initial);
+    act(() => {
+      pressUndo(editor!);
+    });
+    expect(editor!.getMarkdown()).toBe(initial);
+  });
+
+  it('focuses the body editor for programmatic paste', async () => {
+    let editor: Editor | null = null;
+    const handle = createRef<MarkdownEditorHandle>();
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            ref={handle}
+            content="Before"
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      handle.current?.pasteToBody?.({
+        types: ['text/plain'],
+        text: 'Pasted body',
+        html: '',
+        files: [],
+      });
+    });
+
+    expect(editor!.view.hasFocus()).toBe(true);
+    expect(editor!.getMarkdown()).toContain('Pasted body');
+  });
+
+  it('undoes deletion of an image atom through the ProseMirror history', async () => {
+    let editor: Editor | null = null;
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            content={'Before\n\n![image](https://example.com/image.png)'}
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      let imagePosition: number | null = null;
+      editor!.state.doc.descendants((node, position) => {
+        if (node.type.name === 'image') imagePosition = position;
+      });
+      expect(imagePosition).not.toBeNull();
+      editor!.commands.setNodeSelection(imagePosition!);
+      editor!.view.focus();
+      editor!.commands.deleteSelection();
+    });
+
+    expect(editor!.state.doc.content.content.some((node) => node.type.name === 'image')).toBe(false);
+    act(() => {
+      pressUndo(editor!);
+    });
+    expect(editor!.state.doc.content.content.some((node) => node.type.name === 'image')).toBe(true);
+  });
+
+  it('starts a fresh history domain after an external document replacement', async () => {
+    let editor: Editor | null = null;
+    const handle = createRef<MarkdownEditorHandle>();
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            ref={handle}
+            content="Before"
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    act(() => {
+      editor!.commands.setTextSelection(editor!.state.doc.content.size - 1);
+      editor!.view.focus();
+      editor!.commands.insertContent(' local');
+      handle.current?.flushPendingChanges();
+    });
+
+    await act(async () => {
+      root.render(
+        <ShortcutsProvider overrides={{}}>
+          <MarkdownEditor
+            ref={handle}
+            content="External"
+            onBeforeCreate={(instance) => { editor = instance; }}
+          />
+        </ShortcutsProvider>,
+      );
+    });
+
+    expect(editor!.getMarkdown()).toBe('External');
+    act(() => {
+      pressUndo(editor!);
+    });
+    expect(editor!.getMarkdown()).toBe('External');
   });
 
   it('normalizes multiple empty task placeholders without invalid positions', async () => {

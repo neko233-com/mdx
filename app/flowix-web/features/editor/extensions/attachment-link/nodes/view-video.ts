@@ -4,13 +4,41 @@ import type { ViewMutationRecord } from '@tiptap/pm/view';
 import { NodeSelection } from '@tiptap/pm/state';
 import { Node, InputRule, mergeAttributes, type JSONContent, type MarkdownToken } from '@tiptap/core';
 import { assetMarkdownUrl, assetUrl, decodeStorageKey, isVideoUrl } from '@features/editor/extensions/attachment-link/utils';
+import {
+    parseFlowixMediaStyleComment,
+    parseFlowixMediaStyleSuffix,
+    renderFlowixMediaStyleComment,
+} from '@features/editor/extensions/attachment-link/markdown/media-style';
 
 type VideoAttributes = Record<string, unknown> & {
     src?: unknown;
     title?: unknown;
     storageMode?: unknown;
     storageKey?: unknown;
+    align?: unknown;
 };
+
+type VideoAlignment = 'left' | 'center' | 'right';
+
+function normalizeVideoAlignment(value: unknown): VideoAlignment {
+    return value === 'left' || value === 'right' ? value : 'center';
+}
+
+function parseVideoSuffix(value: string): { raw: string; align: VideoAlignment } {
+    const modern = parseFlowixMediaStyleSuffix(value);
+    if (modern) {
+        return {
+            raw: modern.raw,
+            align: normalizeVideoAlignment(modern.style.align),
+        };
+    }
+
+    const legacy = /^\{align=(left|center|right)\}/.exec(value);
+    return {
+        raw: legacy?.[0] ?? '',
+        align: normalizeVideoAlignment(legacy?.[1]),
+    };
+}
 
 function stringAttribute(value: unknown): string {
     return typeof value === 'string' ? value : '';
@@ -158,6 +186,7 @@ class VideoView implements ProseMirrorNodeView {
 
         wrapper.appendChild(video);
         this.dom = wrapper;
+        this.applyAlignment(node.attrs);
         wrapper.addEventListener('click', this.handleClick);
         // Listen on the editor as well as the native media surface. After a
         // video is selected, the editor normally regains focus; macOS media
@@ -177,6 +206,10 @@ class VideoView implements ProseMirrorNodeView {
         } catch {
             // The media element may not have a seekable source yet.
         }
+    }
+
+    private applyAlignment(attrs: VideoAttributes): void {
+        this.dom.dataset.videoAlign = normalizeVideoAlignment(attrs.align);
     }
 
     private registerMediaSession(): void {
@@ -269,6 +302,7 @@ class VideoView implements ProseMirrorNodeView {
     update(node: ProseMirrorNode): boolean {
         if (node.type.name !== 'videoAttachment') return false;
         this.node = node;
+        this.applyAlignment(node.attrs);
 
         const video = this.dom.querySelector('video');
         if (!video) return true;
@@ -356,6 +390,14 @@ export const VideoAttachment = Node.create({
             mimeType: { default: null },
             storageMode: { default: null },
             storageKey: { default: null },
+            align: {
+                default: 'center',
+                parseHTML: (element: HTMLElement) => normalizeVideoAlignment(element.getAttribute('data-video-align')),
+                renderHTML: (attributes: VideoAttributes) => {
+                    const align = normalizeVideoAlignment(attributes.align);
+                    return align === 'center' ? {} : { 'data-video-align': align };
+                },
+            },
         };
     },
 
@@ -397,6 +439,7 @@ export const VideoAttachment = Node.create({
                         mimeType: element.getAttribute('data-mime-type'),
                         storageMode: element.getAttribute('data-storage-mode'),
                         storageKey: element.getAttribute('data-storage-key'),
+                        align: normalizeVideoAlignment(element.getAttribute('data-video-align')),
                     };
                 },
             },
@@ -404,7 +447,7 @@ export const VideoAttachment = Node.create({
     },
 
     renderHTML({ HTMLAttributes }) {
-        const { storageMode, storageKey, src, fileName, mimeType } = HTMLAttributes;
+        const { storageMode, storageKey, src, fileName, mimeType, align } = HTMLAttributes;
         const videoSrc = storageMode === 'attachment' && storageKey
             ? assetUrl(String(storageKey))
             : src;
@@ -416,7 +459,8 @@ export const VideoAttachment = Node.create({
                 fileName ? { 'data-file-name': fileName } : {},
                 mimeType ? { 'data-mime-type': mimeType } : {},
                 storageMode ? { 'data-storage-mode': storageMode } : {},
-                storageKey ? { 'data-storage-key': storageKey } : {}
+                storageKey ? { 'data-storage-key': storageKey } : {},
+                normalizeVideoAlignment(align) !== 'center' ? { 'data-video-align': normalizeVideoAlignment(align) } : {},
             ),
             ['video', mergeAttributes(
                 { class: 'editor-video-attachment__video is-loaded', controls: 'true' },
@@ -444,10 +488,16 @@ export const VideoAttachment = Node.create({
         name: 'videoAttachment',
         level: 'block' as const,
         start(src: string) {
+            const candidateIndex = src.search(/^<!--[ \t]*flowix:media[ \t]+\{/m);
+            const candidate = candidateIndex >= 0 ? parseFlowixMediaStyleComment(src.slice(candidateIndex)) : null;
+            const commentIndex = candidate && src.slice(candidateIndex + candidate.raw.length).startsWith('[')
+                ? candidateIndex
+                : -1;
             let pos = 0;
+            let mediaIndex = -1;
             while (pos < src.length) {
                 const openBracket = src.indexOf('[', pos);
-                if (openBracket === -1) return -1;
+                if (openBracket === -1) break;
 
                 const closeBracket = src.indexOf(']', openBracket);
                 const openParen = src.indexOf('(', openBracket);
@@ -465,40 +515,49 @@ export const VideoAttachment = Node.create({
 
                 // Check if it's an asset:// video link
                 if (src.startsWith('asset://', openParen + 1)) {
-                    return openBracket;
+                    mediaIndex = openBracket;
+                    break;
                 }
 
                 pos = openBracket + 1;
             }
-            return -1;
+            if (commentIndex < 0) return mediaIndex;
+            if (mediaIndex < 0) return commentIndex;
+            return Math.min(commentIndex, mediaIndex);
         },
         tokenize(src: string) {
-            // src should start with '[' — if not, this isn't a video link
-            if (!src.startsWith('[')) return undefined;
-            const closeBracket = src.indexOf(']');
+            const metadata = parseFlowixMediaStyleComment(src);
+            const source = metadata ? src.slice(metadata.raw.length) : src;
+            // source should start with '[' — if not, this isn't a video link
+            if (!source.startsWith('[')) return undefined;
+            const closeBracket = source.indexOf(']');
             if (closeBracket === -1) return undefined;
-            const openParen = src.indexOf('(', closeBracket);
+            const openParen = source.indexOf('(', closeBracket);
             if (openParen !== closeBracket + 1) return undefined;
             // Find matching ')' handling %29 escape
             let closePos = -1;
-            for (let i = openParen + 1; i < src.length; i++) {
-                const ch = src[i];
-                if (ch === '%' && i + 2 < src.length && src[i + 1] === '2' && src[i + 2] === '9') {
+            for (let i = openParen + 1; i < source.length; i++) {
+                const ch = source[i];
+                if (ch === '%' && i + 2 < source.length && source[i + 1] === '2' && source[i + 2] === '9') {
                     i += 2;
                     continue;
                 }
                 if (ch === ')') {
-                    if (i > 0 && src[i - 1] === '%') continue;
+                    if (i > 0 && source[i - 1] === '%') continue;
                     closePos = i;
                     break;
                 }
             }
             if (closePos === -1) return undefined;
-            const url = src.slice(openParen + 1, closePos);
+            const url = source.slice(openParen + 1, closePos);
             if (!isVideoUrl(url)) return undefined;
-            // raw is precisely [title](url)
-            const raw = src.slice(0, closePos + 1);
-            return { type: 'videoAttachment', raw };
+            // raw is precisely [title](url), plus the optional style metadata.
+            const suffix = parseVideoSuffix(source.slice(closePos + 1));
+            const align = metadata
+                ? normalizeVideoAlignment(metadata.style.align)
+                : suffix.align;
+            const raw = (metadata?.raw ?? '') + source.slice(0, closePos + 1) + suffix.raw;
+            return { type: 'videoAttachment', raw, align };
         },
     },
 
@@ -529,6 +588,11 @@ export const VideoAttachment = Node.create({
         if (closePos === -1) return { type: 'text', text: raw };
         const src = raw.slice(openParen + 1, closePos);
         if (!isVideoUrl(src)) return { type: 'text', text: raw };
+        const metadata = parseFlowixMediaStyleComment(raw);
+        const suffix = parseVideoSuffix(raw.slice(closePos + 1));
+        const align = metadata
+            ? normalizeVideoAlignment(metadata.style.align)
+            : suffix.align;
         return {
             type: 'videoAttachment',
             attrs: {
@@ -536,6 +600,7 @@ export const VideoAttachment = Node.create({
                 title,
                 storageMode: 'attachment',
                 storageKey: decodeStorageKey(src),
+            align,
             },
         };
     },
@@ -545,6 +610,8 @@ export const VideoAttachment = Node.create({
         const videoSrc = storageMode === 'attachment' && storageKey
             ? assetMarkdownUrl(String(storageKey))
             : src || '';
-        return `[${title || ''}](${videoSrc})`;
+        const align = normalizeVideoAlignment(node.attrs?.align);
+        const style = align === 'center' ? {} : { align };
+        return `${renderFlowixMediaStyleComment(style)}[${title || ''}](${videoSrc})`;
     },
 });

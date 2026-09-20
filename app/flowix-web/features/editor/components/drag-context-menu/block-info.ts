@@ -148,10 +148,10 @@ export function getBlockInfoForInteraction(
 }
 
 /**
- * Re-activate the AgentThreadCard before the handle opens its menu or starts
- * a drag. The nested composer intentionally leaves the outer editor selection
- * on the previous text block, so relying on that selection would target the
- * wrong block.
+ * Re-activate the AgentThreadCard after the menu has locked its explicit
+ * interaction target. The nested composer intentionally leaves the outer
+ * editor selection on the previous text block, so relying on that selection
+ * would target the wrong block.
  */
 export function activateAgentThreadCard(
   editor: Editor,

@@ -1,4 +1,5 @@
 import type { JSONContent } from '@tiptap/core';
+import { closeHistory } from '@tiptap/pm/history';
 import type { EditorView } from '@tiptap/pm/view';
 import type { StoredAsset } from '@features/editor/extensions/attachment-link/upload/file-source';
 import { assetUrl } from '@features/editor/extensions/attachment-link/utils';
@@ -90,5 +91,10 @@ export function insertUploadContent(
         insertPos = safeInsertPos + pmNode.nodeSize;
     });
 
+    // File/image paste completes asynchronously. Make the completion itself
+    // one fresh user-visible history event instead of allowing it to merge
+    // with typing immediately before the paste (or with another async edit).
+    closeHistory(tr);
+    tr.setMeta('addToHistory', true);
     view.dispatch(tr);
 }

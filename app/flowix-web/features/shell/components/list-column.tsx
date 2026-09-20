@@ -142,7 +142,6 @@ export function ListColumn({
 
   return (
     <div
-      data-memo-list-swipe-area
       className={cn(
         'relative flex h-full shrink-0 flex-col will-change-[width]',
         isDraggingListDivider

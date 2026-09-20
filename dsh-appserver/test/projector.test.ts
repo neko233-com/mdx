@@ -1,11 +1,41 @@
 import { describe, expect, it } from 'vitest'
 // @ts-ignore production JavaScript module
-import { assistantChunkText, itemFromEvent, messageFromEvent, projectHistoryMessages, projectNotifications, projectTurns, turnEndStatus } from '../src/app-server/adapters/event-projector.js'
+import { assistantChunkText, itemFromEvent, messageFromEvent, projectHistoryMessages, projectNotifications, projectTurns, turnEndError, turnEndStatus } from '../src/app-server/adapters/event-projector.js'
 
 describe('durable event projector', () => {
   it('ends a max-token round as failed so automatic continuation can stop', () => {
     expect(turnEndStatus({ reason: { kind: 'max-tokens' } })).toBe('failed')
     expect(turnEndStatus({ reason: 'max_tokens' })).toBe('failed')
+  })
+
+  it('preserves failed turn errors in live notifications and history', () => {
+    const failure = { reason: { kind: 'error', message: 'HTTP 429 Token Plan usage limit reached' } }
+    expect(turnEndError(failure)).toMatchObject({
+      message: 'HTTP 429 Token Plan usage limit reached',
+      details: { category: 'quota_exhausted', statusCode: 429, retryable: false },
+    })
+
+    const events = [
+      { type: 'turn/start', seq: 1, data: { turn: 1 } },
+      { type: 'user/message', seq: 2, data: { id: 'u1', content: [{ type: 'text', text: 'hello' }] } },
+      { type: 'turn/end', seq: 3, data: { turn: 1, ...failure } },
+    ]
+    const messages = projectHistoryMessages('thread-a', events)
+    expect(messages.at(-1)).toMatchObject({
+      id: 'thread-a-turn-1-error',
+      role: 'assistant',
+      content: 'HTTP 429 Token Plan usage limit reached',
+      errorDetails: { category: 'quota_exhausted', retryable: false },
+    })
+    expect(projectTurns('thread-a', events)[0].items.at(-1)).toMatchObject({
+      id: 'thread-a-turn-1-error',
+      type: 'agentMessage',
+      errorDetails: { category: 'quota_exhausted' },
+    })
+    expect(projectNotifications('thread-a', events).at(-1)).toMatchObject({
+      method: 'turn/completed',
+      params: { turn: { status: 'failed', error: { message: 'HTTP 429 Token Plan usage limit reached' } } },
+    })
   })
 
   it('rebuilds stable turns and items from DSH events', () => {

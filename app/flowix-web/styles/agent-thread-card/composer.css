@@ -704,12 +704,13 @@
 }
 
 /* The slash command is an inline atom, not editable button content. Keep the
- * wrapper as one inline unit and leave its zero-width text nodes available as
- * the caret landing points at the end of a composer paragraph. */
+ * wrapper as one inline unit and leave its trailing zero-width text node as
+ * the caret landing point at the end of a composer paragraph. */
 .markdown-editor .agent-thread-card__slash-token-wrapper {
-  display: inline;
+  display: inline-flex;
+  align-items: center;
   white-space: nowrap;
-  vertical-align: baseline;
+  vertical-align: top;
 }
 
 .markdown-editor .agent-thread-card__slash-token:hover,
@@ -722,7 +723,10 @@
 /* Goal and plan are persistent composer controls. Give them the same compact
  * chip treatment as Skill cards so the selected action is visible at a glance
  * and feels like one removable input unit. */
-.markdown-editor .agent-thread-card__slash-token--control {
+.markdown-editor :is(
+  .agent-thread-card__slash-token--control,
+  .agent-thread-card__folder-token
+) {
   display: inline-flex;
   height: 20px;
   max-width: 100%;
@@ -737,8 +741,14 @@
   vertical-align: top;
 }
 
-.markdown-editor .agent-thread-card__slash-token--control:hover,
-.markdown-editor .agent-thread-card__slash-token--control:focus-visible {
+.markdown-editor :is(
+  .agent-thread-card__slash-token--control,
+  .agent-thread-card__folder-token
+):hover,
+.markdown-editor :is(
+  .agent-thread-card__slash-token--control,
+  .agent-thread-card__folder-token
+):focus-visible {
   border-color: color-mix(in oklch, var(--border) 68%, var(--foreground) 32%);
   background: transparent;
   color: var(--foreground);
@@ -772,32 +782,6 @@
 
 /* Notebook add-dir mention. Keep the chip geometry aligned with Skill cards;
  * the @ prefix makes a selected data folder recognizable at a glance. */
-.markdown-editor .agent-thread-card__folder-token {
-  display: inline-flex;
-  height: 20px;
-  max-width: 100%;
-  align-items: center;
-  padding: 0 0.45rem;
-  border: 1px solid color-mix(in oklch, var(--border) 90%, var(--foreground) 10%);
-  border-radius: 0.35rem;
-  background: transparent;
-  color: var(--foreground);
-  font: inherit;
-  font-size: 0.9em;
-  line-height: 20px;
-  white-space: nowrap;
-  vertical-align: top;
-  cursor: pointer;
-}
-
-.markdown-editor .agent-thread-card__folder-token:hover,
-.markdown-editor .agent-thread-card__folder-token:focus-visible {
-  border-color: color-mix(in oklch, var(--border) 68%, var(--foreground) 32%);
-  background: transparent;
-  color: var(--foreground);
-  outline: none;
-}
-
 /* Notes selected through the @ picker keep the canonical NoteReference node
  * (memo id/path validation and double-click navigation), but use the same
  * compact chip treatment as Skill and folder references inside the composer.

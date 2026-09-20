@@ -14,6 +14,25 @@ export interface NativeContextMenuPosition {
   y: number;
 }
 
+/**
+ * Approximate logical widths of native menus anchored manually.
+ * Tauri/macOS does not expose an NSMenu's size before it is shown, so these
+ * values are kept as one central calibration point.
+ */
+export const NATIVE_MENU_WIDTHS = {
+  conversation: 120,
+  documentActions: 192,
+} as const;
+
+/** Shared vertical gap between the trigger and manually anchored menus. */
+export const NATIVE_MENU_DEFAULT_GAP = 12;
+
+export type NativeMenuWidthPreset = keyof typeof NATIVE_MENU_WIDTHS;
+
+export function nativeMenuWidth(preset: NativeMenuWidthPreset): number {
+  return NATIVE_MENU_WIDTHS[preset];
+}
+
 export function canUseNativeContextMenu(): boolean {
   return isMac() && isTauriDesktopRuntime();
 }
@@ -82,7 +101,7 @@ export async function popupNativeContextMenu(
 export function nativeMenuPositionBelowEnd(
   element: Element,
   estimatedMenuWidth: number,
-  gap = 4,
+  gap = NATIVE_MENU_DEFAULT_GAP,
 ): NativeContextMenuPosition {
   const rect = element.getBoundingClientRect();
   return {

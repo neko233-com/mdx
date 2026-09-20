@@ -1357,6 +1357,14 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     const activeElement = document.activeElement;
     if (!(activeElement instanceof HTMLElement) || !this.ownsNode(activeElement))
       return;
+    // Editor chrome outside the NodeView (for example the shared block drag
+    // handle) owns its pointer lifecycle and deliberately prevents native
+    // focus transfer. Respect that contract at capture time so the nested
+    // composer does not blur before the control can lock its interaction
+    // target, which would otherwise make the handle flicker.
+    const targetElement = getEventElement(event);
+    if (targetElement?.closest('[data-editor-preserve-focus-on-pointerdown="true"]'))
+      return;
     const target = event.target as globalThis.Node | null;
     if (this.ownsNode(target)) return;
 

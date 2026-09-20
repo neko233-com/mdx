@@ -52,7 +52,7 @@ describe("Codex tool-family metadata", () => {
   });
 
   it.each([
-    ["mcp_tool_call", "MCP Tool", TOOL_ICON_PATHS.plug],
+    ["mcp_tool_call", "MCP Tool", TOOL_ICON_PATHS.eject],
     ["file_change", "Edited", TOOL_ICON_PATHS.fileCode],
     ["image_generation", "Image Generation", TOOL_ICON_PATHS.image],
     ["image_generation_call", "Image Generation", TOOL_ICON_PATHS.image],
@@ -135,13 +135,13 @@ describe("Codex function-tool metadata", () => {
   });
 
   it.each([
-    ["list_mcp_resources", "Explored", TOOL_ICON_PATHS.plug],
+    ["list_mcp_resources", "Explored", TOOL_ICON_PATHS.eject],
     [
       "list_mcp_resource_templates",
       "Explored",
-      TOOL_ICON_PATHS.plug,
+      TOOL_ICON_PATHS.eject,
     ],
-    ["read_mcp_resource", "Explored", TOOL_ICON_PATHS.plug],
+    ["read_mcp_resource", "Explored", TOOL_ICON_PATHS.eject],
     ["get_goal", "Get Goal", TOOL_ICON_PATHS.checks],
     ["create_goal", "Create Goal", TOOL_ICON_PATHS.checks],
     ["update_goal", "Update Goal", TOOL_ICON_PATHS.checks],

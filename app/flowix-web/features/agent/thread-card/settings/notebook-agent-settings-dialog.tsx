@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { EjectIcon } from "@phosphor-icons/react";
 import {
   AlertCircle,
   Brain,
@@ -12,7 +13,6 @@ import {
   Plus,
   Puzzle,
   Save,
-  Server,
   Settings2,
   Sparkles,
   Terminal,
@@ -126,7 +126,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (val
   );
 }
 
-function EmptyState({ icon: Icon, title, description, action }: { icon: typeof Server; title: string; description: string; action: React.ReactNode }) {
+function EmptyState({ icon: Icon, title, description, action }: { icon: React.ElementType; title: string; description: string; action: React.ReactNode }) {
   return (
     <div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-10 text-center">
       <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[color-mix(in_oklch,var(--primary)_10%,var(--card))] text-[var(--primary)]">
@@ -151,7 +151,7 @@ function SectionHeader({ title, description, action }: { title: string; descript
   );
 }
 
-function TabButton({ active, icon: Icon, label, onClick }: { active: boolean; icon: typeof Server; label: string; onClick: () => void }) {
+function TabButton({ active, icon: Icon, label, onClick }: { active: boolean; icon: React.ElementType; label: string; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -325,13 +325,13 @@ function McpList({
 }) {
   const entries = Object.entries(workspace.mcpServers);
   if (!entries.length) {
-    return <EmptyState icon={Server} title="还没有 MCP 服务" description="添加一个外部工具或数据源，让笔记本里的 Agent 可以按需使用。" action={<Button variant="default" className="gap-[3px] rounded-lg px-3" onClick={onAdd}><Plus />添加 MCP 服务</Button>} />;
+    return <EmptyState icon={EjectIcon} title="还没有 MCP 服务" description="添加一个外部工具或数据源，让笔记本里的 Agent 可以按需使用。" action={<Button variant="default" className="gap-[3px] rounded-lg px-3" onClick={onAdd}><Plus />添加 MCP 服务</Button>} />;
   }
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_82%,var(--background))]">
       {entries.map(([id, definition]) => (
         <div key={id} className="group flex min-h-[68px] items-center gap-3 border-b border-[var(--divider)] px-4 py-3.5 last:border-b-0">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[color-mix(in_oklch,var(--primary)_9%,var(--card))] text-[var(--primary)]"><Server className="h-4 w-4" /></span>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[color-mix(in_oklch,var(--primary)_9%,var(--card))] text-[var(--primary)]"><EjectIcon className="h-4 w-4" weight="regular" /></span>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2"><span className="truncate text-sm font-medium text-[var(--foreground)]">{id}</span><EnabledStatus enabled={definition.enabled !== false} /></div>
             <div className="mt-1 truncate text-xs text-[var(--muted-foreground)]">{typeof definition.description === "string" && definition.description ? definition.description : displayMcpTransport(definition)}</div>
@@ -1096,7 +1096,7 @@ function NotebookAgentSettingsDialog({ notebookPath, onClose }: { notebookPath: 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           <nav className="flex shrink-0 border-b border-[var(--divider)] bg-[color-mix(in_oklch,var(--card)_45%,transparent)] p-2 md:w-48 md:flex-col md:border-b-0 md:border-r md:p-3" aria-label="项目 AI 设置导航">
             <div className="flex gap-1 md:flex-col md:gap-0 md:space-y-1" role="tablist">
-              <TabButton active={tab === "mcp"} icon={Server} label="MCP" onClick={() => { setTab("mcp"); closeEditor(); }} />
+              <TabButton active={tab === "mcp"} icon={EjectIcon} label="MCP" onClick={() => { setTab("mcp"); closeEditor(); }} />
               <TabButton active={tab === "skills"} icon={Sparkles} label="技能" onClick={() => { setTab("skills"); closeEditor(); }} />
               <TabButton active={tab === "agents"} icon={Bot} label="智能体" onClick={() => { setTab("agents"); closeEditor(); }} />
               <TabButton active={tab === "plugins"} icon={Puzzle} label="插件" onClick={() => { setTab("plugins"); closeEditor(); }} />

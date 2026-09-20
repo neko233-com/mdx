@@ -8,7 +8,7 @@ import { memos as memosClient } from '@platform/tauri/client';
 import { displayTitleFromFilename } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 
-export const TITLE_SAVE_DEBOUNCE_MS = 700;
+export const TITLE_SAVE_DEBOUNCE_MS = 1500;
 
 export interface MemoTitleSessionSnapshot {
   filename: string;
@@ -155,7 +155,7 @@ export function useMemoTitleSession(memoId: string, filename: string) {
       if (session.timer) clearTimeout(session.timer);
       session.timer = setTimeout(() => {
         session.timer = null;
-        void commitMemoTitle(memoId, session);
+        void commitMemoTitle(memoId, session, { restoreEmpty: false });
       }, TITLE_SAVE_DEBOUNCE_MS);
     },
     commit() {
@@ -173,14 +173,20 @@ export function useMemoTitleSession(memoId: string, filename: string) {
   };
 }
 
-async function commitMemoTitle(memoId: string, session: MemoTitleSession): Promise<void> {
+async function commitMemoTitle(
+  memoId: string,
+  session: MemoTitleSession,
+  options: { restoreEmpty: boolean } = { restoreEmpty: true },
+): Promise<void> {
   if (session.timer) clearTimeout(session.timer);
   session.timer = null;
 
   const title = normalizeTitle(session.draft);
   const confirmedTitle = displayTitleFromFilename(session.filename);
   if (!title) {
-    updateSnapshot(session, { draft: confirmedTitle });
+    if (options.restoreEmpty) {
+      updateSnapshot(session, { draft: confirmedTitle });
+    }
     return;
   }
   if (title === normalizeTitle(confirmedTitle)) {

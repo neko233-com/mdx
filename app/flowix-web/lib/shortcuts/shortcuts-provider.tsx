@@ -105,6 +105,20 @@ export function ShortcutsProvider({ overrides, children }: ShortcutsProviderProp
         ) {
           continue;
         }
+
+        // The ProseMirror editor owns its own undo/redo keymap. Let the
+        // event reach it instead of routing the same keystroke through the
+        // application-level handler registry. The registry remains available
+        // for native menu/command-palette invocations, where there is no
+        // ProseMirror keydown event to handle the command.
+        if (
+          (action.id === 'editor.undo' || action.id === 'editor.redo')
+          && e.target instanceof Element
+          && e.target.closest('.ProseMirror')
+        ) {
+          continue;
+        }
+
         // 调用 run — 返回值决定是否 claim 这个按键。
         // 必须在 preventDefault 之前问, 否则无法撤销 prevent。
         const ctx: ActionContext = { scope: action.scope, source: 'key', platform };

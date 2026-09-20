@@ -307,7 +307,11 @@ pub fn app_server_event_route(message: &Value) -> Option<String> {
 pub enum AdaptedEvent {
     Chunk(AgentChunk),
     ChunkWithMetadata(AgentChunk, AgentChunkMetadata),
-    Completed(Option<String>),
+    Completed {
+        reason: Option<String>,
+        error_message: Option<String>,
+        error_details: Option<crate::agent_wire::AgentErrorDetails>,
+    },
     Ignore,
 }
 
@@ -468,16 +472,22 @@ pub fn adapt_event(message: &Value, delivery_thread_id: &str) -> AdaptedEvent {
                     .pointer("/params/turn/status")
                     .and_then(Value::as_str)
                     .unwrap_or("completed");
-                let reason = match status {
-                    "completed" => "completed".to_string(),
-                    "cancelled" => "cancelled".to_string(),
-                    failed => message
-                        .pointer("/params/turn/error/message")
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                        .unwrap_or_else(|| failed.to_string()),
-                };
-                AdaptedEvent::Completed(Some(reason))
+                let failed = !matches!(status, "completed" | "cancelled" | "interrupted");
+                let error_message = failed.then(|| app_server_turn_error_message(message, status));
+                let error_details = error_message
+                    .as_deref()
+                    .map(|value| crate::agent_external::classify_agent_error(value, "protocol"));
+                AdaptedEvent::Completed {
+                    reason: Some(if status == "completed" {
+                        "completed".to_string()
+                    } else if status == "cancelled" || status == "interrupted" {
+                        status.to_string()
+                    } else {
+                        error_message.clone().unwrap_or_else(|| status.to_string())
+                    }),
+                    error_message,
+                    error_details,
+                }
             }
             "item/started" | "item/completed" => {
                 let item = message.pointer("/params/item").unwrap_or(&Value::Null);
@@ -678,12 +688,14 @@ pub fn adapt_event(message: &Value, delivery_thread_id: &str) -> AdaptedEvent {
                 "protocol",
             )),
         }),
-        "run.completed" => AdaptedEvent::Completed(
-            event
+        "run.completed" => AdaptedEvent::Completed {
+            reason: event
                 .get("reason")
                 .and_then(Value::as_str)
                 .map(str::to_string),
-        ),
+            error_message: None,
+            error_details: None,
+        },
         _ => AdaptedEvent::Ignore,
     }
 }
@@ -733,6 +745,30 @@ fn visible_error_message(event: &Value) -> String {
         Some(code) => format!("[{code}] {message}"),
         None => message.to_string(),
     }
+}
+
+fn app_server_turn_error_message(message: &Value, status: &str) -> String {
+    let candidates = [
+        message.pointer("/params/turn/error/message"),
+        message.pointer("/params/turn/error"),
+        message.pointer("/params/turn/reason/message"),
+        message.pointer("/params/turn/reason/error/message"),
+        message.pointer("/params/error/message"),
+        message.pointer("/params/error"),
+    ];
+    for candidate in candidates.into_iter().flatten() {
+        if let Some(value) = candidate.as_str().filter(|value| !value.trim().is_empty()) {
+            return crate::agent_external::safe_user_error_message(value);
+        }
+        if let Some(value) = candidate
+            .get("message")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+        {
+            return crate::agent_external::safe_user_error_message(value);
+        }
+    }
+    format!("DeepSeek Harness turn failed ({status})")
 }
 
 fn text_chunk(event: &Value, thread_id: String, reasoning: bool) -> AdaptedEvent {
@@ -800,6 +836,40 @@ mod tests {
             adapt_event(&event, "thread-1"),
             AdaptedEvent::Chunk(AgentChunk::Text { text, .. }) if text == "hello"
         ));
+    }
+
+    #[test]
+    fn preserves_failed_app_server_turn_error_as_structured_terminal_state() {
+        let event = json!({
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turn": {
+                    "status": "failed",
+                    "error": { "message": "HTTP 429 Token Plan usage limit reached" }
+                }
+            }
+        });
+        let AdaptedEvent::Completed {
+            reason,
+            error_message,
+            error_details,
+        } = adapt_event(&event, "thread-1")
+        else {
+            panic!("expected terminal event");
+        };
+        assert_eq!(
+            reason.as_deref(),
+            Some("HTTP 429 Token Plan usage limit reached")
+        );
+        assert_eq!(
+            error_message.as_deref(),
+            Some("HTTP 429 Token Plan usage limit reached")
+        );
+        let details = error_details.expect("structured error details");
+        assert_eq!(details.category, "quota_exhausted");
+        assert_eq!(details.status_code, Some(429));
+        assert!(!details.retryable);
     }
 
     #[test]

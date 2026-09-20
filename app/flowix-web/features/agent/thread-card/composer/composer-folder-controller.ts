@@ -122,7 +122,13 @@ export class ComposerFolderController {
     this.notesLoading = true;
     this.activeIndex = 0;
     this.isKeyboardNavigation = true;
-    this.openMenu();
+    // Do not flash an empty/loading popup when there are no matching folders.
+    // The async note search will open it later if it finds anything.
+    if (this.filteredFolders.length > 0) {
+      this.openMenu();
+    } else {
+      this.closeMenu();
+    }
     this.scheduleNoteSearch(mention.query);
   }
 
@@ -171,6 +177,7 @@ export class ComposerFolderController {
       const mention = this.getMentionAtCursor();
       if (!mention || mention.query !== query) return;
       this.notes = notes;
+      this.mentionRange = { from: mention.from, to: mention.to };
     } catch (error) {
       if (this.disposed || generation !== this.notesRequestGeneration) return;
       this.notes = [];
@@ -184,7 +191,11 @@ export class ComposerFolderController {
         return;
       }
       this.activeIndex = Math.min(this.activeIndex, itemCount - 1);
-      this.renderMenuItems();
+      if (this.menu) {
+        this.renderMenuItems();
+      } else {
+        this.openMenu();
+      }
     }
   }
 
@@ -214,15 +225,18 @@ export class ComposerFolderController {
       "\n",
       "\n",
     );
-    const match = /(^|\s)@([\p{L}\p{N}._-]*)$/u.exec(textBefore);
+    // `@` is an explicit composer trigger, so it should work immediately
+    // after other text as well as at the beginning of a line. Use the last
+    // `@` before the cursor as the active mention anchor.
+    const match = /@([\p{L}\p{N}._-]*)$/u.exec(textBefore);
     if (!match) return null;
-    const mentionOffset = match.index + match[1].length;
+    const mentionOffset = match.index;
     const from = blockStart + mentionOffset;
     const to = selection.from;
     return {
       from,
       to,
-      query: match[2],
+      query: match[1],
       value: textBefore.slice(mentionOffset),
     };
   }

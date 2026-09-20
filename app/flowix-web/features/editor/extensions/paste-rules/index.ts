@@ -2,6 +2,7 @@ import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { readClipboardSnapshot, type ClipboardSnapshot } from '@features/editor/extensions/paste-rules/clipboard';
 import { createManagedPasteRules, executeManagedPasteRules } from '@features/editor/extensions/paste-rules/rules';
+import { isInternalEditorHtml, sanitizeExternalHtml } from '@features/editor/extensions/paste-rules/html-sanitizer';
 import type { PasteContext } from '@features/editor/extensions/paste-rules/types';
 import type { Editor } from '@tiptap/core';
 
@@ -22,6 +23,12 @@ export const ManagedPasteRules = Extension.create<{ memoId?: string }>({
       new Plugin({
         key: new PluginKey('managedPasteRules'),
         props: {
+          // Clean external webpage markup before ProseMirror parses the
+          // clipboard into a Slice. Keeping the native paste path gives us one
+          // standard transaction, schema-driven parsing, and native history.
+          transformPastedHTML: (html) => isInternalEditorHtml(html)
+            ? html
+            : sanitizeExternalHtml(html),
           handlePaste: (view, event) => {
             const clipboardData = event.clipboardData;
             if (!clipboardData) return false;
@@ -72,6 +79,11 @@ export function pasteClipboardSnapshot(
   snapshot: ClipboardSnapshot,
   memoId?: string,
 ): boolean {
+  // This path is also used when a title paste sends its body remainder into
+  // the editor. Make the target editor explicit for the duration of the
+  // programmatic paste; the title editor may restore its own focus on the
+  // next animation frame according to the independent undo-domain policy.
+  editor.view.focus();
   const event = createSyntheticPasteEvent();
   const ctx: PasteContext = {
     editor,

@@ -371,18 +371,19 @@ describe("continuous tool group rendering", () => {
       .toHaveLength(1);
   });
 
-  it("counts only completed tools in the group title, including zero", () => {
+  it("shows completed progress while a tool group is running", () => {
     const { list } = createRenderedAgentMessageList([
       tool("tool-1", { isLoading: true, content: "" }),
       tool("tool-2", { isLoading: false, content: "done" }),
     ], context());
 
-    expect(list.textContent).toContain("已完成 1 个步骤");
+    expect(list.textContent).toContain("正在处理，已完成 1 步");
 
     const { list: runningList } = createRenderedAgentMessageList([
       tool("running-only", { isLoading: true, content: "" }),
     ], context());
-    expect(runningList.textContent).toContain("已完成 0 个步骤");
+    expect(runningList.textContent).toContain("正在处理");
+    expect(runningList.textContent).not.toContain("已完成");
   });
 
   it("shows the running spinner in the title bar while waiting for assistant content", () => {
@@ -518,7 +519,7 @@ describe("continuous tool group rendering", () => {
     const group = list.firstElementChild as HTMLElement;
 
     expect(group.querySelector(".agent-thread-card__tool-group-header")?.textContent)
-      .toContain("已完成 1 个步骤");
+      .toContain("正在处理，已完成 1 步");
     expect(group.querySelector(".agent-thread-card__tool-group-loading-icon"))
       .toBeNull();
     expect(

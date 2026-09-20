@@ -10,12 +10,17 @@ import {
 } from '@tiptap/core';
 import { invoke } from '@platform/tauri/core';
 import { assetMarkdownUrl, assetUrl, decodeStorageKey } from '@features/editor/extensions/attachment-link/utils';
+import {
+    parseFlowixMediaStyleComment,
+    parseFlowixMediaStyleSuffix,
+    renderFlowixMediaStyleComment,
+} from '@features/editor/extensions/attachment-link/markdown/media-style';
 import { translate, type I18nKey } from '@/lib/i18n';
 import { getCurrentAppLanguage } from '@features/preferences/public/runtime-api';
 
 export { decodeStorageKey };
 
-const MARKDOWN_IMAGE_RE = /^!\[([^\]]*)\]\(([^)\n]+)\)(?:\{width=(\d+(?:\.\d+)?)%\})?/;
+const MARKDOWN_IMAGE_RE = /^!\[([^\]]*)\]\(([^)\n]+)\)/;
 const ASSET_IMAGE_RE = /^(asset:\/\/|https?:\/\/asset\.localhost\/)/i;
 const DEFAULT_IMAGE_WIDTH_PERCENT = 100;
 const MIN_IMAGE_WIDTH_PERCENT = 20;
@@ -29,7 +34,10 @@ type ImageAttributes = Record<string, unknown> & {
     storageMode?: unknown;
     storageKey?: unknown;
     widthPercent?: unknown;
+    align?: unknown;
 };
+
+type ImageAlignment = 'left' | 'center' | 'right';
 
 function stringAttribute(value: unknown): string {
     return typeof value === 'string' ? value : '';
@@ -67,6 +75,32 @@ function normalizeWidthPercent(value: unknown): number | null {
     return Math.round(clamped * 10) / 10;
 }
 
+function normalizeImageAlignment(value: unknown): ImageAlignment {
+    return value === 'left' || value === 'right' ? value : 'center';
+}
+
+function parseImageSuffix(value: string): { raw: string; widthPercent: number | null; align: ImageAlignment } {
+    const modern = parseFlowixMediaStyleSuffix(value);
+    if (modern) {
+        return {
+            raw: modern.raw,
+            widthPercent: normalizeWidthPercent(modern.style.widthPercent),
+            align: normalizeImageAlignment(modern.style.align),
+        };
+    }
+
+    const legacy = /^\{([^}\n]+)\}/.exec(value);
+    const attributes = Object.fromEntries(
+        [...(legacy?.[1] ?? '').matchAll(/(?:^|\s)(width|align)=([^\s}]+)/g)].map(([, key, item]) => [key, item]),
+    );
+    const hasLegacyStyle = Object.keys(attributes).length > 0;
+    return {
+        raw: hasLegacyStyle ? (legacy?.[0] ?? '') : '',
+        widthPercent: normalizeWidthPercent(attributes.width?.replace('%', '')),
+        align: normalizeImageAlignment(attributes.align),
+    };
+}
+
 // 鈹€鈹€鈹€ ImageView 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 class ImageView implements ProseMirrorNodeView {
@@ -82,6 +116,10 @@ class ImageView implements ProseMirrorNodeView {
     private observer: IntersectionObserver | null = null;
     private resizeMoveHandler: ((event: PointerEvent) => void) | null = null;
     private resizeEndHandler: ((event: PointerEvent) => void) | null = null;
+    private resizeBlurHandler: (() => void) | null = null;
+    private resizeVisibilityHandler: (() => void) | null = null;
+    private resizePointerId: number | null = null;
+    private resizeCaptureTarget: HTMLButtonElement | null = null;
     private lastResizeWidthPercent: number | null = null;
     private isResizing = false;
 
@@ -127,7 +165,7 @@ class ImageView implements ProseMirrorNodeView {
         handle.type = 'button';
         handle.className = `editor-image-attachment__resize-handle editor-image-attachment__resize-handle--${side}`;
         handle.setAttribute('aria-label', side === 'left' ? tKey('editor.image.resize.left') : tKey('editor.image.resize.right'));
-        handle.addEventListener('pointerdown', (event) => this.startResize(event, side));
+        handle.addEventListener('pointerdown', (event) => this.startResize(event, side, handle));
         return handle;
     }
 
@@ -242,9 +280,12 @@ class ImageView implements ProseMirrorNodeView {
         const widthPercent = normalizeWidthPercent(attrs.widthPercent) ?? DEFAULT_IMAGE_WIDTH_PERCENT;
         this.dom.style.width = `${widthPercent}%`;
         this.dom.dataset.widthPercent = String(widthPercent);
+        this.dom.dataset.imageAlign = normalizeImageAlignment(attrs.align);
     }
 
-    private startResize(event: PointerEvent, side: 'left' | 'right'): void {
+    private startResize(event: PointerEvent, side: 'left' | 'right', handle: HTMLButtonElement): void {
+        if (this.isResizing || event.button !== 0) return;
+
         event.preventDefault();
         event.stopPropagation();
 
@@ -255,6 +296,9 @@ class ImageView implements ProseMirrorNodeView {
         if (parentRect.width <= 0) return;
 
         this.isResizing = true;
+        this.resizePointerId = event.pointerId;
+        this.resizeCaptureTarget = handle;
+        handle.setPointerCapture(event.pointerId);
         wrapper.classList.add('is-resizing');
         document.body.classList.add('is-image-resizing');
         const initialWidthPercent = normalizeWidthPercent(this.node.attrs.widthPercent) ?? DEFAULT_IMAGE_WIDTH_PERCENT;
@@ -273,18 +317,27 @@ class ImageView implements ProseMirrorNodeView {
         };
 
         this.resizeMoveHandler = (moveEvent: PointerEvent) => {
+            if (moveEvent.pointerId !== this.resizePointerId) return;
             moveEvent.preventDefault();
             updateWidth(moveEvent.clientX);
         };
 
         this.resizeEndHandler = (endEvent: PointerEvent) => {
+            if (endEvent.pointerId !== this.resizePointerId) return;
             endEvent.preventDefault();
             this.finishResize();
         };
 
+        this.resizeBlurHandler = () => this.finishResize();
+        this.resizeVisibilityHandler = () => {
+            if (document.visibilityState !== 'visible') this.finishResize();
+        };
+
         window.addEventListener('pointermove', this.resizeMoveHandler);
-        window.addEventListener('pointerup', this.resizeEndHandler, { once: true });
-        window.addEventListener('pointercancel', this.resizeEndHandler, { once: true });
+        window.addEventListener('pointerup', this.resizeEndHandler);
+        window.addEventListener('pointercancel', this.resizeEndHandler);
+        window.addEventListener('blur', this.resizeBlurHandler);
+        document.addEventListener('visibilitychange', this.resizeVisibilityHandler);
     }
 
     private finishResize(): void {
@@ -300,6 +353,21 @@ class ImageView implements ProseMirrorNodeView {
             window.removeEventListener('pointercancel', this.resizeEndHandler);
             this.resizeEndHandler = null;
         }
+        if (this.resizeBlurHandler) {
+            window.removeEventListener('blur', this.resizeBlurHandler);
+            this.resizeBlurHandler = null;
+        }
+        if (this.resizeVisibilityHandler) {
+            document.removeEventListener('visibilitychange', this.resizeVisibilityHandler);
+            this.resizeVisibilityHandler = null;
+        }
+        const captureTarget = this.resizeCaptureTarget;
+        const pointerId = this.resizePointerId;
+        if (captureTarget && pointerId !== null && captureTarget.hasPointerCapture(pointerId)) {
+            captureTarget.releasePointerCapture(pointerId);
+        }
+        this.resizeCaptureTarget = null;
+        this.resizePointerId = null;
 
         this.dom.classList.remove('is-resizing');
         document.body.classList.remove('is-image-resizing');
@@ -416,6 +484,14 @@ export const ImageAttachment = Node.create({
                     return widthPercent ? { 'data-width-percent': String(widthPercent), style: `width: ${widthPercent}%` } : {};
                 },
             },
+            align: {
+                default: 'center',
+                parseHTML: (element: HTMLElement) => normalizeImageAlignment(element.getAttribute('data-image-align')),
+                renderHTML: (attributes: ImageAttributes) => {
+                    const align = normalizeImageAlignment(attributes.align);
+                    return align === 'center' ? {} : { 'data-image-align': align };
+                },
+            },
         };
     },
 
@@ -434,6 +510,7 @@ export const ImageAttachment = Node.create({
                         storageMode: 'attachment',
                         storageKey: decodeStorageKey(src),
                         widthPercent: null,
+                        align: 'center',
                     }));
                 },
             }),
@@ -456,6 +533,7 @@ export const ImageAttachment = Node.create({
                         storageMode: element.getAttribute('data-storage-mode'),
                         storageKey: element.getAttribute('data-storage-key'),
                         widthPercent: normalizeWidthPercent(element.getAttribute('data-width-percent')),
+                        align: normalizeImageAlignment(element.getAttribute('data-image-align')),
                     };
                 },
             },
@@ -473,6 +551,7 @@ export const ImageAttachment = Node.create({
                         storageMode: element.getAttribute('data-storage-mode'),
                         storageKey: element.getAttribute('data-storage-key'),
                         widthPercent: normalizeWidthPercent(element.getAttribute('data-width-percent')),
+                        align: normalizeImageAlignment(element.getAttribute('data-image-align')),
                     };
                 },
             },
@@ -480,11 +559,12 @@ export const ImageAttachment = Node.create({
     },
 
     renderHTML({ HTMLAttributes }) {
-        const { storageMode, storageKey, src, alt, title, fileName, mimeType, widthPercent } = HTMLAttributes;
+        const { storageMode, storageKey, src, alt, title, fileName, mimeType, widthPercent, align } = HTMLAttributes;
         const imageSrc = storageMode === 'attachment' && storageKey
             ? assetUrl(String(storageKey))
             : src;
         const normalizedWidthPercent = normalizeWidthPercent(widthPercent);
+        const normalizedAlign = normalizeImageAlignment(align);
         return [
             'div',
             mergeAttributes(
@@ -494,7 +574,8 @@ export const ImageAttachment = Node.create({
                 mimeType ? { 'data-mime-type': mimeType } : {},
                 storageMode ? { 'data-storage-mode': storageMode } : {},
                 storageKey ? { 'data-storage-key': storageKey } : {},
-                normalizedWidthPercent ? { 'data-width-percent': String(normalizedWidthPercent), style: `width: ${normalizedWidthPercent}%` } : {}
+                normalizedWidthPercent ? { 'data-width-percent': String(normalizedWidthPercent), style: `width: ${normalizedWidthPercent}%` } : {},
+                normalizedAlign !== 'center' ? { 'data-image-align': normalizedAlign } : {},
             ),
             ['img', mergeAttributes(
                 { class: 'editor-image-attachment__image is-loaded', src: imageSrc, alt: alt || null, title: title || null }
@@ -515,12 +596,37 @@ export const ImageAttachment = Node.create({
         name: 'image',
         level: 'block' as const,
         start(src: string) {
-            return src.indexOf('![');
+            const candidateIndex = src.search(/^<!--[ \t]*flowix:media[ \t]+\{/m);
+            const candidate = candidateIndex >= 0 ? parseFlowixMediaStyleComment(src.slice(candidateIndex)) : null;
+            const commentIndex = candidate && src.slice(candidateIndex + candidate.raw.length).startsWith('![')
+                ? candidateIndex
+                : -1;
+            const imageIndex = src.indexOf('![');
+            if (commentIndex < 0) return imageIndex;
+            if (imageIndex < 0) return commentIndex;
+            return Math.min(commentIndex, imageIndex);
         },
         tokenize(src: string) {
-            const match = MARKDOWN_IMAGE_RE.exec(src);
+            const metadata = parseFlowixMediaStyleComment(src);
+            const source = metadata ? src.slice(metadata.raw.length) : src;
+            const match = MARKDOWN_IMAGE_RE.exec(source);
             if (!match) return undefined;
-            return { type: 'image', raw: match[0], href: match[2], text: match[1], title: null, widthPercent: normalizeWidthPercent(match[3]) };
+            const suffix = parseImageSuffix(source.slice(match[0].length));
+            const widthPercent = metadata
+                ? normalizeWidthPercent(metadata.style.widthPercent)
+                : suffix.widthPercent;
+            const align = metadata
+                ? normalizeImageAlignment(metadata.style.align)
+                : suffix.align;
+            return {
+                type: 'image',
+                raw: (metadata?.raw ?? '') + match[0] + suffix.raw,
+                href: match[2],
+                text: match[1],
+                title: null,
+                widthPercent,
+                align,
+            };
         },
     },
 
@@ -536,6 +642,7 @@ export const ImageAttachment = Node.create({
                 storageMode: null,
                 storageKey: null,
                 widthPercent: token.widthPercent ?? null,
+                align: token.align ?? 'center',
             });
         }
         return helpers.createNode('image', {
@@ -545,17 +652,22 @@ export const ImageAttachment = Node.create({
             storageMode: 'attachment',
             storageKey: decodeStorageKey(token.href),
             widthPercent: token.widthPercent ?? null,
+            align: token.align ?? 'center',
         });
     },
 
     renderMarkdown(node: JSONContent) {
-        const { alt, title, fileName, storageMode, storageKey, src, widthPercent } = node.attrs || {};
+        const { alt, title, fileName, storageMode, storageKey, src, widthPercent, align } = node.attrs || {};
         const imageSrc = storageMode === 'attachment' && storageKey
             ? assetMarkdownUrl(storageKey)
             : src || '';
         const altText = alt || title || fileName || '';
         const normalizedWidthPercent = normalizeWidthPercent(widthPercent);
-        const sizeSuffix = normalizedWidthPercent ? `{width=${normalizedWidthPercent}%}` : '';
-        return `![${altText}](${imageSrc})${sizeSuffix}`;
+        const normalizedAlign = normalizeImageAlignment(align);
+        const style: Record<string, unknown> = {};
+        if (normalizedWidthPercent) style.widthPercent = normalizedWidthPercent;
+        if (normalizedAlign !== 'center') style.align = normalizedAlign;
+        const suffix = renderFlowixMediaStyleComment(style);
+        return `${suffix}![${altText}](${imageSrc})`;
     },
 });

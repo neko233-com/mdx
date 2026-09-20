@@ -11,6 +11,8 @@ import { useAgentSessionStore } from "@features/agent/store/agent-session-store"
 import { buildInitialInstanceRuntimeConfig } from "@features/agent/store/initial-runtime-config";
 import {
   DEFAULT_AGENT_THREAD_CARD_TITLE as DEFAULT_TITLE,
+  FLOWIX_AGENT_THREAD_CARD_MARKER,
+  parseFlowixAgentThreadCardComment,
   parseAgentThreadCardMarkdown,
   renderAgentThreadCardMarkdown,
   encodeAgentThreadCardInputImages,
@@ -289,9 +291,24 @@ export const AgentThreadCard = Node.create({
     name: "agentThreadCard",
     level: "block" as const,
     start(src: string) {
-      return src.indexOf("::agent-thread-card");
+      const commentIndex = src.search(
+        new RegExp(`^<!--[ \\t]*${FLOWIX_AGENT_THREAD_CARD_MARKER}[ \\t]+\\{`, "m"),
+      );
+      const legacyIndex = src.indexOf("::agent-thread-card");
+      if (commentIndex < 0) return legacyIndex;
+      if (legacyIndex < 0) return commentIndex;
+      return Math.min(commentIndex, legacyIndex);
     },
     tokenize(src: string) {
+      const comment = parseFlowixAgentThreadCardComment(src);
+      if (comment) {
+        return {
+          type: "agentThreadCard",
+          raw: comment.raw,
+          metadata: comment.metadata,
+        };
+      }
+
       const match = /^::agent-thread-card\{([^}]*)\}[ \t]*(?:\n|$)/.exec(src);
       if (!match) return undefined;
       return { type: "agentThreadCard", raw: match[0], attrs: match[1] };

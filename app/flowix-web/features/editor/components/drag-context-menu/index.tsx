@@ -9,6 +9,7 @@ import {
 import {
   applyMenuItem,
   deleteBlock,
+  setImageAlignment,
   pinBlock,
   unpinBlock,
 } from '@features/editor/components/drag-context-menu/actions'
@@ -53,11 +54,16 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const ignoreBlur = useRef(false)
   const menuOpenRef = useRef(false)
-  const openMenuRef = useRef<() => void>(() => {})
-  const state = useDragHandlePosition(editor, fontSize, lineHeight, ignoreBlur, menuOpenRef)
-  const handleTap = useCallback(() => openMenuRef.current(), [])
+  const menuTargetRef = useRef<CurrentBlockInfo | null>(null)
+  const menuAnchorRectRef = useRef<DOMRect | null>(null)
+  const openMenuRef = useRef<(anchorRect?: DOMRect) => void>(() => {})
+  const state = useDragHandlePosition(editor, fontSize, lineHeight, ignoreBlur, menuOpenRef, menuTargetRef)
+  const handleTap = useCallback((anchorRect: DOMRect) => openMenuRef.current(anchorRect), [])
 
   const handleBlockDragStart = useCallback(() => {
+    menuOpenRef.current = false
+    menuTargetRef.current = null
+    menuAnchorRectRef.current = null
     setShowMenu(false)
     setIsHovered(false)
     setMenuTarget(null)
@@ -85,6 +91,9 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
   useEffect(() => {
     const handleBlur = () => {
       if (!ignoreBlur.current) {
+        menuOpenRef.current = false
+        menuTargetRef.current = null
+        menuAnchorRectRef.current = null
         setShowMenu(false)
         setIsHovered(false)
         setMenuTarget(null)
@@ -102,7 +111,12 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
 
   const updateMenuPosition = useCallback(() => {
     if (!containerRef.current || !menuRef.current) return
-    const handleRect = containerRef.current.getBoundingClientRect()
+    const liveHandleRect = containerRef.current.getBoundingClientRect()
+    // Prefer live geometry after opening so normal reflows remain anchored;
+    // fall back to the pointerdown snapshot only when the handle is hidden.
+    const handleRect = liveHandleRect.width > 0 && liveHandleRect.height > 0
+      ? liveHandleRect
+      : menuAnchorRectRef.current ?? liveHandleRect
     const menuRect = menuRef.current.getBoundingClientRect()
     const rightSpace = window.innerWidth - handleRect.right - MENU_GAP - MENU_VIEWPORT_PADDING
     const leftSpace = handleRect.left - MENU_GAP - MENU_VIEWPORT_PADDING
@@ -119,6 +133,9 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
   }, [])
 
   const closeMenu = useCallback(() => {
+    menuOpenRef.current = false
+    menuTargetRef.current = null
+    menuAnchorRectRef.current = null
     unpinBlock(editor)
     setMenuPosition(null)
     setIsHovered(false)
@@ -176,6 +193,9 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
 
   const onMenuItem = useCallback((item: BlockMenuItem) => {
     applyMenuItem(editor, item, menuTarget)
+    menuOpenRef.current = false
+    menuTargetRef.current = null
+    menuAnchorRectRef.current = null
     setShowMenu(false)
     // 鼠标停在菜单项上(handle 之外),hover 态必须强制清零;
     // 否则 applyMenuItem 触发 selectionUpdate 把 handle 挪到新位置后,
@@ -189,6 +209,13 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
 
   const onDelete = useCallback(() => {
     deleteBlock(editor, menuTarget)
+    // The menu receives focus while it is open. Restore ProseMirror focus
+    // after the document transaction so the next Mod/Ctrl+Z is owned by the
+    // body history rather than by the menu or another native field.
+    editor.view.focus()
+    menuOpenRef.current = false
+    menuTargetRef.current = null
+    menuAnchorRectRef.current = null
     setShowMenu(false)
     // 同 onMenuItem: 鼠标在菜单项上(handle 外),hover 态强制清零。
     setIsHovered(false)
@@ -197,16 +224,32 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
     unpinBlock(editor)
     setMenuTarget(null)
   }, [editor, menuTarget])
+  const onImageAlign = useCallback((alignment: 'left' | 'center' | 'right') => {
+    setImageAlignment(editor, alignment, menuTarget)
+    menuOpenRef.current = false
+    menuTargetRef.current = null
+    menuAnchorRectRef.current = null
+    setShowMenu(false)
+    setIsHovered(false)
+    unpinBlock(editor)
+    setMenuTarget(null)
+  }, [editor, menuTarget])
   const menuActions = useBlockMenuActions(
     onMenuItem,
     onDelete,
     menuTarget?.typeName,
+    onImageAlign,
   )
 
-  const openMenu = useCallback(() => {
+  const openMenu = useCallback((anchorRect?: DOMRect) => {
     const info = interactionBlockInfoRef.current ?? getBlockInfoForInteraction(editor, state.blockInfo)
     if (!info) return
 
+    // Set this synchronously. The AgentThreadCard composer can blur the outer
+    // editor before React's post-commit effect runs.
+    menuOpenRef.current = true
+    menuTargetRef.current = info
+    menuAnchorRectRef.current = anchorRect ?? containerRef.current?.getBoundingClientRect() ?? null
     setMenuTarget(info)
     interactionBlockInfoRef.current = null
     activateAgentThreadCard(editor, info)
@@ -308,6 +351,7 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
     <>
       <div
         ref={containerRef}
+        data-editor-preserve-focus-on-pointerdown="true"
         role="button"
         aria-haspopup="menu"
         aria-expanded={showMenu}

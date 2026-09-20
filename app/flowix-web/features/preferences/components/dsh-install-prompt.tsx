@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Loader2, Plug } from 'lucide-react';
+import { EjectIcon } from '@phosphor-icons/react';
+import { Check, Loader2 } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { toast } from '@/lib/toast';
 import iconCodex from '@/assets/codex.svg';
@@ -161,7 +162,7 @@ export function DshInstallPrompt({
               <section className="w-1/3 shrink-0" aria-hidden={slide !== 'mcp'}>
                 <DialogHeader className="mb-0">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[color-mix(in_oklch,var(--primary)_12%,transparent)] text-[var(--primary)]">
-                    <Plug className="h-7 w-7" aria-hidden="true" />
+                    <EjectIcon className="h-7 w-7" weight="regular" aria-hidden="true" />
                   </div>
                   <DialogTitle className="mt-3 text-base">
                     {t('preferences.dsh.setup.mcp.title')}

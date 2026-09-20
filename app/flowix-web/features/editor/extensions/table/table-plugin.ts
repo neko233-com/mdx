@@ -1,10 +1,10 @@
 import { Extension } from '@tiptap/core';
-import { Table } from '@tiptap/extension-table';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableRow } from '@tiptap/extension-table-row';
 
 import { createTableEdgeInsertPlugin } from '@features/editor/extensions/table/table-edge-insert-plugin';
+import { FlowixTable } from '@features/editor/extensions/table/flowix-table';
 
 const TABLE_RESIZE_HANDLE_WIDTH = 8;
 const TABLE_CELL_MIN_WIDTH = 80;
@@ -14,7 +14,7 @@ export const TablePlugin = Extension.create({
 
   addExtensions() {
     return [
-      Table.configure({
+      FlowixTable.configure({
         resizable: true,
         handleWidth: TABLE_RESIZE_HANDLE_WIDTH,
         cellMinWidth: TABLE_CELL_MIN_WIDTH,

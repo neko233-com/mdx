@@ -42,6 +42,7 @@ import { buildConversationContextMenuItems } from '@features/agent/menus/convers
 import {
   canUseNativeContextMenu,
   logNativeContextMenuError,
+  nativeMenuWidth,
   nativeMenuPositionBelowEnd,
   popupNativeContextMenu,
 } from '@platform/tauri/native-context-menu';
@@ -52,11 +53,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@shared/ui/dropdown-menu';
-
-// Tauri expects LogicalPosition coordinates. On the Retina macOS window the
-// native menu is about 120 logical px wide (roughly 240 physical px); using
-// 200 here makes the right-aligned popup appear noticeably too far left.
-const CONVERSATION_NATIVE_MENU_WIDTH = 120;
 
 function AgentConversationHeader({ instanceId }: { instanceId: string }) {
   const { t } = useI18n();
@@ -145,7 +141,7 @@ function AgentConversationHeader({ instanceId }: { instanceId: string }) {
     if (!instance) return;
     const popupPosition = nativeMenuPositionBelowEnd(
       event.currentTarget,
-      CONVERSATION_NATIVE_MENU_WIDTH,
+      nativeMenuWidth('conversation'),
     );
     const loadedIcons = await loadNativeMenuIcons([
       'split', 'star', 'pencil', 'archive', 'delete',

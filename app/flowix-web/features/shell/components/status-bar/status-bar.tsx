@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ListTodo } from 'lucide-react';
-import { PlugIcon } from '@phosphor-icons/react';
+import { EjectIcon } from '@phosphor-icons/react';
 import { Tooltip } from '@shared/ui/tooltip';
 import type { Notebook } from '@features/memo/store/memo-store';
 import { NotebookSelectorPopup } from '@features/shell/components/status-bar/notebook-selector-popup';
 import { ProductUpdatePill } from '@features/shell/components/status-bar/product-update-pill';
-import { AgentConversationStatusBar } from '@features/agent/public/shell-api';
+import { AgentConversationStatusBar, AgentIcon } from '@features/agent/public/shell-api';
+import { useAgentRuntimeStore } from '@features/agent/store/agent-runtime-store';
+import { normalizeAgentRuntimeStatus } from '@features/agent/runtime/agent-runtime-status';
 import { useI18n } from '@/lib/i18n';
 import { useDocumentMetricsStore } from '@features/document/store/document-metrics-store';
 import { useMemoStore } from '@features/memo/store/memo-store';
@@ -68,6 +70,46 @@ function DshDownloadProgressIcon({ percent }: { percent: number | null | undefin
         transform="rotate(-90 6 6)"
       />
     </svg>
+  );
+}
+
+function DshRuntimeStatusIndicator({ onOpenPreferences }: { onOpenPreferences: () => void }) {
+  const { t } = useI18n();
+  const dshStatus = useAgentRuntimeStore((state) => state.statusByType['deepseek-harness']);
+  const isChecking = useAgentRuntimeStore((state) => state.isChecking);
+  const refreshIfStale = useAgentRuntimeStore((state) => state.refreshIfStale);
+
+  useEffect(() => {
+    void refreshIfStale();
+  }, [refreshIfStale]);
+
+  const runtimeStatus = normalizeAgentRuntimeStatus(dshStatus, isChecking);
+  const statusText = runtimeStatus.state === 'ready'
+    ? t('agent.status.available')
+    : runtimeStatus.state === 'checking'
+      ? t('agent.status.checking')
+      : runtimeStatus.state === 'unknown'
+        ? t('agent.status.notChecked')
+        : t('agent.status.setup');
+  const label = `${t('agent.types.deepseekHarness.name')} · ${statusText}`;
+  const available = runtimeStatus.state === 'ready';
+
+  return (
+    <Tooltip content={label} side="top">
+      <button
+        type="button"
+        onClick={onOpenPreferences}
+        className="h-full flex items-center justify-center px-1.5 py-0 hover:bg-[var(--muted)]"
+        aria-label={label}
+      >
+        <AgentIcon
+          typeKey="deepseek-harness"
+          alt=""
+          color={available ? 'var(--foreground)' : 'var(--muted-foreground)'}
+          className="h-3.5 w-3.5"
+        />
+      </button>
+    </Tooltip>
   );
 }
 
@@ -229,6 +271,7 @@ export function StatusBar({
             {t('status.characters')} {charCount}
           </span>
         )}
+        <DshRuntimeStatusIndicator onOpenPreferences={onOpenDshPreferences} />
         <Tooltip content={t('preferences.tabs.mcp')} side="top">
           <button
             type="button"
@@ -236,7 +279,7 @@ export function StatusBar({
             className="h-full flex items-center justify-center px-1.5 py-0 hover:bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
             aria-label={t('preferences.tabs.mcp')}
           >
-            <PlugIcon className="w-3.5 h-3.5" />
+            <EjectIcon className="w-3.5 h-3.5" weight="regular" />
           </button>
         </Tooltip>
       </div>

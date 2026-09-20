@@ -1,7 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState, type MutableRefObject, type PointerEvent } from 'react'
 import type { Editor } from '@tiptap/core'
 import {
-  activateAgentThreadCard,
   getBlockInfoForInteraction,
   type CurrentBlockInfo,
 } from '@features/editor/components/drag-context-menu/block-info'
@@ -25,6 +24,7 @@ interface PointerBlockDragState {
   startY: number
   currentX: number
   currentY: number
+  anchorRect: DOMRect
   started: boolean
 }
 
@@ -33,7 +33,7 @@ interface UseBlockDragGestureOptions {
   blockInfo: CurrentBlockInfo | null
   ignoreBlurRef: MutableRefObject<boolean>
   onDragStart?: () => void
-  onTap?: () => void
+  onTap?: (anchorRect: DOMRect) => void
 }
 
 const BLOCK_DRAG_START_THRESHOLD_PX = 4
@@ -134,7 +134,7 @@ export function useBlockDragGesture({
     }
 
     if (!didDrag && !canceled) {
-      onTap?.()
+      onTap?.(drag.anchorRect)
     }
   }, [cancelScheduledMove, editor, ignoreBlurRef, markDragClickSuppressed, onTap, releasePointerCapture, removeDragPreview])
 
@@ -148,7 +148,6 @@ export function useBlockDragGesture({
     didStartDragRef.current = false
     const interactionBlockInfo = getBlockInfoForInteraction(editor, blockInfo)
     blockInfoRef.current = interactionBlockInfo
-    activateAgentThreadCard(editor, interactionBlockInfo)
     ignoreBlurRef.current = true
     pointerDragRef.current = {
       pointerId: event.pointerId,
@@ -156,6 +155,9 @@ export function useBlockDragGesture({
       startY: event.clientY,
       currentX: event.clientX,
       currentY: event.clientY,
+      // Capture geometry before a nested AgentThreadCard composer can blur
+      // the outer editor and temporarily hide the handle.
+      anchorRect: event.currentTarget.getBoundingClientRect(),
       started: false,
     }
     event.currentTarget.setPointerCapture(event.pointerId)

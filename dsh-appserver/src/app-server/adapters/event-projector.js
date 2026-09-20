@@ -635,6 +635,11 @@ export function projectHistoryMessages(
       // representation, so do not render this internal duplicate.
       continue
     }
+    if (event.type === 'turn/end') {
+      const failure = turnEndError(event.data)
+      if (failure) messages.push(historyErrorMessageFromTurnEnd(threadId, event, failure))
+      continue
+    }
     if (event.type === 'tool/call' || event.type === 'tool/result') {
       const message = messageFromEvent(threadId, event, toolNames)
       if (!message) continue
@@ -733,6 +738,101 @@ export function turnEndStatus(data) {
   if (value.includes('max-token') || value.includes('max_token') || value.includes('maxtoken')) return 'failed'
   if (value.includes('fail') || value.includes('error')) return 'failed'
   return 'completed'
+}
+
+// Provider failures are commonly encoded in the turn reason rather than as a
+// separate assistant message. Keep the raw provider wording attached to the
+// terminal turn so live adapters and history can expose the same failure.
+export function turnEndError(data) {
+  if (turnEndStatus(data) !== 'failed') return undefined
+  const candidates = [
+    data?.error,
+    data?.reason?.error,
+    data?.reason,
+    data?.message,
+  ]
+  let raw
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim() && !/^(?:failed|error|max[-_]tokens?)$/iu.test(candidate.trim())) {
+      raw = { message: candidate.trim() }
+      break
+    }
+    if (!candidate || typeof candidate !== 'object') continue
+    const message = candidate.message || candidate.errorMessage || candidate.error?.message || candidate.details?.message
+    if (typeof message === 'string' && message.trim()) {
+      raw = { ...candidate, message: message.trim() }
+      break
+    }
+  }
+  const message = raw?.message || `DeepSeek Harness turn failed (${String(data?.reason?.kind || data?.reason || 'failed')})`
+  const supplied = data?.errorDetails || data?.error_details || raw?.errorDetails || raw?.error_details
+  const statusCode = Number.isSafeInteger(Number(supplied?.statusCode ?? supplied?.status_code ?? raw?.statusCode ?? raw?.status_code))
+    ? Number(supplied?.statusCode ?? supplied?.status_code ?? raw?.statusCode ?? raw?.status_code)
+    : (() => {
+        const match = /\b(?:http\s*(?:status)?\s*)?([45]\d{2})\b/iu.exec(message)
+        return match ? Number(match[1]) : undefined
+      })()
+  const lower = message.toLowerCase()
+  const quota = lower.includes('token plan')
+    || lower.includes('usage limit')
+    || lower.includes('quota exceeded')
+    || lower.includes('insufficient balance')
+    || lower.includes('insufficient credit')
+    || lower.includes('5 hour')
+    || message.includes('用量上限')
+    || message.includes('套餐')
+    || message.includes('积分补充')
+    || message.includes('积分不足')
+    || message.includes('余额不足')
+    || message.includes('配额不足')
+    || message.includes('额度不足')
+  const category = supplied?.category || (quota
+    ? 'quota_exhausted'
+    : statusCode === 429 || lower.includes('rate limit') || lower.includes('too many requests')
+      ? 'rate_limited'
+      : statusCode >= 500 || lower.includes('service unavailable') || lower.includes('internal server error')
+        ? 'provider'
+        : 'unknown')
+  return {
+    message,
+    details: {
+      category,
+      ...(statusCode ? { statusCode } : {}),
+      ...(supplied?.requestId || supplied?.request_id || raw?.requestId || raw?.request_id
+        ? { requestId: supplied?.requestId || supplied?.request_id || raw?.requestId || raw?.request_id }
+        : {}),
+      ...(supplied?.retryAfter || supplied?.retry_after || raw?.retryAfter || raw?.retry_after
+        ? { retryAfter: supplied?.retryAfter || supplied?.retry_after || raw?.retryAfter || raw?.retry_after }
+        : {}),
+      upstreamMessage: supplied?.upstreamMessage || supplied?.upstream_message || message,
+      source: supplied?.source || 'dsh-history',
+      retryable: supplied?.retryable ?? (!quota && (category === 'rate_limited' || category === 'provider')),
+    },
+  }
+}
+
+function historyErrorMessageFromTurnEnd(threadId, event, failure) {
+  return {
+    id: `${threadId}-turn-${event.data?.turn ?? event.seq}-error`,
+    role: 'assistant',
+    content: failure.message,
+    llmContent: null,
+    systemReminderDirectory: null,
+    sourceSeq: Number(event.seq),
+    timestamp: eventTimestamp(event),
+    sourceSequence: Number(event.seq),
+    isLoading: false,
+    toolCallId: null,
+    toolName: null,
+    toolData: null,
+    toolInput: null,
+    toolCalls: null,
+    reasoning: null,
+    isCompleted: true,
+    errorDetails: failure.details,
+    isCollapsed: null,
+    codexTurnId: null,
+  }
 }
 
 function threadItemFromHistoryMessage(message) {
@@ -835,6 +935,16 @@ export function projectTurns(threadId, events, fallbackMessages = [], options = 
     }
     if (event.type === 'turn/end' && target) {
       target.status = turnEndStatus(event.data)
+      const failure = turnEndError(event.data)
+      if (failure) {
+        target.items.push({
+          id: `${threadId}-turn-${number ?? event.seq}-error`,
+          type: 'agentMessage',
+          text: failure.message,
+          sourceSeq: event.seq,
+          errorDetails: failure.details,
+        })
+      }
       current = undefined
     }
   }
@@ -902,7 +1012,8 @@ export function projectNotifications(threadId, events) {
     }
     if (event.type === 'turn/end') {
       const turnId = activeTurnId || stableTurnId(threadId, number ?? event.seq)
-      notifications.push({ jsonrpc: '2.0', method: 'turn/completed', params: { threadId, turnId, sourceSeq: event.seq, turn: { id: turnId, threadId, status: turnEndStatus(event.data), items: [] } } })
+      const failure = turnEndError(event.data)
+      notifications.push({ jsonrpc: '2.0', method: 'turn/completed', params: { threadId, turnId, sourceSeq: event.seq, turn: { id: turnId, threadId, status: turnEndStatus(event.data), items: [], ...(failure ? { error: failure } : {}) } } })
       activeTurnId = undefined
     }
   }

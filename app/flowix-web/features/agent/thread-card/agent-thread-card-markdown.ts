@@ -13,6 +13,49 @@ import { getTokenStyle } from "@features/editor/extensions/codeblock-shiki/shiki
 export const DEFAULT_AGENT_THREAD_CARD_TITLE = "";
 export const AGENT_THREAD_CARD_MESSAGE_CODE_BLOCK_CLASS =
   "agent-thread-card__message-code-block";
+export const FLOWIX_AGENT_THREAD_CARD_METADATA_VERSION = 1;
+export const FLOWIX_AGENT_THREAD_CARD_MARKER = "flowix:agent-thread-card";
+
+interface FlowixAgentThreadCardMetadata {
+  version: number;
+  instanceId: string;
+  threadId: string;
+  agentType: string;
+  collapsed: boolean;
+  fullscreen: boolean;
+  inputDraft: string;
+  inputImages: AgentThreadCardInputImage[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Parse the versioned node metadata comment used for persisted Thread Cards.
+ * The trailing line break belongs to the metadata so the comment cannot be
+ * turned into an empty paragraph by the Markdown parser.
+ */
+export function parseFlowixAgentThreadCardComment(source: string): {
+  raw: string;
+  metadata: Record<string, unknown>;
+} | null {
+  const match = new RegExp(
+    `^<!--[ \\t]*${FLOWIX_AGENT_THREAD_CARD_MARKER}[ \\t]+(\\{[^\\r\\n]*\\})[ \\t]*-->(?:\\r?\\n|$)`,
+  ).exec(source);
+  if (!match) return null;
+
+  try {
+    const metadata = JSON.parse(match[1]) as unknown;
+    if (!isRecord(metadata)) return null;
+    if (metadata.version !== FLOWIX_AGENT_THREAD_CARD_METADATA_VERSION) {
+      return null;
+    }
+    return { raw: match[0], metadata };
+  } catch {
+    return null;
+  }
+}
 
 const AGENT_SHIKI_THEME_DATASET = "agentShikiTheme";
 const AGENT_THEME_CHANGE_EVENT = "app-theme-changed";
@@ -222,6 +265,49 @@ export function decodeAgentThreadCardInputImages(
   } catch {
     return [];
   }
+}
+
+function parseAgentThreadCardInputImages(value: unknown): AgentThreadCardInputImage[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (image): image is AgentThreadCardInputImage =>
+      !!image &&
+      typeof image.path === "string" &&
+      typeof image.mimeType === "string" &&
+      typeof image.name === "string",
+  );
+}
+
+function parseAgentThreadCardNodeAttrs(
+  values: Record<string, unknown>,
+  inputDraftEncoded: boolean,
+): Record<string, unknown> {
+  const stringValue = (value: unknown): string =>
+    typeof value === "string" ? value : "";
+  const inputDraftValue = stringValue(values.inputDraft);
+
+  return {
+    threadId: stringValue(values.threadId) || null,
+    instanceId: stringValue(values.instanceId) || null,
+    title: stringValue(values.title) || DEFAULT_AGENT_THREAD_CARD_TITLE,
+    typeKey: normalizeAgentTypeKey(
+      typeof values.agentType === "string" ? values.agentType : undefined,
+    ),
+    agentRoleMemoId: stringValue(values.agentRoleMemoId) || null,
+    agentRoleName: stringValue(values.agentRoleName) || null,
+    collapsed: values.collapsed === true || values.collapsed === "true",
+    fullscreen: values.fullscreen === true || values.fullscreen === "true",
+    inputDraft: inputDraftValue
+      ? inputDraftEncoded
+        ? decodeAgentThreadCardInputDraft(inputDraftValue)
+        : inputDraftValue
+      : null,
+    inputImages: inputDraftEncoded
+      ? decodeAgentThreadCardInputImages(
+        typeof values.inputImages === "string" ? values.inputImages : undefined,
+      )
+      : parseAgentThreadCardInputImages(values.inputImages),
+  };
 }
 
 type KatexModule = typeof import("katex");
@@ -500,57 +586,46 @@ export function fillWithAgentThreadCardMarkdownHtml(
 }
 
 export function parseAgentThreadCardMarkdown(token: unknown) {
-  const rawAttrs =
-    typeof token === "object" &&
-    token !== null &&
-    "attrs" in token &&
-    typeof token.attrs === "string"
-      ? token.attrs
-      : "";
-  const attrs = parseAgentThreadCardAttrs(
-    rawAttrs,
+  const tokenRecord = isRecord(token) ? token : {};
+  const rawAttrs = typeof tokenRecord.attrs === "string" ? tokenRecord.attrs : "";
+  const comment = parseFlowixAgentThreadCardComment(
+    typeof tokenRecord.metadata === "string"
+      ? tokenRecord.metadata
+      : rawAttrs || (typeof tokenRecord.raw === "string" ? tokenRecord.raw : ""),
   );
+  const metadata = isRecord(tokenRecord.metadata)
+    ? tokenRecord.metadata
+    : comment?.metadata;
+  if (metadata) {
+    return {
+      type: "agentThreadCard",
+      attrs: parseAgentThreadCardNodeAttrs(metadata, false),
+    };
+  }
+
+  const attrs = parseAgentThreadCardAttrs(rawAttrs);
   return {
     type: "agentThreadCard",
-    attrs: {
-      threadId: attrs.threadId || null,
-      instanceId: attrs.instanceId || null,
-      title: attrs.title || DEFAULT_AGENT_THREAD_CARD_TITLE,
-      typeKey: normalizeAgentTypeKey(attrs.agentType as string | undefined),
-      agentRoleMemoId: attrs.agentRoleMemoId || null,
-      agentRoleName: attrs.agentRoleName || null,
-      collapsed: attrs.collapsed === "true",
-      fullscreen: attrs.fullscreen === "true",
-      inputDraft: attrs.inputDraft
-        ? decodeAgentThreadCardInputDraft(attrs.inputDraft)
-        : null,
-      inputImages: decodeAgentThreadCardInputImages(attrs.inputImages),
-    },
+    attrs: parseAgentThreadCardNodeAttrs(attrs, true),
   };
 }
 
 export function renderAgentThreadCardMarkdown(node: {
   attrs?: Record<string, unknown>;
 }): string {
-  const threadId = escapeAgentThreadCardAttr(node.attrs?.threadId as string);
-  const instanceId = escapeAgentThreadCardAttr(node.attrs?.instanceId as string);
-  const title = escapeAgentThreadCardAttr(node.attrs?.title as string);
-  const typeKey = normalizeAgentTypeKey(
-    node.attrs?.typeKey as string | undefined,
-  );
-  const agentRoleMemoId = escapeAgentThreadCardAttr(
-    node.attrs?.agentRoleMemoId as string,
-  );
-  const agentRoleName = escapeAgentThreadCardAttr(
-    node.attrs?.agentRoleName as string,
-  );
-  const collapsed = !!node.attrs?.collapsed;
-  const fullscreen = !!node.attrs?.fullscreen;
-  const inputDraft = escapeAgentThreadCardAttr(
-    encodeAgentThreadCardInputDraft(node.attrs?.inputDraft as string),
-  );
-  const inputImages = escapeAgentThreadCardAttr(
-    encodeAgentThreadCardInputImages(node.attrs?.inputImages as AgentThreadCardInputImage[]),
-  );
-  return `::agent-thread-card{instanceId="${instanceId}" threadId="${threadId}" title="${title}" agentType="${typeKey}" agentRoleMemoId="${agentRoleMemoId}" agentRoleName="${agentRoleName}" collapsed="${collapsed}" fullscreen="${fullscreen}" inputDraft="${inputDraft}" inputImages="${inputImages}"}\n`;
+  const stringValue = (value: unknown): string =>
+    typeof value === "string" ? value : "";
+  const metadata: FlowixAgentThreadCardMetadata = {
+    version: FLOWIX_AGENT_THREAD_CARD_METADATA_VERSION,
+    instanceId: stringValue(node.attrs?.instanceId),
+    threadId: stringValue(node.attrs?.threadId),
+    agentType: normalizeAgentTypeKey(
+      typeof node.attrs?.typeKey === "string" ? node.attrs.typeKey : undefined,
+    ),
+    collapsed: !!node.attrs?.collapsed,
+    fullscreen: !!node.attrs?.fullscreen,
+    inputDraft: stringValue(node.attrs?.inputDraft),
+    inputImages: parseAgentThreadCardInputImages(node.attrs?.inputImages),
+  };
+  return `<!-- ${FLOWIX_AGENT_THREAD_CARD_MARKER} ${JSON.stringify(metadata)} -->\n`;
 }

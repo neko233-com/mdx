@@ -108,7 +108,12 @@ export function AgentConversationStatusBar() {
         const isUnread = !!instance.threadId
           && latestCompletedRunIds[instance.threadId] !== readThroughRunIds[instance.threadId];
         return (
-          <Tooltip key={instance.instanceId} content={title} side="top">
+          <Tooltip
+            key={instance.instanceId}
+            content={title}
+            side="top"
+            className="w-[12em] max-w-[calc(100vw-1rem)] justify-start text-left leading-4 [&>span]:min-w-0 [&>span]:whitespace-normal [&>span]:break-words"
+          >
             <button
               type="button"
               onClick={() => openConversation(instance)}

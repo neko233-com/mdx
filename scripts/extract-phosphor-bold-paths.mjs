@@ -62,6 +62,7 @@ const ICONS = {
 	ArrowsClockwise: 'arrowsClockwise',
 	Eye: 'eye',
 	Plug: 'plug',
+	Eject: 'eject',
 	FileCode: 'fileCode',
 	Image: 'image',
 	Wrench: 'wrench',

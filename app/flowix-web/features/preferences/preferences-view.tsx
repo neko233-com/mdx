@@ -1,8 +1,6 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { PlugIcon, StarFourIcon } from '@phosphor-icons/react';
-import { Cloud, FileCog, Keyboard, Link2, History, SquareTerminal, SquareMousePointer, Type, Palette, Settings } from 'lucide-react';
 import {
 	useUserSettings,
 	useUserSettingsActions,
@@ -24,55 +22,22 @@ import {
 	SectionHeader,
 	type SettingsTab,
 } from '@features/preferences/sections';
+import { PREFERENCE_TAB_GROUPS, PREFERENCE_TABS } from '@features/preferences/preferences-tab-config';
 import { cn } from '@/lib/utils';
 import { Button } from '@shared/ui/button';
 import { WindowsTitlebarControls } from '@shared/window-titlebar-controls';
 import { PreferencesTitlebarMac } from '@features/preferences/preferences-titlebar-mac';
 import { PreferencesTitlebarWin } from '@features/preferences/preferences-titlebar-win';
-import { useI18n, type I18nKey } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n';
 import { getCurrentWindow } from '@platform/tauri/window';
 import { useExperimentalMode } from '@platform/tauri/use-experimental-mode';
-import { AgentIcon } from '@features/agent/components/agent-icon';
 import { useAgentRuntimeStore } from '@features/agent/store/agent-runtime-store';
 
 function isWindowsPlatform(): boolean {
 	return /Windows/i.test(navigator.userAgent) || /Win/i.test(navigator.platform);
 }
 
-type PreferencesTabItem = { id: SettingsTab; labelKey: I18nKey; icon: React.ReactNode };
-
-const TAB_GROUPS: { labelKey: I18nKey; tabs: PreferencesTabItem[] }[] = [
-	{
-		labelKey: 'preferences.groups.features',
-			tabs: [
-			{ id: 'general', labelKey: 'preferences.tabs.general', icon: <Settings className="w-4 h-4" /> },
-			{ id: 'format', labelKey: 'preferences.tabs.format', icon: <Type className="w-4 h-4" /> },
-			{ id: 'theme', labelKey: 'preferences.tabs.theme', icon: <Palette className="w-4 h-4" /> },
-			{ id: 'noteSettings', labelKey: 'preferences.tabs.noteSettings', icon: <FileCog className="w-4 h-4" /> },
-			{ id: 'shortcuts', labelKey: 'preferences.tabs.shortcuts', icon: <Keyboard className="w-4 h-4" /> },
-			{ id: 'history', labelKey: 'preferences.tabs.history', icon: <History className="w-4 h-4" /> },
-			{ id: 'cloudSync', labelKey: 'preferences.tabs.cloudSync', icon: <Cloud className="w-4 h-4" /> },
-		],
-	},
-	{
-		labelKey: 'preferences.groups.ai',
-		tabs: [
-			{
-				id: 'dsh',
-				labelKey: 'preferences.tabs.dsh',
-				icon: <AgentIcon typeKey="deepseek-harness" alt="" className="h-4 w-4 object-contain" />,
-			},
-			// 模型配置整段塞到 aiAgent 的 Flowix 卡片里, 不再独立成 tab。
-			{ id: 'aiAgent', labelKey: 'preferences.tabs.aiAgent', icon: <StarFourIcon className="w-4 h-4" weight="regular" /> },
-			{ id: 'cli', labelKey: 'preferences.tabs.cli', icon: <SquareTerminal className="w-4 h-4" /> },
-			{ id: 'mcp', labelKey: 'preferences.tabs.mcp', icon: <PlugIcon className="w-4 h-4" /> },
-			{ id: 'connections', labelKey: 'preferences.tabs.connections', icon: <Link2 className="w-4 h-4" /> },
-			{ id: 'tools', labelKey: 'preferences.tabs.tools', icon: <SquareMousePointer className="w-4 h-4" /> },
-		],
-	},
-];
-
-const TABS = TAB_GROUPS.flatMap(group => group.tabs);
+const TABS = PREFERENCE_TABS;
 
 function normalizeInitialTab(tab: string): SettingsTab | null {
 	if (tab === 'templates' || tab === 'documentProperties') return 'noteSettings';
@@ -131,7 +96,7 @@ export function PreferencesView({ initialTab }: PreferencesViewProps) {
 	}, [refreshRuntimeStatus]);
 
 	const visibleTabGroups = useMemo(
-		() => TAB_GROUPS.map((group) => ({
+		() => PREFERENCE_TAB_GROUPS.map((group) => ({
 			...group,
 			tabs: experimental
 				? group.tabs

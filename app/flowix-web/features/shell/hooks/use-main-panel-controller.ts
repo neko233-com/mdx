@@ -1,31 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { resolveBrowserColumnLayout } from '@features/shell/hooks/browser-column-layout';
-import { useMacosTrackpadSwipe, type MacosTrackpadSwipeDirection } from '@features/shell/hooks/use-macos-trackpad-swipe';
 import { useResizablePanels } from '@features/shell/hooks/use-resizable-panels';
 
 export type NoteNavigationDrawerPhase = 'closed' | 'open' | 'closing';
-
-type PanelVisibilityState = {
-  memoListVisible: boolean;
-  noteNavigationVisible: boolean;
-};
-
-type PanelVisibilityTransition = Partial<PanelVisibilityState>;
-
-const PANEL_SWIPE_AREA_SELECTOR =
-  '[data-memo-list-swipe-area], [data-workspace-host="main-third"]';
-
-export function isPanelSwipeArea(target: EventTarget | null): boolean {
-  return target instanceof Element && Boolean(target.closest(PANEL_SWIPE_AREA_SELECTOR));
-}
-
-export function resolvePanelSwipeTransition(
-  state: PanelVisibilityState,
-  direction: MacosTrackpadSwipeDirection,
-): PanelVisibilityTransition | null {
-  if (direction === 'left') return state.memoListVisible ? { memoListVisible: false } : null;
-  return state.memoListVisible ? null : { memoListVisible: true };
-}
 
 interface MainPanelControllerOptions {
   browserColumnSplitRatio: number;
@@ -104,24 +81,6 @@ export function useMainPanelController({
     browserColumnLayout.canSplit,
     setBrowserColumnSplitRatio,
   ]);
-
-  const handlePanelSwipe = useCallback((direction: MacosTrackpadSwipeDirection) => {
-    const transition = resolvePanelSwipeTransition(
-      { memoListVisible, noteNavigationVisible },
-      direction,
-    );
-    if (transition?.memoListVisible !== undefined
-      && transition.memoListVisible !== memoListVisible) {
-      setMemoListVisible(transition.memoListVisible);
-    }
-  }, [
-    memoListVisible,
-    setMemoListVisible,
-  ]);
-  useMacosTrackpadSwipe({
-    onSwipe: handlePanelSwipe,
-    isSwipeArea: isPanelSwipeArea,
-  });
 
   const openNoteNavigation = useCallback(() => {
     setNoteNavigationPhase('open');
