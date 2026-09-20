@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/react/shallow';
 import {
   ArrowDownUp,
   Check,
+  Folder,
   LayoutList,
   ListFilter,
   SquarePen,
@@ -171,7 +172,6 @@ export function MemoList({
   const [localNavigationDrawerOpen, setLocalNavigationDrawerOpen] = useState(false);
   const [colorSubmenuOpen, setColorSubmenuOpen] = useState(false);
   const [sortSubmenuOpen, setSortSubmenuOpen] = useState(false);
-  const [viewSubmenuOpen, setViewSubmenuOpen] = useState(false);
   const [createFolderRequest, setCreateFolderRequest] = useState<{
     id: number;
     parentPath: string;
@@ -535,11 +535,10 @@ export function MemoList({
     [setActiveSort, setNotebookDropdownOpen],
   );
 
-  // 视图二级弹窗的选中回调。
-  const handleViewFromSubmenu = useCallback(
+  // 视图选择器位于一级菜单底部，点击后直接切换并关闭菜单。
+  const handleViewChange = useCallback(
     (view: 'detailed' | 'folders') => {
       void setMemoListViewPreference(view);
-      setViewSubmenuOpen(false);
       setNotebookDropdownOpen(false);
     },
     [setNotebookDropdownOpen],
@@ -550,7 +549,6 @@ export function MemoList({
     if (!notebookDropdownOpen) {
       setColorSubmenuOpen(false);
       setSortSubmenuOpen(false);
-      setViewSubmenuOpen(false);
     }
   }, [notebookDropdownOpen]);
 
@@ -707,11 +705,6 @@ export function MemoList({
       : activeSort === 'filenameDesc'
         ? t('memo.list.sortFilenameDesc')
         : t('memo.list.sortCreated');
-  const activeView = memoListView;
-  const viewValueAdornment = activeView === 'folders'
-    ? t('memo.list.viewFolders')
-    : t('memo.list.viewDetailed');
-
   return (
     <div className="memo-list relative flex h-full min-w-0 select-none flex-col bg-[var(--list-bg)]">
       <MemoListDataLoader
@@ -754,6 +747,47 @@ export function MemoList({
             onOpenChange={setNotebookDropdownOpen}
             showClear={hasActiveFilter}
             onClear={handleClearFilter}
+            leadingContent={(
+              <div className="mb-1 border-b border-[var(--border)] pb-1">
+            <div
+              className="grid grid-cols-2 gap-0.5"
+              role="group"
+              aria-label={t('memo.list.viewLabel')}
+            >
+              {(['detailed', 'folders'] as const).map((view) => {
+                const active = memoListView === view;
+                const Icon = view === 'detailed' ? LayoutList : Folder;
+                return (
+                  <button
+                    key={view}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => handleViewChange(view)}
+                    className={cn(
+                      'group flex h-12 min-w-0 flex-col items-center justify-center gap-1.5 rounded-lg px-1 text-[12px] leading-tight transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]',
+                      active
+                        ? 'text-[var(--foreground)]'
+                        : 'text-[var(--muted-foreground)]',
+                    )}
+                  >
+                    <Icon
+                      aria-hidden="true"
+                      className={cn(
+                        'h-4 w-4',
+                        active ? 'text-[var(--brand)]' : 'text-current',
+                      )}
+                    />
+                    <span className="truncate">
+                      {view === 'detailed'
+                        ? t('memo.list.viewDetailed')
+                        : t('memo.list.viewFolders')}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+              </div>
+            )}
           >
           <div className="space-y-0.5">
             {/* Filter — 二级弹窗 (本周 / 本月 / 颜色组) */}
@@ -893,48 +927,6 @@ export function MemoList({
               onCloseMenu={() => setNotebookDropdownOpen(false)}
             />
 
-            {/* View — 二级弹窗 */}
-            <MemoNavigationSubmenu
-              label={t('memo.list.viewLabel')}
-              icon={<LayoutList className="h-4 w-4 shrink-0" aria-hidden="true" />}
-              open={viewSubmenuOpen}
-              hideHeader
-              emptyText=""
-              loadingText=""
-              valueAdornment={(
-                <span className="max-w-[100px] truncate text-xs text-[var(--muted-foreground)]">
-                  {viewValueAdornment}
-                </span>
-              )}
-              submenuContent={(
-                <div className="flex flex-col space-y-0.5">
-                  <div className="px-2 pb-1 pt-1 text-xs font-normal leading-[1.2] text-[var(--muted-foreground)]">
-                    {t('memo.list.viewLabel')}
-                  </div>
-                  {(['detailed', 'folders'] as const).map((view) => (
-                    <button
-                      key={view}
-                      type="button"
-                      onClick={() => handleViewFromSubmenu(view)}
-                      onMouseDown={(event) => event.preventDefault()}
-                      className={cn(
-                        'memo-navigation-submenu-item mention-note-item cursor-pointer hover:bg-[var(--brand)] focus-visible:bg-[var(--brand)] focus-visible:outline-none',
-                        activeView === view && 'is-selected',
-                      )}
-                    >
-                      <span className="mention-note-title">
-                        {view === 'detailed'
-                          ? t('memo.list.viewDetailed')
-                          : t('memo.list.viewFolders')}
-                      </span>
-                      {activeView === view && <Check className="w-4 h-4 text-[var(--brand)]" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-              onOpenChange={setViewSubmenuOpen}
-              onCloseMenu={() => setNotebookDropdownOpen(false)}
-            />
           </div>
           </MemoNavigationDropdown>
         </div>

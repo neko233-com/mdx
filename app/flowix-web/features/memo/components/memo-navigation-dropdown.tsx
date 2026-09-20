@@ -199,6 +199,7 @@ interface MemoNavigationDropdownProps {
   title: ReactNode;
   titleTooltip?: string;
   ariaLabel: string;
+  leadingContent?: ReactNode;
   children?: ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -218,6 +219,7 @@ export function MemoNavigationDropdown({
   title,
   titleTooltip,
   ariaLabel,
+  leadingContent,
   children,
   open,
   onOpenChange,
@@ -311,6 +313,7 @@ export function MemoNavigationDropdown({
         )}
       </div>
       <DropdownMenuContent align="start" side="bottom" className={MEMO_NAVIGATION_MENU_CLASS}>
+        {leadingContent}
         <DropdownMenuItem
           onClick={() => handleNavigate('all')}
           className={cn(

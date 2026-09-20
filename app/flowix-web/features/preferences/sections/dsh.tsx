@@ -204,8 +204,8 @@ export function DshSettingsSection({ autoUpdate = false }: { autoUpdate?: boolea
 
 function DshDevRuntimeNotice({ onContinue }: { onContinue: () => void }) {
   return (
-    <div className="flex flex-1 items-center justify-center px-1 py-2">
-      <div className="w-full max-w-xl rounded-2xl border border-[var(--divider)] bg-[var(--card)] p-8 text-center shadow-sm">
+    <div className="flex flex-1 items-start justify-center px-1 py-2">
+      <div className="flex h-[500px] w-full max-w-xl flex-col rounded-2xl border border-[var(--divider)] bg-[var(--card)] p-8 text-center shadow-sm">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[color-mix(in_oklch,var(--primary)_12%,transparent)] text-[var(--primary)]">
           <AgentIcon typeKey="deepseek-harness" alt="" className="h-8 w-8" />
         </div>
@@ -213,9 +213,11 @@ function DshDevRuntimeNotice({ onContinue }: { onContinue: () => void }) {
         <p className="mt-2 text-sm text-[var(--muted-foreground)]">
           开发版本使用本地 dsh-host 和 runtime，不下载或安装远程 DSH。
         </p>
-        <Button type="button" className="mt-8" onClick={onContinue}>
-          继续使用本地 DSH
-        </Button>
+        <div className="mt-auto pt-8">
+          <Button type="button" onClick={onContinue}>
+            继续使用本地 DSH
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -255,8 +257,8 @@ function DshInstallPage({
   };
 
   return (
-    <div className="flex flex-1 items-center justify-center px-1 py-2">
-      <div className="w-full max-w-xl rounded-2xl border border-[var(--divider)] bg-[var(--card)] p-8 text-center shadow-sm">
+    <div className="flex flex-1 items-start justify-center px-1 py-2">
+      <div className="flex h-[500px] w-full max-w-xl flex-col rounded-2xl border border-[var(--divider)] bg-[var(--card)] p-8 text-center shadow-sm">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[color-mix(in_oklch,var(--primary)_12%,transparent)] text-[var(--primary)]">
           <AgentIcon typeKey="deepseek-harness" alt="" className="h-8 w-8" />
         </div>
@@ -272,7 +274,7 @@ function DshInstallPage({
           </p>
         )}
 
-        <div className="mt-[60px] flex justify-center gap-2">
+        <div className="mt-auto flex justify-center gap-2 pt-8">
           <Button type="button" onClick={() => void startInstall()} disabled={busy}>
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
             {busy ? t(progress?.phase === 'installing' ? 'preferences.dsh.setup.installing' : 'preferences.dsh.setup.downloading') : t('preferences.dsh.setup.install')}
