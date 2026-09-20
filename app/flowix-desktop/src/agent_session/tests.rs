@@ -8,7 +8,55 @@ mod tests {
         UpsertAgentConversationInstance,
     };
     use crate::agent_types::AgentId;
+    use crate::agent_wire::AgentErrorDetails;
     use rusqlite::params;
+    use serde_json::json;
+
+    #[test]
+    fn chat_history_error_details_use_frontend_casing() {
+        let mut message: ChatMessage = serde_json::from_value(json!({
+            "id": "history-error",
+            "role": "assistant",
+            "content": "quota exceeded",
+            "timestamp": "2026-06-21T00:00:00Z",
+            "errorDetails": {
+                "category": "quota_exhausted",
+                "statusCode": 429,
+                "requestId": "req-1",
+                "retryAfter": "60",
+                "upstreamMessage": "quota exceeded",
+                "source": "dsh-history",
+                "retryable": false
+            }
+        }))
+        .expect("camelCase history error details should deserialize");
+
+        let details = message
+            .error_details
+            .as_ref()
+            .expect("history error details should be retained");
+        assert_eq!(details.status_code, Some(429));
+        assert_eq!(details.request_id.as_deref(), Some("req-1"));
+        assert_eq!(details.retry_after.as_deref(), Some("60"));
+        assert_eq!(details.upstream_message.as_deref(), Some("quota exceeded"));
+        assert_eq!(details.source.as_deref(), Some("dsh-history"));
+
+        message.error_details = Some(AgentErrorDetails {
+            category: "quota_exhausted".to_string(),
+            status_code: Some(429),
+            request_id: Some("req-1".to_string()),
+            retry_after: Some("60".to_string()),
+            exit_code: None,
+            upstream_message: Some("quota exceeded".to_string()),
+            source: Some("dsh-history".to_string()),
+            retryable: false,
+        });
+        let encoded = serde_json::to_value(message).expect("history message should serialize");
+        assert_eq!(encoded["errorDetails"]["statusCode"], 429);
+        assert_eq!(encoded["errorDetails"]["requestId"], "req-1");
+        assert_eq!(encoded["errorDetails"]["upstreamMessage"], "quota exceeded");
+        assert!(encoded["errorDetails"].get("status_code").is_none());
+    }
 
     fn make_message(id: &str, role: &str, content: &str) -> ChatMessage {
         ChatMessage {

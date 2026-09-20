@@ -3,6 +3,84 @@ use serde::{Deserialize, Serialize};
 use crate::agent_types::AgentId;
 use crate::agent_wire::{AgentErrorDetails, AgentMessageAttachment};
 
+// `AgentErrorDetails` is also used by the raw `agent-chunk` event, whose
+// public wire contract is snake_case. ChatMessage, however, is an IPC history
+// payload and uses camelCase. Keep the shared Rust value type while adapting
+// its nested representation at this boundary. Accepting both spellings keeps
+// older persisted/history payloads readable during rollout.
+mod chat_error_details_serde {
+    use super::AgentErrorDetails;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Clone, Deserialize, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct WireErrorDetails {
+        category: String,
+        #[serde(default, alias = "status_code")]
+        status_code: Option<u16>,
+        #[serde(default, alias = "request_id")]
+        request_id: Option<String>,
+        #[serde(default, alias = "retry_after")]
+        retry_after: Option<String>,
+        #[serde(default, alias = "exit_code")]
+        exit_code: Option<i32>,
+        #[serde(default, alias = "upstream_message")]
+        upstream_message: Option<String>,
+        #[serde(default)]
+        source: Option<String>,
+        #[serde(default)]
+        retryable: bool,
+    }
+
+    impl From<&AgentErrorDetails> for WireErrorDetails {
+        fn from(value: &AgentErrorDetails) -> Self {
+            Self {
+                category: value.category.clone(),
+                status_code: value.status_code,
+                request_id: value.request_id.clone(),
+                retry_after: value.retry_after.clone(),
+                exit_code: value.exit_code,
+                upstream_message: value.upstream_message.clone(),
+                source: value.source.clone(),
+                retryable: value.retryable,
+            }
+        }
+    }
+
+    impl From<WireErrorDetails> for AgentErrorDetails {
+        fn from(value: WireErrorDetails) -> Self {
+            Self {
+                category: value.category,
+                status_code: value.status_code,
+                request_id: value.request_id,
+                retry_after: value.retry_after,
+                exit_code: value.exit_code,
+                upstream_message: value.upstream_message,
+                source: value.source,
+                retryable: value.retryable,
+            }
+        }
+    }
+
+    pub fn serialize<S>(value: &Option<AgentErrorDetails>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        value
+            .as_ref()
+            .map(WireErrorDetails::from)
+            .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<AgentErrorDetails>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Option::<WireErrorDetails>::deserialize(deserializer)
+            .map(|value| value.map(AgentErrorDetails::from))
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadInfo {
@@ -47,7 +125,11 @@ pub struct ChatMessage {
     pub tool_calls: Option<serde_json::Value>,
     pub reasoning: Option<String>,
     pub is_completed: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "chat_error_details_serde"
+    )]
     pub error_details: Option<AgentErrorDetails>,
     pub is_collapsed: Option<bool>,
     /// Codex app-server Turn that owns this message. Used by provider-specific

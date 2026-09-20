@@ -37,7 +37,7 @@ await rm(bundle, { recursive: true, force: true })
 await mkdir(bundle, { recursive: true })
 await run(process.execPath, [
   corepack, `pnpm@${pnpmVersion}`, '--filter', '@deepseek-ai/dsh', 'deploy', '--legacy', '--prod',
-  '--config.node-linker=hoisted', '--config.auto-install-peers=false', runtime,
+  '--config.node-linker=hoisted', '--config.auto-install-peers=false', '--config.allowUnusedPatches=true', runtime,
 ], upstream)
 await materializeLinks(resolve(runtime, 'node_modules'))
 await materializeWorkspaceRoots(runtime, upstream)
