@@ -16,6 +16,13 @@ pub fn dsh_status() -> crate::dsh::DshStatus {
 }
 
 #[tauri::command]
+pub async fn dsh_check_update() -> Result<crate::dsh::DshUpdateCheck, String> {
+    tauri::async_runtime::spawn_blocking(crate::dsh::check_for_update)
+        .await
+        .map_err(|error| format!("DSH update check task failed: {error}"))?
+}
+
+#[tauri::command]
 pub async fn dsh_archive_size() -> Option<u64> {
     tauri::async_runtime::spawn_blocking(crate::dsh::latest_archive_size)
         .await

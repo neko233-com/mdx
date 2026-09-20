@@ -153,4 +153,17 @@ describe("DeepSeek Harness reconnect error display", () => {
       "The 'inherit' model is not supported when using Codex with a ChatGPT account.",
     );
   });
+
+  it("extracts detail from a status-prefixed historical provider JSON error", () => {
+    expect(
+      getAgentMessageVisibleContent(
+        errorMessage({
+          id: "thread-1-turn-1-error",
+          content:
+            '429: {"message":"Token Plan usage limit reached","type":"","code":""}',
+        }),
+        "zh-CN",
+      ),
+    ).toBe("Token Plan usage limit reached");
+  });
 });

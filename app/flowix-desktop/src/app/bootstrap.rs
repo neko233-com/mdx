@@ -620,6 +620,7 @@ pub fn run() {
             commands::settings::set_deepseek_harness_plugin_enabled,
             commands::settings::discover_deepseek_harness_models,
             commands::dsh::dsh_status,
+            commands::dsh::dsh_check_update,
             commands::dsh::dsh_archive_size,
             commands::dsh::dsh_download_status,
             commands::dsh::dsh_install_runtime,

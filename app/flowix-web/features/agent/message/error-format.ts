@@ -100,14 +100,14 @@ export function formatAgentErrorMessage(content: string): string {
  * Extract the readable message from a standalone JSON error envelope.
  *
  * Codex app-server can put an upstream failure in `error.message` as a JSON
- * string, for example `{"detail":"..."}`. Keep this helper limited to a
- * complete JSON object so ordinary assistant text that merely mentions JSON
- * is left untouched.
+ * string, for example `{"detail":"..."}`. Providers may prefix the same
+ * body with an HTTP status (`429: {"message":"..."}`). Accept both forms
+ * while keeping ordinary assistant text that merely mentions JSON untouched.
  */
 export function extractStandaloneAgentErrorMessage(
   content: string,
 ): string | null {
-  const trimmed = content.trim();
+  const trimmed = content.trim().replace(/^\d{3}:\s*/u, "");
   if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
   return extractJsonErrorMessage(trimmed);
 }

@@ -77,6 +77,14 @@ pub struct DshStatus {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DshUpdateCheck {
+    pub current_version: Option<String>,
+    pub latest_version: Option<String>,
+    pub update_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DshDownloadProgress {
     pub phase: String,
     pub downloaded_bytes: u64,
@@ -246,6 +254,29 @@ pub fn status() -> DshStatus {
             archive_size: None,
         },
     }
+}
+
+/// Check the published DSH manifest without downloading or changing the
+/// installed runtime. Development bundles deliberately skip remote checks.
+pub fn check_for_update() -> Result<DshUpdateCheck, String> {
+    if development_bundle_launch_spec().is_some() {
+        return Ok(DshUpdateCheck {
+            current_version: Some("dev".to_string()),
+            latest_version: None,
+            update_available: false,
+        });
+    }
+    let current_version = current_installation().map(|installation| installation.version);
+    let latest_version = fetch_manifest()?.version;
+    let update_available = current_version
+        .as_deref()
+        .map(|current| !dsh_version_is_at_least(current, &latest_version).unwrap_or(false))
+        .unwrap_or(false);
+    Ok(DshUpdateCheck {
+        current_version,
+        latest_version: Some(latest_version),
+        update_available,
+    })
 }
 
 pub(crate) fn development_bundle_launch_spec() -> Option<Result<ManagedDshLaunch, String>> {

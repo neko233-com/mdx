@@ -7,7 +7,11 @@ import { Tooltip } from '@shared/ui/tooltip';
 import type { Notebook } from '@features/memo/store/memo-store';
 import { NotebookSelectorPopup } from '@features/shell/components/status-bar/notebook-selector-popup';
 import { ProductUpdatePill } from '@features/shell/components/status-bar/product-update-pill';
-import { AgentConversationStatusBar, AgentIcon } from '@features/agent/public/shell-api';
+import {
+  AgentConversationStatusBar,
+  AgentIcon,
+  createAndOpenDshConversation,
+} from '@features/agent/public/shell-api';
 import { useAgentRuntimeStore } from '@features/agent/store/agent-runtime-store';
 import { normalizeAgentRuntimeStatus } from '@features/agent/runtime/agent-runtime-status';
 import { useI18n } from '@/lib/i18n';
@@ -94,11 +98,19 @@ function DshRuntimeStatusIndicator({ onOpenPreferences }: { onOpenPreferences: (
   const label = `${t('agent.types.deepseekHarness.name')} · ${statusText}`;
   const available = runtimeStatus.state === 'ready';
 
+  const handleClick = () => {
+    if (available) {
+      createAndOpenDshConversation();
+      return;
+    }
+    onOpenPreferences();
+  };
+
   return (
     <Tooltip content={label} side="top">
       <button
         type="button"
-        onClick={onOpenPreferences}
+        onClick={handleClick}
         className="h-full flex items-center justify-center px-1.5 py-0 hover:bg-[var(--muted)]"
         aria-label={label}
       >

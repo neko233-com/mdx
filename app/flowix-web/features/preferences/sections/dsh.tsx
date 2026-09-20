@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Check,
   Cpu,
@@ -76,7 +76,7 @@ const PRESET_TITLE_KEYS: Record<string, I18nKey> = {
   cordis: 'preferences.dsh.plugins.presetCreative',
 };
 
-export function DshSettingsSection() {
+export function DshSettingsSection({ autoUpdate = false }: { autoUpdate?: boolean }) {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<DshTab>('general');
   const [useLocalDevRuntime, setUseLocalDevRuntime] = useState(false);
@@ -194,7 +194,7 @@ export function DshSettingsSection() {
             modelDirectory={deepseekHarness}
           />
         )}
-        {activeTab === 'general' && <GeneralTab initialStatus={displayedStatus} onUninstalled={handleUninstalled} />}
+        {activeTab === 'general' && <GeneralTab initialStatus={displayedStatus} onUninstalled={handleUninstalled} autoUpdate={autoUpdate} />}
         {activeTab === 'plugins' && <PluginsTab />}
         {activeTab === 'presets' && <PresetsTab />}
       </div>
@@ -325,13 +325,16 @@ function DshInstallPage({
 function GeneralTab({
   initialStatus,
   onUninstalled,
+  autoUpdate = false,
 }: {
   initialStatus: DshIntegrationStatus;
   onUninstalled: (status: DshIntegrationStatus) => void;
+  autoUpdate?: boolean;
 }) {
   const { t } = useI18n();
   const { status, busy, error, progress, install, uninstall } =
     useDshRuntimeInstaller(initialStatus);
+  const autoUpdateStarted = useRef(false);
   const [uninstalling, setUninstalling] = useState(false);
   const rows = [
     {
@@ -390,6 +393,12 @@ function GeneralTab({
         : t('preferences.dsh.runtime.upToDate'),
     );
   };
+
+  useEffect(() => {
+    if (!autoUpdate || autoUpdateStarted.current || !status?.installed) return;
+    autoUpdateStarted.current = true;
+    void install();
+  }, [autoUpdate, install, status?.installed]);
 
   return (
     <div className="space-y-2 pb-[30px]">

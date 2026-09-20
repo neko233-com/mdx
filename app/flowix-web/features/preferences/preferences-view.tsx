@@ -90,6 +90,8 @@ export function PreferencesView({ initialTab }: PreferencesViewProps) {
 	const refreshRuntimeStatus = useAgentRuntimeStore((state) => state.refreshIfStale);
 	const [activeTab, setActiveTab] = useState<SettingsTab>('general');
 	const title = t('preferences.title');
+	const initialTabName = initialTab?.split('?')[0];
+	const autoUpdateDsh = initialTab?.includes('autoUpdate=1') ?? false;
 
 	useEffect(() => {
 		void refreshRuntimeStatus();
@@ -108,7 +110,7 @@ export function PreferencesView({ initialTab }: PreferencesViewProps) {
 
 	useEffect(() => {
 		if (initialTab) {
-			const normalizedTab = normalizeInitialTab(initialTab);
+			const normalizedTab = normalizeInitialTab(initialTabName ?? initialTab);
 			if (normalizedTab && (normalizedTab !== 'cloudSync' || experimental)) {
 				setActiveTab(normalizedTab);
 			}
@@ -180,7 +182,7 @@ export function PreferencesView({ initialTab }: PreferencesViewProps) {
 							)}
 							{activeTab === 'noteSettings' && <NoteSettingsSection />}
 							{activeTab === 'aiAgent' && <AgentsSection />}
-							{activeTab === 'dsh' && <DshSettingsSection />}
+							{activeTab === 'dsh' && <DshSettingsSection autoUpdate={autoUpdateDsh} />}
 							{activeTab === 'shortcuts' && <ShortcutsSection />}
 							{activeTab === 'cli' && <CliSection />}
 							{activeTab === 'mcp' && <McpSection />}

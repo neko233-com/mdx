@@ -646,6 +646,32 @@
   display: none;
 }
 
+.markdown-editor .agent-thread-card__dsh-update-notice {
+  display: none;
+  align-items: center;
+  min-height: 26px;
+  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  border-radius: 999px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.markdown-editor.agent-conversation-detail .agent-thread-card__dsh-update-notice,
+.markdown-editor .agent-thread-card--fullscreen .agent-thread-card__dsh-update-notice {
+  display: inline-flex;
+}
+
+.markdown-editor .agent-thread-card__dsh-update-notice[hidden] {
+  display: none;
+}
+
+.markdown-editor .agent-thread-card__dsh-update-notice:hover {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
 /* 独立对话 / 全屏: 空状态内容整体上下居中, 图标压在控件组上方。
  * 独立对话的根节点同时带 .markdown-editor, 这里显式写全两个类名, 保证
  * 与上面的基础规则相比稳定胜出, 而不是仅依赖书写顺序。 */

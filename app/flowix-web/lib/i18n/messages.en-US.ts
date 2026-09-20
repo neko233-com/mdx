@@ -323,6 +323,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "preferences.dsh.runtime.updateSuccess": "DSH Runtime updated successfully",
     "preferences.dsh.runtime.upToDate": "DSH Runtime is already up to date",
     "preferences.dsh.runtime.updateFailed": "Failed to check or update DSH Runtime",
+    "agent.dsh.updateAvailable": "New version {version} found — click to update",
     "preferences.dsh.runtime.cancel": "Cancel",
     "preferences.dsh.runtime.downloadProgress": "Download progress",
     "preferences.dsh.runtime.downloading": "dsh downloading",

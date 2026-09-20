@@ -127,8 +127,15 @@ export interface DshDownloadProgress {
   resumed: boolean;
 }
 
+export interface DshUpdateCheck {
+  currentVersion?: string | null;
+  latestVersion?: string | null;
+  updateAvailable: boolean;
+}
+
 export const dshIntegration = {
   status: () => invoke<DshIntegrationStatus>('dsh_status'),
+  checkUpdate: () => invoke<DshUpdateCheck>('dsh_check_update'),
   archiveSize: () => invoke<number | null>('dsh_archive_size'),
   downloadStatus: () => invoke<DshDownloadProgress | null>('dsh_download_status'),
   installRuntime: () => invoke<DshIntegrationStatus>('dsh_install_runtime'),

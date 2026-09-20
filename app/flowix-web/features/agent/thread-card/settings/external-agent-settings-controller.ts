@@ -27,7 +27,7 @@ import { useMemoStore } from "@features/memo/store/memo-store";
 import { resolvePrimaryWorkspace } from "@features/agent/runtime/primary-workspace";
 import { normalizeWorkspacePath } from "@features/agent/runtime/workspace-path";
 import { normalizeConversationWorkspaceState } from "@features/agent/runtime/conversation-workspace";
-import { agent } from "@platform/tauri/client";
+import { agent, dshIntegration, windows } from "@platform/tauri/client";
 import { subscribe, type UnlistenFn } from "@platform/tauri/event-bus";
 import {
   applyPopoverPosition,
@@ -510,6 +510,26 @@ export class ExternalAgentSettingsController {
     // 控件组独立成行, 让独立对话 / 全屏能在其上方叠加 Agent 图标并整体居中；
     // 非全屏 thread card 通过 CSS 让这层保持原有的单行 flex 表现。
     empty.append(createExternalAgentEmptyIcon(this.getTypeKey()));
+    if (this.getTypeKey() === "deepseek-harness") {
+      const updateNotice = document.createElement("button");
+      updateNotice.type = "button";
+      updateNotice.className = "agent-thread-card__dsh-update-notice";
+      updateNotice.hidden = true;
+      updateNotice.addEventListener("click", (event) => {
+        event.stopPropagation();
+        void windows.openPreferences("dsh?autoUpdate=1").catch(() => undefined);
+      });
+      updateNotice.addEventListener("mousedown", (event) => event.stopPropagation());
+      empty.append(updateNotice);
+      void dshIntegration.checkUpdate().then((check) => {
+        if (this.isDestroyed() || !check.updateAvailable || !check.latestVersion) return;
+        updateNotice.textContent = this.t("agent.dsh.updateAvailable")
+          .replace("{version}", check.latestVersion);
+        updateNotice.hidden = false;
+      }).catch(() => {
+        // Version checks are advisory and must never affect conversation setup.
+      });
+    }
     const controls = document.createElement("div");
     controls.className = "agent-thread-card__empty-controls";
     empty.append(controls);

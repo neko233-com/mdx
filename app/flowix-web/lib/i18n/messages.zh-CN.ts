@@ -309,6 +309,7 @@ const zhCN = {
     "preferences.dsh.runtime.updateSuccess": "DSH Runtime 更新成功",
     "preferences.dsh.runtime.upToDate": "DSH Runtime 已是最新版本",
     "preferences.dsh.runtime.updateFailed": "DSH Runtime 检查或更新失败",
+    "agent.dsh.updateAvailable": "检查到新版本{version}，点击更新",
     "preferences.dsh.runtime.cancel": "取消",
     "preferences.dsh.runtime.downloadProgress": "下载进度",
     "preferences.dsh.runtime.downloading": "dsh 下载中",
