@@ -417,6 +417,7 @@ pub fn run_profile_plugin(
     }
 
     let mut command = Command::new(&launch.executable);
+    crate::process_window::hide_std_command_window(&mut command);
     if let Some(cli) = launch.cli_entrypoint.as_ref() {
         command.arg(cli);
     } else {
@@ -1075,6 +1076,7 @@ fn health_check(launch: &ManagedDshLaunch) -> Result<(), String> {
     write_private_file(&credentials_path, b"DSH_API_KEY: health-check\n")
         .map_err(|e| format!("write DSH health-check credentials: {e}"))?;
     let mut command = Command::new(&launch.executable);
+    crate::process_window::hide_std_command_window(&mut command);
     command.args(&launch.args);
     // Node-bundle releases launch the official DSH CLI directly.  Unlike the
     // legacy embedded host, that CLI requires an explicit profile selection;
