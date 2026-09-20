@@ -94,7 +94,7 @@
   FileClose $0
   ; Use NSIS' built-in synchronous runner so the helper's exit code cannot be
   ; confused with captured stdout or an nsExec stack value.
-  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\flowix-stop-cli.ps1" "$INSTDIR\flowix-cli.exe"' $1
+  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\flowix-stop-cli.ps1" "$INSTDIR\flowix-cli.exe"' $1 SW_HIDE
   Delete "$PLUGINSDIR\flowix-stop-cli.ps1"
   ${If} $1 == "error"
     MessageBox MB_ICONSTOP|MB_OK "Flowix could not start the CLI shutdown helper. Close Flowix CLI and try the update again."
