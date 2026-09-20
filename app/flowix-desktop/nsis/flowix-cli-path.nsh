@@ -39,6 +39,46 @@
   ${EndIf}
 !macroend
 
+!macro FLOWIX_STOP_BUNDLED_CLI
+  ; The updater normally stops flowix-cli in the desktop process before it
+  ; launches NSIS. This hook is the authoritative fallback for manual
+  ; installer launches and for CLI processes restarted by an MCP supervisor.
+  ; Match the full executable path so another application's flowix-cli.exe is
+  ; never terminated.
+  FileOpen $0 "$PLUGINSDIR\flowix-stop-cli.ps1" w
+  ${If} $0 == ""
+    MessageBox MB_ICONSTOP|MB_OK "Flowix could not prepare the CLI shutdown script."
+    Abort
+  ${EndIf}
+  FileWrite $0 "$$ErrorActionPreference = 'Stop'$\r$\n"
+  FileWrite $0 "try {$\r$\n"
+  FileWrite $0 "  $$target = [IO.Path]::GetFullPath($$args[0])$\r$\n"
+  FileWrite $0 "  function Get-FlowixCliProcesses {$\r$\n"
+  FileWrite $0 "    Get-CimInstance Win32_Process | Where-Object { $$_.Name -ieq 'flowix-cli.exe' -and $$_.ExecutablePath -and ([IO.Path]::GetFullPath($$_.ExecutablePath) -ieq $$target) }$\r$\n"
+  FileWrite $0 "  }$\r$\n"
+  FileWrite $0 "  for ($$attempt = 0; $$attempt -lt 50; $$attempt++) {$\r$\n"
+  FileWrite $0 "    $$processes = @(Get-FlowixCliProcesses)$\r$\n"
+  FileWrite $0 "    foreach ($$process in $$processes) { Stop-Process -Id $$process.ProcessId -Force -ErrorAction SilentlyContinue }$\r$\n"
+  FileWrite $0 "    Start-Sleep -Milliseconds 100$\r$\n"
+  FileWrite $0 "    if (@(Get-FlowixCliProcesses).Count -eq 0) { exit 0 }$\r$\n"
+  FileWrite $0 "  }$\r$\n"
+  FileWrite $0 "  exit 1$\r$\n"
+  FileWrite $0 "} catch { exit 1 }$\r$\n"
+  FileClose $0
+
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\flowix-stop-cli.ps1" "$INSTDIR\flowix-cli.exe"'
+  Pop $1
+  Delete "$PLUGINSDIR\flowix-stop-cli.ps1"
+  ${If} $1 != 0
+    MessageBox MB_ICONSTOP|MB_OK "Flowix CLI is still running. Close Flowix CLI and try the update again."
+    Abort
+  ${EndIf}
+!macroend
+
+!macro NSIS_HOOK_PREINSTALL
+  !insertmacro FLOWIX_STOP_BUNDLED_CLI
+!macroend
+
 !macro NSIS_HOOK_POSTINSTALL
   CreateDirectory "${FLOWIX_CLI_BIN_DIR}"
   Delete "${FLOWIX_LEGACY_CLI_SHIM}"
