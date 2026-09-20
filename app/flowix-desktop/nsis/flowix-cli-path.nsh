@@ -56,20 +56,50 @@
   FileWrite $0 "  function Get-FlowixCliProcesses {$\r$\n"
   FileWrite $0 "    Get-CimInstance Win32_Process | Where-Object { $$_.Name -ieq 'flowix-cli.exe' -and $$_.ExecutablePath -and ([IO.Path]::GetFullPath($$_.ExecutablePath) -ieq $$target) }$\r$\n"
   FileWrite $0 "  }$\r$\n"
-  FileWrite $0 "  for ($$attempt = 0; $$attempt -lt 50; $$attempt++) {$\r$\n"
+  FileWrite $0 "  function Get-FlowixCliSupervisors {$\r$\n"
+  FileWrite $0 "    $$result = @()$\r$\n"
+  FileWrite $0 "    foreach ($$cli in @(Get-FlowixCliProcesses)) {$\r$\n"
+  FileWrite $0 "      $$parentId = $$cli.ParentProcessId$\r$\n"
+  FileWrite $0 "      for ($$level = 0; $$level -lt 8 -and $$parentId -gt 0; $$level++) {$\r$\n"
+  FileWrite $0 "        $$parent = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $$parentId)$\r$\n"
+  FileWrite $0 "        if ($$null -eq $$parent) { break }$\r$\n"
+  FileWrite $0 "        $$isFlowixSupervisor = $$parent.Name -ieq 'node.exe' -and (($$parent.CommandLine -match '(?i)dsh-flowix-memory' -and $$parent.CommandLine -match '(?i)launcher' -and $$parent.CommandLine -match '(?i)flowix') -or ($$parent.CommandLine -match '(?i)--profile' -and $$parent.CommandLine -match '(?i)flowix'))$\r$\n"
+  FileWrite $0 "        if (-not $$isFlowixSupervisor) { break }$\r$\n"
+  FileWrite $0 "        $$result += $$parent$\r$\n"
+  FileWrite $0 "        $$parentId = $$parent.ParentProcessId$\r$\n"
+  FileWrite $0 "      }$\r$\n"
+  FileWrite $0 "    }$\r$\n"
+  FileWrite $0 "    @($$result | Sort-Object ProcessId -Unique)$\r$\n"
+  FileWrite $0 "  }$\r$\n"
+  FileWrite $0 "  function Test-FlowixCliWritable {$\r$\n"
+  FileWrite $0 "    if (-not (Test-Path -LiteralPath $$target)) { return $$true }$\r$\n"
+  FileWrite $0 "    $$stream = $$null$\r$\n"
+  FileWrite $0 "    try {$\r$\n"
+  FileWrite $0 "      $$stream = [IO.File]::Open($$target, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)$\r$\n"
+  FileWrite $0 "      return $$true$\r$\n"
+  FileWrite $0 "    } catch { return $$false } finally { if ($$null -ne $$stream) { $$stream.Dispose() } }$\r$\n"
+  FileWrite $0 "  }$\r$\n"
+  ; Give a supervisor enough time to observe the shutdown and stop respawning
+  ; the product CLI, then wait until Windows releases the executable image.
+  FileWrite $0 "  for ($$attempt = 0; $$attempt -lt 300; $$attempt++) {$\r$\n"
   FileWrite $0 "    $$processes = @(Get-FlowixCliProcesses)$\r$\n"
+  FileWrite $0 "    $$supervisors = @(Get-FlowixCliSupervisors)$\r$\n"
   FileWrite $0 "    foreach ($$process in $$processes) { Stop-Process -Id $$process.ProcessId -Force -ErrorAction SilentlyContinue }$\r$\n"
+  FileWrite $0 "    foreach ($$supervisor in $$supervisors) { Stop-Process -Id $$supervisor.ProcessId -Force -ErrorAction SilentlyContinue }$\r$\n"
   FileWrite $0 "    Start-Sleep -Milliseconds 100$\r$\n"
-  FileWrite $0 "    if (@(Get-FlowixCliProcesses).Count -eq 0) { exit 0 }$\r$\n"
+  FileWrite $0 "    if (@(Get-FlowixCliProcesses).Count -eq 0 -and (Test-FlowixCliWritable)) { exit 0 }$\r$\n"
   FileWrite $0 "  }$\r$\n"
   FileWrite $0 "  exit 1$\r$\n"
   FileWrite $0 "} catch { exit 1 }$\r$\n"
   FileClose $0
-
-  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\flowix-stop-cli.ps1" "$INSTDIR\flowix-cli.exe"'
-  Pop $1
+  ; Use NSIS' built-in synchronous runner so the helper's exit code cannot be
+  ; confused with captured stdout or an nsExec stack value.
+  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\flowix-stop-cli.ps1" "$INSTDIR\flowix-cli.exe"' $1
   Delete "$PLUGINSDIR\flowix-stop-cli.ps1"
-  ${If} $1 != 0
+  ${If} $1 == "error"
+    MessageBox MB_ICONSTOP|MB_OK "Flowix could not start the CLI shutdown helper. Close Flowix CLI and try the update again."
+    Abort
+  ${ElseIf} $1 != 0
     MessageBox MB_ICONSTOP|MB_OK "Flowix CLI is still running. Close Flowix CLI and try the update again."
     Abort
   ${EndIf}
