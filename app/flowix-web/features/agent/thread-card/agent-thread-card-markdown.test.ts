@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fillWithAgentThreadCardMarkdownHtml,
+  highlightAgentThreadCardCodeBlocks,
   renderAgentThreadCardMarkdownToHtml,
 } from "@features/agent/thread-card/agent-thread-card-markdown";
 
@@ -132,6 +133,17 @@ describe("agent thread card Markdown math", () => {
     expect(container.querySelector("pre")?.dataset.languageLabel).toBe(
       "TypeScript",
     );
+  });
+
+  it("highlights code blocks before the message container is mounted", async () => {
+    const container = document.createElement("div");
+    container.innerHTML = renderAgentThreadCardMarkdownToHtml(
+      "```css\nfont-family: Inter;\n```",
+    );
+
+    await highlightAgentThreadCardCodeBlocks(container);
+
+    expect(container.querySelector("code span[style*='color']")).not.toBeNull();
   });
 
   it("uses Text for fenced blocks without a language", () => {

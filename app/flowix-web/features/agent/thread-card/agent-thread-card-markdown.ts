@@ -132,7 +132,13 @@ export async function highlightAgentThreadCardCodeBlocks(
     // Theme may have changed while the language grammar was loading. Let the
     // theme-change pass handle this block with the newer theme instead.
     if (readAgentShikiTheme() !== theme) return;
-    if (!code.isConnected || code.textContent !== source) return;
+    // The message list may still be detached while history/progressive
+    // rendering is constructing it. Requiring `code.isConnected` drops the
+    // highlight result in that window and there is no later retry. Keep the
+    // ownership check scoped to the current message container instead: this
+    // still rejects a removed/replaced code block, while allowing Shiki to
+    // decorate a detached subtree before it is mounted.
+    if (!container.contains(code) || code.textContent !== source) return;
 
     try {
       const lines = highlighter.codeToTokensBase(source, { lang: language, theme });
