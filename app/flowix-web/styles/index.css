@@ -416,7 +416,7 @@
 		--app-document-width: 700px;
 
 		/* Shared code typography for rendered code blocks and CodeMirror. */
-		--code-font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace, 'Inter', -apple-system, 'Microsoft YaHei', '微软雅黑';
+		--code-font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Microsoft YaHei', '微软雅黑', monospace;
 		--code-font-size: 14px;
 		--code-line-height: 1.8;
 		/* Shared overlay geometry: the collapsed list preview uses this value
