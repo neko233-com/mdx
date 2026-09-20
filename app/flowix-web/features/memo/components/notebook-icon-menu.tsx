@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@shared/ui/dropdown-menu';
 import { useI18n, type I18nKey } from '@/lib/i18n';
-import { ArrowLeftToLine, ArrowRightToLine, Palette, Plug, Type } from 'lucide-react';
+import { ArrowLeftToLine, ArrowRightToLine, Palette, Plug, Settings, Type } from 'lucide-react';
 import { StarFourIcon } from '@phosphor-icons/react';
 import { AgentIcon } from '@features/agent/components/agent-icon';
 import { ShortcutKbd } from '@shared/ui/shortcut-kbd';
@@ -191,6 +191,13 @@ export function NotebookIconMenu({
         <DropdownMenuLabel className="shrink-0 px-2 py-1 text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
           {t('memo.list.notebookMenu.preferences')}
         </DropdownMenuLabel>
+        <DropdownMenuItem
+          onClick={() => onOpenPreferences()}
+          className={NOTEBOOK_ICON_MENU_ITEM_CLASS}
+        >
+          <Settings className="h-4 w-4 shrink-0" />
+          <span>{t('preferences.title')}</span>
+        </DropdownMenuItem>
         {PREFERENCE_SHORTCUTS.map(({ tab, labelKey, icon }) => (
           <DropdownMenuItem
             key={tab}
