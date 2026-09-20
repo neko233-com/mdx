@@ -21,7 +21,7 @@ export function AppUpdatePrompt({ updater }: { updater: AppUpdaterState }) {
     if (update?.version && update.version !== dismissedVersion) setInstallError(false);
   }, [dismissedVersion, update?.version]);
 
-  if (!update || (updater.status !== 'available' && !isUpdating) || update.version === dismissedVersion) {
+  if (!update || !update.notify || (updater.status !== 'available' && !isUpdating) || update.version === dismissedVersion) {
     return null;
   }
 
@@ -89,4 +89,3 @@ export function AppUpdatePrompt({ updater }: { updater: AppUpdaterState }) {
     </FloatingPrompt>
   );
 }
-

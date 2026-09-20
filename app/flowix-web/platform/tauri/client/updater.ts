@@ -5,6 +5,7 @@ import { listen } from '@tauri-apps/api/event';
 export interface AppUpdate {
   currentVersion: string;
   version: string;
+  notify: boolean;
   date?: string;
   body?: string;
 }
@@ -40,6 +41,7 @@ export async function checkAppUpdate(): Promise<AppUpdate | null> {
     return {
       currentVersion: update.currentVersion,
       version: update.version,
+      notify: update.notify !== false,
       date: update.date,
       body: update.body,
     };

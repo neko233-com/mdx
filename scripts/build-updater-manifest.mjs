@@ -7,6 +7,7 @@
 //   FLOWIX_R2_PREFIX          R2 key prefix under which artifacts were uploaded
 //   FLOWIX_RELEASE_OUT        artifact staging directory
 //   FLOWIX_RELEASE_NOTES      optional human-facing release notes
+//   FLOWIX_UPDATE_NOTIFY      whether clients should show update prompts
 //
 // Inputs (positional argv):
 //   <platform>|<artifact-name>   one per built target. Multiple rows may share
@@ -28,10 +29,14 @@ const publicBase = process.env.FLOWIX_R2_PUBLIC_BASE?.replace(/\/$/u, '');
 const prefix = process.env.FLOWIX_R2_PREFIX?.replace(/^\/+|\/+$/gu, '');
 const releaseOut = process.env.FLOWIX_RELEASE_OUT;
 const releaseNotes = process.env.FLOWIX_RELEASE_NOTES?.trim() || `Flowix ${version}`;
+const notifyValue = process.env.FLOWIX_UPDATE_NOTIFY?.trim().toLowerCase() || 'true';
 const rows = process.argv.slice(1);
 
 if (!out || !version || !publicBase || prefix === undefined || !releaseOut) {
   throw new Error('build-updater-manifest: FLOWIX_MANIFEST_OUT, FLOWIX_VERSION, FLOWIX_R2_PUBLIC_BASE, FLOWIX_R2_PREFIX, and FLOWIX_RELEASE_OUT are required');
+}
+if (notifyValue !== 'true' && notifyValue !== 'false') {
+  throw new Error('build-updater-manifest: FLOWIX_UPDATE_NOTIFY must be true or false');
 }
 
 const platforms = {};
@@ -56,6 +61,7 @@ for (const row of rows) {
 
 const manifest = {
   version,
+  notify: notifyValue === 'true',
   notes: releaseNotes,
   pub_date: new Date().toISOString(),
   platforms,

@@ -20,7 +20,7 @@ export function ProductUpdatePill({ updater }: { updater: AppUpdaterState }) {
     }
   }
 
-  if (!update || status === 'error' || status === 'none' || status === 'idle' || status === 'checking') {
+  if (!update || !update.notify || status === 'error' || status === 'none' || status === 'idle' || status === 'checking') {
     return null;
   }
 

@@ -150,7 +150,7 @@ export const FONT_FAMILY_OPTIONS: FontFamilyOption[] = [
   {
     id: 'inter',
     label: 'Inter',
-    value: "sans-serif, 'Inter', -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei'",
+    value: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif",
     source: 'bundled',
   },
   {

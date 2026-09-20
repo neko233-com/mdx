@@ -484,7 +484,7 @@ export function DocumentContainer({
   ) : null;
 
   return (
-    <div ref={containerRef} onFocusCapture={() => useWorkspaceFocusStore.getState().focusHost(hostId)} onPointerDownCapture={() => useWorkspaceFocusStore.getState().focusHost(hostId)} className="document-container h-full w-full min-w-0 flex flex-col bg-transparent relative overflow-hidden">
+    <div ref={containerRef} data-document-session-mode={documentSessionMode} onFocusCapture={() => useWorkspaceFocusStore.getState().focusHost(hostId)} onPointerDownCapture={() => useWorkspaceFocusStore.getState().focusHost(hostId)} className="document-container h-full w-full min-w-0 flex flex-col bg-transparent relative overflow-hidden">
       <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
         {state.isLoading && (
           <CenteredLoadingSpinner className="h-full w-full" />

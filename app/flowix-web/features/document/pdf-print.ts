@@ -1,8 +1,9 @@
 import type { Editor } from '@tiptap/core';
-import type { Fragment, Node as ProseMirrorNode } from '@tiptap/pm/model';
 
-const PRINT_ROOT_ID = 'flowix-pdf-print-root';
-const PRINTING_CLASS = 'flowix-pdf-exporting';
+const PRINTING_CLASS = 'flowix-pdf-printing';
+const PRINT_SCOPE_CLASS = 'flowix-pdf-print-scope';
+const PRINT_ANCESTOR_CLASS = 'flowix-pdf-print-ancestor';
+const PRINT_HIDDEN_CLASS = 'flowix-pdf-print-hidden';
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
@@ -10,67 +11,73 @@ function nextFrame(): Promise<void> {
   });
 }
 
-/**
- * Agent thread cards are persisted as a directive, not regular Markdown:
- * `::agent-thread-card{...}`. Remove only standalone directives outside fenced
- * code blocks, so an example of the directive in a code sample remains intact.
- */
-export function stripAgentThreadCards(markdown: string): string {
-  const lines = markdown.split(/(\r?\n)/);
-  let fenced = false;
-  let fenceMarker = '';
+function findCurrentDocumentRoot(editor: Editor | null): HTMLElement | null {
+  if (editor && !editor.isDestroyed) {
+    const editorRoot = editor.view.dom.closest<HTMLElement>('.document-container');
+    if (editorRoot) return editorRoot;
+  }
 
-  return lines.filter((line) => {
-    if (/^\s*(?:```+|~~~+)/.test(line)) {
-      const marker = line.match(/^\s*(`{3,}|~{3,})/)?.[1] ?? '';
-      if (!fenced) {
-        fenced = true;
-        fenceMarker = marker[0];
-      } else if (marker[0] === fenceMarker) {
-        fenced = false;
-        fenceMarker = '';
+  // Source mode is owned by CodeMirror and therefore has no Tiptap Editor.
+  // The main work column is the document associated with the export titlebar;
+  // browser-column documents are isolated and must not be selected here.
+  return document.querySelector<HTMLElement>(
+    '[data-workspace-host="main-third"] .document-container[data-document-session-mode="main"]',
+  );
+}
+
+function classifyPrintDom(root: HTMLElement): Array<[HTMLElement, string]> {
+  const changes: Array<[HTMLElement, string]> = [];
+
+  const addClass = (element: HTMLElement, className: string) => {
+    if (element.classList.contains(className)) return;
+    element.classList.add(className);
+    changes.push([element, className]);
+  };
+
+  addClass(document.documentElement, PRINTING_CLASS);
+  addClass(root, PRINT_SCOPE_CLASS);
+
+  let current: HTMLElement | null = root;
+  while (current?.parentElement) {
+    const parent: HTMLElement = current.parentElement;
+
+    for (const sibling of Array.from(parent.children)) {
+      if (sibling !== current && sibling instanceof HTMLElement) {
+        addClass(sibling, PRINT_HIDDEN_CLASS);
       }
-      return true;
     }
 
-    if (!fenced && /^\s{0,3}::agent-thread-card\{[^}\r\n]*\}[ \t]*(?:\r?\n)?$/.test(line)) {
-      return false;
+    if (parent !== document.body && parent !== document.documentElement) {
+      addClass(parent, PRINT_ANCESTOR_CLASS);
     }
 
-    return true;
-  }).join('');
+    current = parent;
+    if (parent === document.body) break;
+  }
+
+  return changes;
 }
 
-const NON_PRINTABLE_NODE_TYPES = new Set(['frontmatter', 'agentThreadCard']);
-
-function isEmptyParagraph(node: ProseMirrorNode): boolean {
-  return node.type.name === 'paragraph' && node.content.size === 0;
+function restorePrintDom(changes: Array<[HTMLElement, string]>): void {
+  for (let index = changes.length - 1; index >= 0; index -= 1) {
+    const [element, className] = changes[index];
+    element.classList.remove(className);
+  }
 }
 
-function filterPrintableNode(
-  node: ProseMirrorNode,
-  FragmentConstructor: typeof Fragment,
-): ProseMirrorNode | null {
-  if (NON_PRINTABLE_NODE_TYPES.has(node.type.name)) return null;
-  if (!node.content.size) return node;
+function preparePrintImages(root: HTMLElement): void {
+  for (const image of Array.from(root.querySelectorAll<HTMLImageElement>('img'))) {
+    const deferredSource = image.dataset.src?.trim();
+    if (!deferredSource) continue;
 
-  const children: ProseMirrorNode[] = [];
-  let removeFollowingEmptyParagraph = false;
-  node.content.forEach((child) => {
-    const printable = filterPrintableNode(child, FragmentConstructor);
-    if (!printable) {
-      removeFollowingEmptyParagraph = child.type.name === 'agentThreadCard';
-      return;
+    // ImageAttachment intentionally keeps lazy images in data-src until they
+    // enter the viewport. Printing bypasses that viewport lifecycle, so make
+    // the existing image element request its real source before layout.
+    image.loading = 'eager';
+    if (!image.getAttribute('src')) {
+      image.src = deferredSource;
     }
-    if (removeFollowingEmptyParagraph && isEmptyParagraph(printable)) {
-      removeFollowingEmptyParagraph = false;
-      return;
-    }
-    removeFollowingEmptyParagraph = false;
-    children.push(printable);
-  });
-
-  return node.copy(FragmentConstructor.from(children));
+  }
 }
 
 async function waitForPrintResources(root: HTMLElement): Promise<void> {
@@ -80,7 +87,7 @@ async function waitForPrintResources(root: HTMLElement): Promise<void> {
 
   const images = Array.from(root.querySelectorAll<HTMLImageElement>('img'));
   await Promise.all(images.map((image) => {
-    if (image.complete) return Promise.resolve();
+    if (!image.getAttribute('src') || image.complete) return Promise.resolve();
 
     return new Promise<void>((resolve) => {
       image.addEventListener('load', () => resolve(), { once: true });
@@ -90,52 +97,34 @@ async function waitForPrintResources(root: HTMLElement): Promise<void> {
 }
 
 /**
- * Mount a clean Markdown print view in the current WebView.
+ * Prepare the currently displayed document DOM for native PDF printing.
  *
- * The editor DOM is intentionally not reused here. It contains application
- * chrome, editor-only dates and interactive Agent thread-card NodeViews. PDF
- * output should be a stable document representation of the saved Markdown.
+ * No print copy is mounted here. The native WebView prints the same editor
+ * surface that the user is viewing; print-only CSS expands its scroll surface
+ * to the complete document and hides surrounding application chrome.
  */
-export async function preparePdfPrint(
-  editor: Editor | null,
-  markdown: string,
-): Promise<() => void> {
-  document.getElementById(PRINT_ROOT_ID)?.remove();
-
-  const root = document.createElement('main');
-  root.id = PRINT_ROOT_ID;
-  root.className = 'flowix-pdf-print-root';
-
-  if (editor && !editor.isDestroyed) {
-    const { DOMSerializer, Fragment } = await import('@tiptap/pm/model');
-    const printableDocument = filterPrintableNode(editor.state.doc, Fragment);
-    if (printableDocument) {
-      const serializer = DOMSerializer.fromSchema(editor.schema);
-      root.appendChild(serializer.serializeFragment(printableDocument.content));
-    }
-  } else {
-    // Source-mode documents and external text files do not have a Tiptap
-    // instance. Keep them exportable with the same Markdown fallback.
-    const printableMarkdown = stripAgentThreadCards(markdown);
-    const { markdownToHtml } = await import('@/lib/export');
-    root.innerHTML = markdownToHtml(printableMarkdown);
+export async function preparePdfPrint(editor: Editor | null): Promise<() => void> {
+  const root = findCurrentDocumentRoot(editor);
+  if (!root) {
+    throw new Error('Current document editor is not mounted');
   }
-  document.body.appendChild(root);
-  document.documentElement.classList.add(PRINTING_CLASS);
+
+  const changes = classifyPrintDom(root);
+  preparePrintImages(root);
+  let restored = false;
+  const restore = () => {
+    if (restored) return;
+    restored = true;
+    restorePrintDom(changes);
+  };
+
   try {
     await nextFrame();
     await waitForPrintResources(root);
   } catch (error) {
-    document.documentElement.classList.remove(PRINTING_CLASS);
-    root.remove();
+    restore();
     throw error;
   }
 
-  let restored = false;
-  return () => {
-    if (restored) return;
-    restored = true;
-    document.documentElement.classList.remove(PRINTING_CLASS);
-    root.remove();
-  };
+  return restore;
 }

@@ -16,6 +16,8 @@
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  optional Tauri updater key password
 #   FLOWIX_SKIP_BUILD=1       collect artifacts already present in CARGO_TARGET_DIR
 #   FLOWIX_PUBLISH=1          upload R2; full releases also deploy flowix-home
+#   FLOWIX_UPDATE_NOTIFY     whether installed clients show update prompts
+#                            (default: true; set false for silent releases)
 #
 # This is the only production publication path for the Flowix updater. The
 # GitHub release workflow creates draft artifacts but does not update the

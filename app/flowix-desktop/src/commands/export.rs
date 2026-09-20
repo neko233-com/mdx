@@ -26,6 +26,33 @@ fn temporary_pdf_path(target: &Path) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+#[cfg(target_os = "macos")]
+fn pdf_file_is_complete(path: &Path) -> bool {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if metadata.len() < 5 {
+        return false;
+    }
+
+    let Ok(mut file) = File::open(path) else {
+        return false;
+    };
+    let tail_start = metadata.len().saturating_sub(128);
+    if file.seek(SeekFrom::Start(tail_start)).is_err() {
+        return false;
+    }
+
+    let mut tail = Vec::with_capacity((metadata.len() - tail_start) as usize);
+    if file.read_to_end(&mut tail).is_err() {
+        return false;
+    }
+
+    tail.windows(5).any(|window| window == b"%%EOF")
+}
+
 #[tauri::command]
 pub async fn export_pdf(
     window: WebviewWindow,
@@ -63,90 +90,108 @@ pub async fn export_pdf(
 
 #[cfg(target_os = "macos")]
 async fn export_pdf_native(window: WebviewWindow, output: PathBuf) -> Result<(), String> {
-    use std::ffi::c_void;
-    use std::ptr::NonNull;
-    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
-    use block2::RcBlock;
     use objc2::MainThreadMarker;
-    use objc2_foundation::{NSData, NSError};
-    use objc2_web_kit::{WKPDFConfiguration, WKWebView};
+    use objc2_app_kit::{NSPrintInfo, NSPrintSaveJob};
+    use objc2_foundation::{NSString, NSURL};
+    use objc2_web_kit::WKWebView;
     use tokio::sync::oneshot;
+    use tokio::time::{sleep, timeout};
 
-    let (sender, receiver) = oneshot::channel::<Result<Vec<u8>, String>>();
-    let sender = Arc::new(Mutex::new(Some(sender)));
+    const PRINT_TIMEOUT: Duration = Duration::from_secs(30);
+    // The path is reserved by `tempfile`, but AppKit's save job should create
+    // the PDF itself instead of treating the empty reservation as a finished
+    // export.
+    let _ = fs::remove_file(&output);
+    let (sender, receiver) = oneshot::channel::<Result<(), String>>();
+    let output_for_print = output.clone();
 
     window
         .with_webview(move |webview| {
-            let sender = Arc::clone(&sender);
-            let raw = webview.inner();
-            let Some(marker) = MainThreadMarker::new() else {
-                if let Ok(mut sender) = sender.lock() {
-                    let _ = sender.take().map(|sender| {
-                        sender.send(Err("PDF export must run on the main thread".to_string()))
-                    });
-                }
-                return;
-            };
-
-            let Some(webview) = (unsafe { (raw as *const WKWebView).as_ref() }) else {
-                if let Ok(mut sender) = sender.lock() {
-                    let _ = sender
-                        .take()
-                        .map(|sender| sender.send(Err("WKWebView is unavailable".to_string())));
-                }
-                return;
-            };
-
-            let configuration = unsafe { WKPDFConfiguration::new(marker) };
-            let completion = RcBlock::new(move |data: *mut NSData, error: *mut NSError| {
-                let result = if !error.is_null() {
-                    Err("WKWebView failed to create PDF".to_string())
-                } else if data.is_null() {
-                    Err("WKWebView returned empty PDF data".to_string())
-                } else {
-                    let data = unsafe { &*data };
-                    let length = data.length() as usize;
-                    let mut bytes = vec![0_u8; length];
-                    if length > 0 {
-                        unsafe {
-                            data.getBytes_length(
-                                NonNull::new(bytes.as_mut_ptr().cast::<c_void>())
-                                    .expect("non-empty PDF buffer"),
-                                length,
-                            );
-                        }
-                    }
-                    Ok(bytes)
+            let result = (|| {
+                let raw = webview.inner();
+                let Some(marker) = MainThreadMarker::new() else {
+                    return Err("PDF export must run on the main thread".to_string());
                 };
 
-                if let Ok(mut sender) = sender.lock() {
-                    let _ = sender.take().map(|sender| sender.send(result));
-                }
-            });
+                let Some(webview) = (unsafe { (raw as *const WKWebView).as_ref() }) else {
+                    return Err("WKWebView is unavailable".to_string());
+                };
 
-            unsafe {
-                webview.createPDFWithConfiguration_completionHandler(
-                    Some(&configuration),
-                    &completion,
-                );
-            }
+                // `createPDFWithConfiguration` is a content snapshot API. On
+                // some WebKit versions it keeps screen media and the current
+                // viewport, which can put the application shell into the PDF.
+                // The native print operation is the same WebView, but uses the
+                // print layout/pagination pipeline and runs without a print UI.
+                // It therefore honors the existing DOM's @media print rules
+                // without changing the screen layout or mounting a print copy.
+                let print_info = NSPrintInfo::new();
+                let output_path = NSString::from_str(&output_for_print.to_string_lossy());
+                let output_url = NSURL::fileURLWithPath(&output_path);
+                let settings = unsafe { print_info.dictionary() };
+                unsafe {
+                    settings.insert(objc2_app_kit::NSPrintJobSavingURL, &output_url);
+                    print_info.setJobDisposition(NSPrintSaveJob);
+                }
+
+                let print_operation = unsafe { webview.printOperationWithPrintInfo(&print_info) };
+                print_operation.setShowsPrintPanel(false);
+                print_operation.setShowsProgressPanel(false);
+                // WebKit needs the AppKit main run loop while laying out pages.
+                // Disallowing a separate print thread can leave `runOperation`
+                // waiting on that same run loop forever.
+                print_operation.setCanSpawnSeparateThread(true);
+
+                let Some(doc_window) = webview.window() else {
+                    return Err("WKWebView has no host window".to_string());
+                };
+
+                // This is the same native WebView and the same DOM the user is
+                // viewing. No print UI is shown, but the modal API keeps AppKit's
+                // run loop alive until WebKit has completed the PDF job.
+                let _ = marker;
+                unsafe {
+                    print_operation.runOperationModalForWindow_delegate_didRunSelector_contextInfo(
+                        &doc_window,
+                        None,
+                        None,
+                        std::ptr::null_mut(),
+                    );
+                }
+
+                Ok(())
+            })();
+            let _ = sender.send(result);
         })
         .map_err(|error| error.to_string())?;
 
-    let bytes = receiver
-        .await
-        .map_err(|_| "WKWebView PDF callback was cancelled".to_string())??;
-    tokio::task::spawn_blocking(move || fs::write(output, bytes))
-        .await
-        .map_err(|error| error.to_string())?
-        .map_err(|error| error.to_string())
+    timeout(PRINT_TIMEOUT, async {
+        receiver
+            .await
+            .map_err(|_| "WKWebView PDF operation was cancelled".to_string())??;
+
+        // `runOperationModal...` may return as soon as AppKit has handed the
+        // job to its print worker. Wait for the actual PDF trailer instead of
+        // accepting a partially-written file.
+        loop {
+            if pdf_file_is_complete(&output) {
+                return Ok(());
+            }
+            sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .map_err(|_| "WKWebView PDF export timed out after 30 seconds".to_string())?
 }
 
 #[cfg(target_os = "windows")]
 async fn export_pdf_native(window: WebviewWindow, output: PathBuf) -> Result<(), String> {
     use std::sync::mpsc;
+    use std::time::Duration;
 
+    use tokio::task::spawn_blocking;
+    use tokio::time::timeout;
     use webview2_com::{Microsoft::Web::WebView2::Win32::*, PrintToPdfCompletedHandler};
     use windows::core::{Interface, PCWSTR};
 
@@ -193,9 +238,17 @@ async fn export_pdf_native(window: WebviewWindow, output: PathBuf) -> Result<(),
         })
         .map_err(|error| error.to_string())?;
 
-    receiver
-        .recv()
-        .map_err(|_| "WebView2 PDF callback was cancelled".to_string())?
+    timeout(
+        Duration::from_secs(30),
+        spawn_blocking(move || {
+            receiver
+                .recv()
+                .map_err(|_| "WebView2 PDF callback was cancelled".to_string())?
+        }),
+    )
+    .await
+    .map_err(|_| "WebView2 PDF export timed out after 30 seconds".to_string())?
+    .map_err(|error| error.to_string())?
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]

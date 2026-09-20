@@ -399,7 +399,7 @@
 		--radius: 0.625rem;
 
 		--font-heading: var(--font-sans);
-		--font-sans: sans-serif, 'Inter', -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei';
+		--font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 		--font-nav: 'SF Mono';
 
 		/* User-configurable typography (Preferences → Format).
@@ -416,7 +416,7 @@
 		--app-document-width: 700px;
 
 		/* Shared code typography for rendered code blocks and CodeMirror. */
-		--code-font-family: 'Inter', 'Microsoft YaHei', '微软雅黑', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+		--code-font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace, 'Inter', -apple-system, 'Microsoft YaHei', '微软雅黑';
 		--code-font-size: 14px;
 		--code-line-height: 1.8;
 		/* Shared overlay geometry: the collapsed list preview uses this value

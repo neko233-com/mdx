@@ -1,243 +1,593 @@
 /*
- * Dedicated Markdown-to-PDF layout.
+ * PDF print adaptation for the mounted editor DOM.
  *
- * The native WebView print APIs honor @page. Keeping the page margins here
- * means the same source works on macOS WKWebView and Windows WebView2.
+ * The document block appearance is intentionally mirrored from editor.css,
+ * editor-code-block.css and editor-attachment-link.css. This file only adds
+ * print concerns: page geometry, expanding scroll containers, hiding editor
+ * chrome, resource-safe media rules and pagination.
  */
 
 @page {
   size: A4;
-  margin: 16mm 18mm;
-}
-
-html.flowix-pdf-exporting,
-html.flowix-pdf-exporting body {
-  height: auto !important;
-  min-height: 0 !important;
-  overflow: visible !important;
-  color: #202124 !important;
-  background: transparent !important;
-}
-
-html.flowix-pdf-exporting body > *:not(#flowix-pdf-print-root) {
-  display: none !important;
-}
-
-.flowix-pdf-print-root {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: none;
-  margin: 0;
-  padding: 0;
-  color: #202124;
-  background: transparent;
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, Helvetica,
-    Arial, sans-serif;
-  font-size: 12pt;
-  line-height: 1.75;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.flowix-pdf-print-root > :first-child {
-  margin-top: 0;
-}
-
-.flowix-pdf-print-root h1,
-.flowix-pdf-print-root h2,
-.flowix-pdf-print-root h3,
-.flowix-pdf-print-root h4,
-.flowix-pdf-print-root h5,
-.flowix-pdf-print-root h6 {
-  margin: 1.35em 0 0.55em;
-  color: #171717;
-  line-height: 1.3;
-  font-weight: 650;
-  break-after: avoid;
-  page-break-after: avoid;
-}
-
-.flowix-pdf-print-root h1 {
-  margin-top: 0;
-  margin-bottom: 0.8em;
-  font-size: 24pt;
-  line-height: 1.22;
-  letter-spacing: -0.01em;
-}
-
-.flowix-pdf-print-root h2 {
-  padding-bottom: 0.18em;
-  border-bottom: 0.6pt solid #b8bcc2;
-  font-size: 18pt;
-}
-
-.flowix-pdf-print-root h3 {
-  font-size: 15pt;
-}
-
-.flowix-pdf-print-root h4 {
-  font-size: 13pt;
-}
-
-.flowix-pdf-print-root h5,
-.flowix-pdf-print-root h6 {
-  font-size: 12pt;
-}
-
-.flowix-pdf-print-root p {
-  margin: 0.72em 0;
-  orphans: 3;
-  widows: 3;
-}
-
-.flowix-pdf-print-root a {
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-thickness: 0.6pt;
-  text-underline-offset: 2pt;
-}
-
-.flowix-pdf-print-root strong {
-  font-weight: 700;
-}
-
-.flowix-pdf-print-root ul,
-.flowix-pdf-print-root ol {
-  margin: 0.72em 0;
-  padding-left: 1.65em;
-}
-
-.flowix-pdf-print-root li {
-  padding-left: 0.15em;
-  margin: 0.2em 0;
-}
-
-.flowix-pdf-print-root li > p {
-  margin: 0.2em 0;
-}
-
-.flowix-pdf-print-root ul ul,
-.flowix-pdf-print-root ol ol,
-.flowix-pdf-print-root ul ol,
-.flowix-pdf-print-root ol ul {
-  margin-top: 0.2em;
-  margin-bottom: 0.2em;
-}
-
-.flowix-pdf-print-root blockquote {
-  margin: 1em 0;
-  padding: 0.15em 0 0.15em 1em;
-  border-left: 2.5pt solid #8b929a;
-  color: #4f555d;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.flowix-pdf-print-root blockquote > :first-child {
-  margin-top: 0;
-}
-
-.flowix-pdf-print-root blockquote > :last-child {
-  margin-bottom: 0;
-}
-
-.flowix-pdf-print-root code,
-.flowix-pdf-print-root pre {
-  font-family: "SFMono-Regular", "SF Mono", Menlo, Consolas,
-    "Inter", "Microsoft YaHei", "微软雅黑", "SFMono-Regular", "SF Mono", Menlo,
-    Consolas, "Liberation Mono", monospace;
-}
-
-.flowix-pdf-print-root code {
-  padding: 0.08em 0.28em;
-  border: 0.5pt solid #c5c9ce;
-  border-radius: 2pt;
-  background: transparent;
-  font-size: 0.9em;
-}
-
-.flowix-pdf-print-root pre {
-  margin: 1em 0;
-  padding: 0.82em 0.95em;
-  border: 0.6pt solid #b8bcc2;
-  border-radius: 3pt;
-  background: transparent;
-  font-size: 10.5pt;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.flowix-pdf-print-root pre code {
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  font-size: inherit;
-  white-space: inherit;
-}
-
-.flowix-pdf-print-root table {
-  width: 100%;
-  margin: 1em 0;
-  border-collapse: collapse;
-  font-size: 10.5pt;
-  line-height: 1.5;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.flowix-pdf-print-root th,
-.flowix-pdf-print-root td {
-  padding: 0.45em 0.65em;
-  border: 0.6pt solid #aeb4bb;
-  text-align: left;
-  vertical-align: top;
-}
-
-.flowix-pdf-print-root th {
-  font-weight: 700;
-}
-
-.flowix-pdf-print-root hr {
-  margin: 1.6em 0;
-  border: 0;
-  border-top: 0.7pt solid #aeb4bb;
-}
-
-.flowix-pdf-print-root img,
-.flowix-pdf-print-root svg {
-  display: block;
-  max-width: 100%;
-  height: auto;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.flowix-pdf-print-root input[type="checkbox"] {
-  width: 0.9em;
-  height: 0.9em;
-  margin: 0 0.4em 0 0;
-  vertical-align: -0.08em;
-  accent-color: #202124;
+  margin: 12mm;
 }
 
 @media print {
-  html.flowix-pdf-exporting,
-  html.flowix-pdf-exporting body {
+  html.flowix-pdf-printing,
+  html.flowix-pdf-printing body {
     height: auto !important;
     min-height: 0 !important;
     overflow: visible !important;
-    color: #202124 !important;
     background: transparent !important;
   }
 
-  .flowix-pdf-print-root {
+  html.flowix-pdf-printing .flowix-pdf-print-hidden {
+    display: none !important;
+  }
+
+  /* Remove the fixed-height/flex viewport contract from the app shell. */
+  html.flowix-pdf-printing .flowix-pdf-print-ancestor,
+  html.flowix-pdf-printing .flowix-pdf-print-scope {
+    display: block !important;
+    position: static !important;
+    box-sizing: border-box;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope,
+  html.flowix-pdf-printing .flowix-pdf-print-scope * {
+    visibility: visible !important;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .editor-content-frame,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .editor-content,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .editor-document-body,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .code-editor,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .code-editor > .cm-editor,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .code-editor .cm-scroller,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .code-editor .cm-content {
+    display: block !important;
+    position: static !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    flex: none !important;
+  }
+
+  /* Editor chrome has no document meaning in a PDF. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .overlay-scrollbar-track,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .overlay-scrollbar-thumb,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .editor-toolbar,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .editor-search-replace-panel,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .code-block-header,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .frontmatter-property-node,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .agent-thread-card,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .heading-outline-navigation-anchor,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .selection-bubble-menu,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .table-bubble-menu-anchor,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .drag-context-menu-handle,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .cm-source-mode-toggle,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .cm-source-header-gutter-background {
+    display: none !important;
+  }
+
+  /* A print snapshot is never an editing surface. Hide both the native
+   * contenteditable caret and Flowix's fixed-position stable caret. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .ProseMirror,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .ProseMirror * {
+    caret-color: transparent !important;
+  }
+
+  html.flowix-pdf-printing .stable-editor-caret,
+  html.flowix-pdf-printing .ProseMirror-cursor,
+  html.flowix-pdf-printing .cm-cursor,
+  html.flowix-pdf-printing .cm-dropCursor,
+  html.flowix-pdf-printing .cm-selectionBackground {
+    display: none !important;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .ProseMirror::selection,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .ProseMirror *::selection {
+    background: transparent !important;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .ProseMirror::-moz-selection,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .ProseMirror *::-moz-selection {
+    background: transparent !important;
+  }
+
+  /* The title is outside ProseMirror, so mirror its editor title styling. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .memo-document-header {
+    box-sizing: border-box;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .memo-date-line {
+    text-align: center;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .memo-title-properties-toggle,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .memo-title-shell > button {
+    display: none !important;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .memo-title-editor,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .code-editor .cm-content {
+    caret-color: transparent !important;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .memo-title-editor {
+    display: block !important;
+    box-sizing: border-box;
+    width: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    outline: 0 !important;
+    resize: none !important;
+    overflow: visible !important;
+  }
+
+  /* Mounted rich-text document. Keep the editor's user font and scale. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror {
+    display: block !important;
+    box-sizing: border-box;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    font-family: var(--app-font-family, var(--font-sans));
+    font-size: var(--app-font-size, 15px);
+    line-height: var(--app-line-height, 1.8);
+    color: var(--document-foreground);
+    background: transparent !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    --editor-scale: calc(var(--app-font-size, 15px) / 16px);
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror > :first-child {
+    margin-top: 0;
+  }
+
+  /* Headings: copied from editor.css. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror h1,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror h2,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror h3,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror h4,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror h5,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror h6 {
+    margin: 0;
+    padding-top: 1.5rem;
+    padding-bottom: 0.5rem;
+    font-weight: 600;
+    line-height: 1.3;
+    white-space: pre-wrap;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror h1 {
+    font-size: calc(1.9rem * var(--editor-scale));
+    padding-top: 1rem;
+    padding-bottom: calc(0.3rem * var(--editor-scale));
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror h2 {
+    font-size: calc(1.5rem * var(--editor-scale));
+    padding-top: 0.6rem;
+    border-bottom: 0;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror h3 {
+    font-size: calc(1.2rem * var(--editor-scale));
+    padding-top: 0.4rem;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror h4 {
+    font-size: calc(1.05rem * var(--editor-scale));
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror h4,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror h5,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror h6 {
+    padding-top: 0.3rem;
+  }
+
+  /* Paragraphs: keep the editor's padding-based block rhythm. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror > p {
+    margin: 0;
+    padding-bottom: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.25);
+    white-space: pre-wrap;
+    orphans: 3;
+    widows: 3;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror > p:empty,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror > p:has(> br.ProseMirror-trailingBreak:only-child) {
+    min-height: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8));
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror strong {
+    font-weight: 700;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror em {
+    font-style: italic;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror a {
+    color: var(--document-link);
+    text-decoration: none;
+  }
+
+  /* Inline code follows the editor styling on this alignment pass. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror p code {
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    padding: 0 0.3rem;
+    font-family: inherit;
+    font-size: inherit;
+    color: var(--foreground);
+  }
+
+  /* Generic pre block: copied from editor.css. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror pre {
+    box-sizing: border-box;
+    background: var(--editor-block-bg);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 0.4rem 0.8rem 1.2rem;
+    padding-top: 0;
+    margin: 0 0 calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.32);
+    font-family: inherit;
+    font-size: inherit;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow: visible !important;
+    line-height: var(--app-line-height, 1.8);
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror pre code {
+    padding: 0;
+    font-family: inherit;
+  }
+
+  /* CodeBlock NodeView: copy the wrapper/editor geometry, hide only chrome. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror .code-block-wrapper {
+    position: relative;
+    z-index: 1;
+    display: flex !important;
+    flex-direction: column;
+    box-sizing: border-box;
+    width: calc(100% - 1px) !important;
+    max-width: calc(100% - 1px) !important;
+    min-width: 0 !important;
+    margin: 0 0 calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.32);
+    padding: 0.4rem 0.8rem 1.2rem;
+    padding-top: 0.4rem;
+    padding-bottom: 0.5rem;
+    background: var(--editor-block-bg);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--code-block-shiki-fg, var(--document-foreground));
+    font-family: var(--code-font-family);
+    font-size: var(--code-font-size);
+    font-weight: 400;
+    line-height: var(--code-line-height);
+    overflow: visible !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror .code-block-wrapper > .code-block-editor {
+    order: 2;
+    z-index: 1;
+    display: block !important;
+    box-sizing: border-box;
+    width: 100% !important;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    overflow: visible !important;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror .code-block-wrapper > .code-block-editor > .code-block-content {
     display: block;
-    position: static;
-    min-height: 0;
-    overflow: visible;
+    min-height: 1lh;
+    white-space: inherit;
+    word-break: inherit;
+  }
+
+  /* Quote: copied from editor.css; its vertical padding is already zero. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror blockquote {
+    border-left: 0.1875rem solid var(--border);
+    margin: 0.4rem 0 0.8rem;
+    padding: 0 0 0 1rem;
+    color: var(--muted-foreground);
+    font-style: italic;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Lists: copied from editor.css; list items do not acquire PDF-only gaps. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ul,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ol {
+    margin: 0;
+    padding-top: 0;
+    padding-right: 0;
+    padding-left: 1.5rem;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror > ul,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror > ol {
+    padding-bottom: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.8) * 0.25);
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror li {
+    margin: 0;
+    padding: 0;
+    line-height: var(--app-line-height, 1.8);
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror li > p {
+    margin: 0;
+    padding-bottom: 0;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ul {
+    list-style-type: disc;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ul ul {
+    list-style-type: circle;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ol {
+    list-style-type: decimal;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ul li::marker,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ol li::marker {
+    color: var(--brand);
+  }
+
+  /* Highlight: copied from editor.css. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror mark {
+    background-color: var(--document-highlight-bg);
+    border-radius: 0.15rem;
+    padding: 0.1rem 0.2rem;
+  }
+
+  /* Tables: copy editor geometry; only the wrapper/width rules are print-safe. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror .tableWrapper {
+    position: relative;
+    display: block;
+    max-width: 100%;
+    margin-bottom: 1.8rem;
+    overflow: visible !important;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table {
+    box-sizing: border-box;
+    width: calc(100% - 1px) !important;
+    max-width: calc(100% - 1px) !important;
+    min-width: 60px;
+    margin-bottom: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+    border-radius: 8px;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table td,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table th {
+    position: relative;
+    /* The editor's 5rem cell minimum can make a wide table exceed the
+     * printable box. Let fixed layout distribute columns inside A4 instead. */
+    min-width: 0 !important;
+    max-width: none;
+    width: auto;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-top: 0;
+    border-left: 0;
+    vertical-align: top;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table th {
+    background: var(--muted);
+    font-weight: 600;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table tr td:first-child,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table tr th:first-child {
+    border-left: 1px solid var(--border);
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table tr:first-child td,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table tr:first-child th {
+    border-top: 1px solid var(--border);
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table tr:first-child td:first-child,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table tr:first-child th:first-child {
+    border-top-left-radius: 8px;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table tr:first-child td:last-child,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table tr:first-child th:last-child {
+    border-top-right-radius: 8px;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table tr:last-child td:first-child,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table tr:last-child th:first-child {
+    border-bottom-left-radius: 8px;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table tr:last-child td:last-child,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table tr:last-child th:last-child {
+    border-bottom-right-radius: 8px;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table td p,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror table th p {
+    margin-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  /* Horizontal rule: copied from editor.css. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror hr {
+    border: none;
+    border-top: 0.0625rem solid var(--border);
+    margin: 0.4rem 0 0.8rem;
+    padding: 0;
+  }
+
+  /* Images and attachment NodeViews. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror img,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror > img,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror > p > img,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror li > img,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror li > p > img {
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    margin-bottom: 0;
+    padding-bottom: 1rem;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror .editor-image-attachment {
+    height: auto !important;
+    min-height: 0 !important;
+    aspect-ratio: auto !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror .editor-image-attachment__image {
+    height: auto !important;
+    opacity: 1 !important;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror .editor-image-attachment__resize-handle,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror .editor-video-attachment video::-webkit-media-controls {
+    display: none !important;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror .editor-video-attachment {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Task list: mirror editor.css while keeping the checkbox printable. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ul[data-type="taskList"] {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ul[data-type="taskList"] li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ul[data-type="taskList"] li > label {
+    flex-shrink: 0;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    appearance: none;
+    background-color: transparent;
+    border: 1px solid var(--brand);
+    border-radius: 6px;
+    position: relative;
+    transform: translateY(3px);
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"]:checked {
+    background-color: transparent;
+    border-color: var(--muted-foreground);
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"]:checked::after {
+    content: '';
+    width: 11px;
+    height: 9px;
+    position: absolute;
+    top: 51%;
+    left: 50%;
+    background-color: var(--muted-foreground);
+    mask: var(--flowix-hand-check-mask) center / contain no-repeat;
+    transform: translate(-50%, -50%);
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ul[data-type="taskList"] li > div {
+    flex: 1;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .markdown-editor .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div > p {
+    color: var(--muted-foreground);
+    text-decoration: line-through;
+  }
+
+  /* CodeMirror source mode still needs its virtual surface expanded. */
+  html.flowix-pdf-printing .flowix-pdf-print-scope .code-editor .cm-gutters {
+    display: none !important;
+  }
+
+  html.flowix-pdf-printing .flowix-pdf-print-scope .code-editor .cm-content,
+  html.flowix-pdf-printing .flowix-pdf-print-scope .code-editor .cm-line {
+    box-sizing: border-box;
+    min-width: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    font-family: var(--code-font-family);
+    font-size: var(--code-font-size);
+    line-height: var(--code-line-height);
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere;
   }
 }

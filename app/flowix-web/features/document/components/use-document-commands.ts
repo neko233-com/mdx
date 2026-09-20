@@ -249,7 +249,7 @@ export function useDocumentCommands({
       const target = await promptExportTarget(doc, 'pdf', { name: pdfName, extensions: ['pdf'] });
       if (!target) return;
 
-      restorePrintView = await preparePdfPrint(getCurrentDocumentEditor(), doc.markdown);
+      restorePrintView = await preparePdfPrint(getCurrentDocumentEditor());
       const ok = await dialogs.exportPdf(target);
       toast[ok ? 'success' : 'error'](
         tCmd(ok ? 'document.command.exportPdf.success' : 'document.command.exportPdf.failed'),

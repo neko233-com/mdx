@@ -24,6 +24,7 @@ pub struct AppUpdateState {
 pub struct AppUpdateInfo {
     pub current_version: String,
     pub version: String,
+    pub notify: bool,
     pub date: Option<String>,
     pub body: Option<String>,
 }
@@ -39,6 +40,13 @@ pub async fn check_app_update(app: AppHandle) -> Result<Option<AppUpdateInfo>, S
     Ok(update.map(|update| AppUpdateInfo {
         current_version: update.current_version,
         version: update.version,
+        // Unknown manifest fields are preserved by tauri-plugin-updater in
+        // raw_json. Keep notifications enabled for older manifests.
+        notify: update
+            .raw_json
+            .get("notify")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true),
         date: update.date.map(|date| date.to_string()),
         body: update.body,
     }))
