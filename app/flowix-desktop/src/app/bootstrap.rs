@@ -111,6 +111,8 @@ pub fn run() {
     };
 
     let memo_file_arc = Arc::new(RwLock::new(memo_file));
+    let startup_coordinator = Arc::new(crate::app::startup::StartupCoordinator::new());
+    let notebook_transition = Arc::new(std::sync::Mutex::new(()));
     let thread_manager = match ThreadManager::new(thread_db_path.clone()) {
         Ok(manager) => manager,
         Err(err) => {
@@ -161,6 +163,8 @@ pub fn run() {
     let agent_access_for_state = agent_access_arc.clone();
     let security_bookmarks_for_state = security_bookmarks_arc.clone();
     let thread_manager_for_state = thread_manager_arc.clone();
+    let startup_for_state = startup_coordinator.clone();
+    let notebook_transition_for_state = notebook_transition.clone();
     // �?��设�?登�?模块 ── 和上面同样的 prep 模式: clone �?setup �?���?
     let user_config_dir_for_device = user_config_dir.clone();
     // `system_data` 娌?
@@ -222,25 +226,16 @@ pub fn run() {
             }
         })
         .setup(move |app| {
-            // Structural data migrations are the startup gate. They complete
-            // before AppState, cloud polling, file watchers, or normal Webview
-            // initialization can begin. The Webview keeps its existing static
-            // loading spinner until the regular startup flow is ready.
+            // Read the notebook registry synchronously so AppState can be
+            // created. Structural migrations themselves are scheduled after
+            // AppState and IPC are available; the startup coordinator is the
+            // gate for the WebView and notebook-dependent commands.
             let initial_notebooks = {
                 let memo_file = crate::lock_utils::read_lock(&memo_file_arc, "memo_file");
                 let notebooks = memo_file.read_notebook_configs()?;
                 for notebook in &notebooks {
                     security_bookmarks_for_state
                         .start_accessing_for_path(std::path::Path::new(&notebook.path));
-                }
-                let report = memo_file.run_pending_data_migrations()?;
-                if report.applied > 0 {
-                    tracing::info!(
-                        from_version = report.from_version,
-                        to_version = report.to_version,
-                        applied = report.applied,
-                        "startup data migrations completed"
-                    );
                 }
                 notebooks
             };
@@ -284,6 +279,8 @@ pub fn run() {
                 security_bookmarks: security_bookmarks_for_state.clone(),
                 plugin_runs: crate::plugin::PluginRunCoordinator::default(),
                 notebook_imports: Default::default(),
+                notebook_transition: notebook_transition_for_state,
+                startup: startup_for_state,
             };
             app_state.upload_sessions.start_cleanup();
             app.manage(app_state);
@@ -292,52 +289,6 @@ pub fn run() {
                 user_config_dir_for_device.clone(),
                 thread_manager_for_state.clone(),
             );
-            commands::cloud::start_cloud_sync_polling(app.handle().clone());
-            if let Ok(Some(refresh_token)) = user_config_for_state.load_cloud_refresh_token() {
-                let cloud_sync = cloud_sync_for_state.clone();
-                let user_config = user_config_for_state.clone();
-                let app_handle = app.handle().clone();
-                let restore_generation = cloud_sync.session_restore_generation();
-                tauri::async_runtime::spawn(async move {
-                    match cloud_sync.restore_at_generation(&refresh_token, restore_generation).await {
-                        Ok(_) => {
-                            if let Err(error) = cloud_sync.with_current_refresh_token(|token| {
-                                match token {
-                                    Some(token) => user_config.save_cloud_refresh_token(token),
-                                    None => Ok(()),
-                                }
-                            })
-                            {
-                                tracing::warn!(
-                                    "failed to persist rotated cloud refresh token: {error}"
-                                );
-                            }
-                            if let Ok(state) = cloud_sync.state() {
-                                let _ = app_handle.emit("cloud-state-changed", state);
-                            }
-                        }
-                        Err(error) => {
-                            tracing::warn!("failed to restore Flowix Cloud session: {error}");
-                            if error.is_invalid_refresh_token() {
-                                cloud_sync.with_current_refresh_token(|current| {
-                                    if current.is_none() && user_config.load_cloud_refresh_token().ok().flatten().as_deref() == Some(refresh_token.as_str()) {
-                                        let _ = user_config.delete_cloud_refresh_token();
-                                    }
-                                });
-                            } else {
-                                tracing::warn!(
-                                    "keeping the persisted cloud refresh token after a transient restore failure"
-                                );
-                            }
-                            if let Ok(state) = cloud_sync.state() {
-                                let _ = app_handle.emit("cloud-state-changed", state);
-                            }
-                        }
-                    }
-                });
-            }
-            spawn_external_agent_watchdog(app.handle().clone(), external_runtimes.clone());
-
             if let Some(window) = app.get_webview_window("main") {
                 crate::window_chrome::apply_window_border_color(&window);
                 // �?��即�?齐主题背�?��, 消除冷启动白�?(尤其深色主�?)�?
@@ -389,159 +340,6 @@ pub fn run() {
                 security_bookmarks_for_state
                     .start_accessing_for_path(std::path::Path::new(&entry.path));
             }
-            // Every registered notebook is reconciled from Markdown at
-            // startup. SQLite is only a rebuildable cache, including when the
-            // app was closed while files or whole folders were copied in.
-            let current_notebook_id = crate::lock_utils::read_lock(&memo_file_arc, "memo_file")
-                .current_notebook_id_value();
-            for notebook in &initial_notebooks {
-                match memo_file_arc
-                    .read()
-                    .unwrap_or_else(|poisoned| {
-                        tracing::error!("memo_file read lock poisoned, recovering");
-                        poisoned.into_inner()
-                    })
-                    .reconcile_notebook_with_disk_bidirectional(&notebook.id)
-                {
-                    Ok(report) if report.added > 0 || report.removed > 0 => {
-                        runtime_log::record_event(
-                            "info",
-                            "startup.reconcile",
-                            format!(
-                                "notebook={} reconcile added={}, removed={}",
-                                notebook.id, report.added, report.removed
-                            ),
-                        );
-                        tracing::info!(
-                            "[startup] notebook {} reconcile: +{} added, -{} removed",
-                            notebook.id,
-                            report.added,
-                            report.removed
-                        );
-                        for removed in &report.removed_memos {
-                            let path = flowix_core::memo_file::notebook_path_from_relative(
-                                Path::new(&notebook.path),
-                                &removed.relative_path,
-                            )
-                            .unwrap_or_else(|_| {
-                                PathBuf::from(&notebook.path).join(&removed.filename)
-                            });
-                            memo_events::emit(
-                                app.handle(),
-                                MemoEvent::Deleted {
-                                    id: removed.id.clone(),
-                                    path: path.to_string_lossy().into_owned(),
-                                    notebook_id: notebook.id.clone(),
-                                    derived_changed: MemoDerivedChanged::from_deleted(removed),
-                                    source: MemoChangeSource::ExternalTool,
-                                },
-                            );
-                        }
-                        if report.removed_memos.len() != report.removed {
-                            tracing::warn!(
-                                notebook = %notebook.id,
-                                removed = report.removed,
-                                snapshots = report.removed_memos.len(),
-                                "startup reconcile removed count did not match tombstone snapshots"
-                            );
-                        }
-                    }
-                    Ok(_) => tracing::debug!(notebook = %notebook.id, "[startup] reconcile: no-op"),
-                    Err(e) => {
-                        runtime_log::record_event(
-                            "error",
-                            "startup.reconcile_failed",
-                            format!("notebook={} startup reconcile failed: {e}", notebook.id),
-                        );
-                        tracing::warn!(notebook = %notebook.id, "[startup] reconcile failed: {e}");
-                    }
-                }
-                match memo_file_arc
-                    .read()
-                    .unwrap_or_else(|poisoned| {
-                        tracing::error!("memo_file read lock poisoned, recovering");
-                        poisoned.into_inner()
-                    })
-                    .cleanup_orphan_memo_versions(
-                        &notebook.id,
-                        std::time::SystemTime::now(),
-                    ) {
-                    Ok(report) if report.moved > 0 || report.removed > 0 || report.failed > 0 => {
-                        tracing::info!(
-                            notebook = %notebook.id,
-                            moved = report.moved,
-                            removed = report.removed,
-                            retained_recent = report.retained_recent,
-                            failed = report.failed,
-                            "[startup] version maintenance"
-                        );
-                    }
-                    Ok(_) => {}
-                    Err(error) => tracing::warn!(
-                        notebook = %notebook.id,
-                        "[startup] version maintenance failed: {error}"
-                    ),
-                }
-            }
-
-            if current_notebook_id.is_some() {
-                if let Some(notebook_id) = current_notebook_id.as_deref() {
-                    let notebook_path = {
-                        let memo_file = memo_file_arc
-                            .read()
-                            .unwrap_or_else(|poisoned| {
-                                tracing::error!("memo_file read lock poisoned, recovering");
-                                poisoned.into_inner()
-                            });
-                        match memo_file.ensure_notebook_migrations(notebook_id) {
-                            Ok(report) => {
-                                if report.moved_files > 0 || report.rebuilt_tags > 0 {
-                                    tracing::info!(
-                                        notebook = %notebook_id,
-                                        moved_files = report.moved_files,
-                                        rebuilt_tags = report.rebuilt_tags,
-                                        "current notebook migrations completed"
-                                    );
-                                }
-                                memo_file
-                                    .get_notebook_config_by_id(notebook_id)
-                                    .map(|notebook| notebook.path)
-                            }
-                            Err(error) => {
-                                tracing::warn!(
-                                    notebook = %notebook_id,
-                                    "current notebook migration failed: {error}"
-                                );
-                                None
-                            }
-                        }
-                    };
-                    if let Some(notebook_path) = notebook_path {
-                        if let Err(error) = crate::plugin::migrate_notebook_data(
-                            notebook_id,
-                            std::path::Path::new(&notebook_path),
-                            &memo_file_arc,
-                            Some(app.handle()),
-                        ) {
-                            tracing::warn!(
-                                notebook = %notebook_id,
-                                "plugin notebook migration failed: {error}"
-                            );
-                        }
-                    }
-                }
-            }
-
-            // Begin observing notebook changes only after migration and
-            // startup reconciliation have reached a consistent state.
-            memo_watcher
-                .write()
-                .unwrap_or_else(|poisoned| {
-                    tracing::error!("memo_watcher write lock poisoned, recovering");
-                    poisoned.into_inner()
-                })
-                .rebind_all(app.handle().clone(), initial_notebooks.clone());
-
             // �?��时把 preference.json::watcher 应用�?MemoWatcher;
             // 同时注册 user-config-changed 监听做热更新 (前�?�?            // update_watcher_config IPC �?settings::update_watcher_config
             // 写后 emit 该事�? 这里收到�?set_whitelist)�?
@@ -579,7 +377,17 @@ pub fn run() {
             }
 
             register_deep_links(app);
-            handle_cold_start_open_targets(app.handle());
+            spawn_startup_reconciliation(
+                app.handle().clone(),
+                initial_notebooks.clone(),
+                memo_file_for_state.clone(),
+                memo_watcher.clone(),
+                user_config_for_watcher.clone(),
+                startup_coordinator.clone(),
+                cloud_sync_for_state.clone(),
+                user_config_for_state.clone(),
+                external_runtimes.clone(),
+            );
 
             // release 构建不包�??分支�?用户随时�?�� F12 / Ctrl+Shift+I 切换�?
             // 鈹€鈹€ spawn flowix-cli sidecar 鈹€鈹€
@@ -636,6 +444,8 @@ pub fn run() {
             commands::settings::update_watcher_config,
             commands::boot::get_boot_features,
             commands::boot::set_boot_intro_displayed,
+            commands::boot::get_startup_status,
+            commands::boot::wait_for_startup_ready,
             commands::cloud::cloud_get_state,
             commands::cloud::cloud_register,
             commands::cloud::cloud_login,
@@ -854,16 +664,268 @@ pub fn run() {
         .run(handle_run_event);
 }
 
-fn handle_second_instance(app: &tauri::AppHandle, args: Vec<String>) {
-    // 二�?�?��: 区分 markdown 文件�?���?flowix:// 深链�?    // 两个通道�?��同时触发 (用户�?`xdg-open foo.md flowix://memo/abc123` �?��)�?
-    let paths = commands::markdown_paths_from_args(args.clone());
-    emit_open_target_batch_if_needed(app, &paths);
+fn spawn_startup_reconciliation(
+    app: tauri::AppHandle,
+    initial_notebooks: Vec<flowix_core::memo_file::NotebookConfig>,
+    memo_file: Arc<RwLock<flowix_core::memo_file::MemoFile>>,
+    memo_watcher: Arc<RwLock<MemoWatcher>>,
+    user_config_for_watcher: Arc<user_config::UserConfigStore>,
+    startup: Arc<crate::app::startup::StartupCoordinator>,
+    cloud_sync: Arc<flowix_sync::SyncManager>,
+    user_config: Arc<user_config::UserConfigStore>,
+    external_runtimes: Arc<ExternalRuntimeRegistry>,
+) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_startup_reconciliation(
+                &app,
+                &initial_notebooks,
+                &memo_file,
+                &memo_watcher,
+                &user_config_for_watcher,
+                &startup,
+            )
+        }));
 
-    for arg in args {
-        if !paths.contains(&arg) {
-            emit_open_target_if_resolved(app, &arg);
+        match result {
+            Ok(Ok(())) => {
+                startup.mark_ready();
+                start_post_startup_services(app.clone(), cloud_sync, user_config, external_runtimes);
+                handle_cold_start_open_targets(&app);
+            }
+            Ok(Err(error)) => {
+                tracing::error!("[startup] migration gate failed: {error}");
+                startup.mark_failed(error);
+            }
+            Err(_) => {
+                tracing::error!("[startup] migration gate panicked");
+                startup.mark_failed("startup migration panicked");
+            }
+        }
+    });
+}
+
+fn run_startup_reconciliation(
+    app: &tauri::AppHandle,
+    initial_notebooks: &[flowix_core::memo_file::NotebookConfig],
+    memo_file: &Arc<RwLock<flowix_core::memo_file::MemoFile>>,
+    memo_watcher: &Arc<RwLock<MemoWatcher>>,
+    user_config_for_watcher: &Arc<user_config::UserConfigStore>,
+    startup: &crate::app::startup::StartupCoordinator,
+) -> Result<(), String> {
+    startup.mark_running("dataMigrations");
+    {
+        let memo_file = crate::lock_utils::read_lock(memo_file, "memo_file");
+        let report = memo_file
+            .run_pending_data_migrations()
+            .map_err(|error| format!("startup data migration failed: {error}"))?;
+        if report.applied > 0 {
+            tracing::info!(
+                from_version = report.from_version,
+                to_version = report.to_version,
+                applied = report.applied,
+                "startup data migrations completed"
+            );
         }
     }
+
+    startup.mark_running("reconcilingNotebooks");
+    for notebook in initial_notebooks {
+        match crate::lock_utils::read_lock(memo_file, "memo_file")
+            .reconcile_notebook_with_disk_bidirectional(&notebook.id)
+        {
+            Ok(report) if report.added > 0 || report.removed > 0 => {
+                runtime_log::record_event(
+                    "info",
+                    "startup.reconcile",
+                    format!(
+                        "notebook={} reconcile added={}, removed={}",
+                        notebook.id, report.added, report.removed
+                    ),
+                );
+                tracing::info!(
+                    "[startup] notebook {} reconcile: +{} added, -{} removed",
+                    notebook.id,
+                    report.added,
+                    report.removed
+                );
+                for removed in &report.removed_memos {
+                    let path = flowix_core::memo_file::notebook_path_from_relative(
+                        Path::new(&notebook.path),
+                        &removed.relative_path,
+                    )
+                    .unwrap_or_else(|_| PathBuf::from(&notebook.path).join(&removed.filename));
+                    memo_events::emit(
+                        app,
+                        MemoEvent::Deleted {
+                            id: removed.id.clone(),
+                            path: path.to_string_lossy().into_owned(),
+                            notebook_id: notebook.id.clone(),
+                            derived_changed: MemoDerivedChanged::from_deleted(removed),
+                            source: MemoChangeSource::ExternalTool,
+                        },
+                    );
+                }
+                if report.removed_memos.len() != report.removed {
+                    tracing::warn!(
+                        notebook = %notebook.id,
+                        removed = report.removed,
+                        snapshots = report.removed_memos.len(),
+                        "startup reconcile removed count did not match tombstone snapshots"
+                    );
+                }
+            }
+            Ok(_) => tracing::debug!(notebook = %notebook.id, "[startup] reconcile: no-op"),
+            Err(error) => {
+                runtime_log::record_event(
+                    "error",
+                    "startup.reconcile_failed",
+                    format!("notebook={} startup reconcile failed: {error}", notebook.id),
+                );
+                tracing::warn!(notebook = %notebook.id, "[startup] reconcile failed: {error}");
+            }
+        }
+
+        match crate::lock_utils::read_lock(memo_file, "memo_file")
+            .cleanup_orphan_memo_versions(&notebook.id, std::time::SystemTime::now())
+        {
+            Ok(report) if report.moved > 0 || report.removed > 0 || report.failed > 0 => {
+                tracing::info!(
+                    notebook = %notebook.id,
+                    moved = report.moved,
+                    removed = report.removed,
+                    retained_recent = report.retained_recent,
+                    failed = report.failed,
+                    "[startup] version maintenance"
+                );
+            }
+            Ok(_) => {}
+            Err(error) => tracing::warn!(
+                notebook = %notebook.id,
+                "[startup] version maintenance failed: {error}"
+            ),
+        }
+    }
+
+    startup.mark_running("migratingCurrentNotebook");
+    let current_notebook_id = crate::lock_utils::read_lock(memo_file, "memo_file")
+        .current_notebook_id_value();
+    if let Some(notebook_id) = current_notebook_id.as_deref() {
+        let notebook_path = {
+            let memo_file = crate::lock_utils::read_lock(memo_file, "memo_file");
+            let report = memo_file
+                .ensure_notebook_migrations(notebook_id)
+                .map_err(|error| format!("current notebook migration failed: {error}"))?;
+            if report.moved_files > 0 || report.rebuilt_tags > 0 {
+                tracing::info!(
+                    notebook = %notebook_id,
+                    moved_files = report.moved_files,
+                    rebuilt_tags = report.rebuilt_tags,
+                    "current notebook migrations completed"
+                );
+            }
+            memo_file
+                .get_notebook_config_by_id(notebook_id)
+                .map(|notebook| notebook.path)
+        };
+        if let Some(notebook_path) = notebook_path {
+            if let Err(error) = crate::plugin::migrate_notebook_data(
+                notebook_id,
+                Path::new(&notebook_path),
+                memo_file,
+                Some(app),
+            ) {
+                tracing::warn!(
+                    notebook = %notebook_id,
+                    "plugin notebook migration failed: {error}"
+                );
+            }
+        }
+    }
+
+    // The watcher is intentionally bound only after all startup migrations
+    // have reached a consistent state. This prevents disk events from racing
+    // the one-time structure migration.
+    memo_watcher
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .rebind_all(app.clone(), initial_notebooks.to_vec());
+    let watcher_cfg = user_config_for_watcher.get_preference().watcher.clone();
+    memo_watcher
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .set_whitelist(watcher_cfg);
+
+    Ok(())
+}
+
+fn start_post_startup_services(
+    app: tauri::AppHandle,
+    cloud_sync: Arc<flowix_sync::SyncManager>,
+    user_config: Arc<user_config::UserConfigStore>,
+    external_runtimes: Arc<ExternalRuntimeRegistry>,
+) {
+    commands::cloud::start_cloud_sync_polling(app.clone());
+    spawn_external_agent_watchdog(app.clone(), external_runtimes);
+
+    if let Ok(Some(refresh_token)) = user_config.load_cloud_refresh_token() {
+        let app_handle = app.clone();
+        let restore_generation = cloud_sync.session_restore_generation();
+        tauri::async_runtime::spawn(async move {
+            match cloud_sync
+                .restore_at_generation(&refresh_token, restore_generation)
+                .await
+            {
+                Ok(_) => {
+                    if let Err(error) = cloud_sync.with_current_refresh_token(|token| match token {
+                        Some(token) => user_config.save_cloud_refresh_token(token),
+                        None => Ok(()),
+                    }) {
+                        tracing::warn!("failed to persist rotated cloud refresh token: {error}");
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!("failed to restore Flowix Cloud session: {error}");
+                    if error.is_invalid_refresh_token() {
+                        cloud_sync.with_current_refresh_token(|current| {
+                            if current.is_none()
+                                && user_config
+                                    .load_cloud_refresh_token()
+                                    .ok()
+                                    .flatten()
+                                    .as_deref()
+                                    == Some(refresh_token.as_str())
+                            {
+                                let _ = user_config.delete_cloud_refresh_token();
+                            }
+                        });
+                    }
+                }
+            }
+            if let Ok(state) = cloud_sync.state() {
+                let _ = app_handle.emit("cloud-state-changed", state);
+            }
+        });
+    }
+}
+
+fn handle_second_instance(app: &tauri::AppHandle, args: Vec<String>) {
+    // 二�?�?��: 区分 markdown 文件�?���?flowix:// 深链�?    // 两个通道�?��同时触发 (用户�?`xdg-open foo.md flowix://memo/abc123` �?��)�?
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(error) = app.state::<AppState>().startup.wait_until_ready() {
+            tracing::warn!("second-instance target deferred because startup failed: {error}");
+            return;
+        }
+        let paths = commands::markdown_paths_from_args(args.clone());
+        emit_open_target_batch_if_needed(&app, &paths);
+
+        for arg in args {
+            if !paths.contains(&arg) {
+                emit_open_target_if_resolved(&app, &arg);
+            }
+        }
+    });
 }
 
 #[cfg(desktop)]
@@ -875,10 +937,24 @@ fn register_deep_links(app: &mut tauri::App) {
 
     // macOS / Windows: OS 把深链投�?running app, 通过 deep-link 插件回调派发�?
     let app_handle = app.handle().clone();
+    let startup = app.state::<AppState>().startup.clone();
     app.deep_link().on_open_url(move |event| {
-        for url in event.urls() {
-            emit_open_target_if_resolved(&app_handle, url.as_str());
-        }
+        let urls = event
+            .urls()
+            .into_iter()
+            .map(|url| url.to_string())
+            .collect::<Vec<_>>();
+        let app = app_handle.clone();
+        let startup = startup.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Err(error) = startup.wait_until_ready() {
+                tracing::warn!("deep-link target deferred because startup failed: {error}");
+                return;
+            }
+            for url in urls {
+                emit_open_target_if_resolved(&app, &url);
+            }
+        });
     });
 }
 
@@ -995,18 +1071,25 @@ fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
         }
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Opened { urls } => {
-            let mut markdown_paths = Vec::new();
-            for url in urls {
-                if url.scheme() == "file" {
-                    if let Ok(path) = url.to_file_path() {
-                        let path = path.to_string_lossy().to_string();
-                        if !commands::markdown_paths_from_args([path.clone()]).is_empty() {
-                            markdown_paths.push(path);
+            let app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                if let Err(error) = app.state::<AppState>().startup.wait_until_ready() {
+                    tracing::warn!("macOS open target deferred because startup failed: {error}");
+                    return;
+                }
+                let mut markdown_paths = Vec::new();
+                for url in urls {
+                    if url.scheme() == "file" {
+                        if let Ok(path) = url.to_file_path() {
+                            let path = path.to_string_lossy().to_string();
+                            if !commands::markdown_paths_from_args([path.clone()]).is_empty() {
+                                markdown_paths.push(path);
+                            }
                         }
                     }
                 }
-            }
-            emit_open_target_batch_if_needed(app, &markdown_paths);
+                emit_open_target_batch_if_needed(&app, &markdown_paths);
+            });
         }
         tauri::RunEvent::ExitRequested { .. } => {
             stop_external_agent_children(app, "exit");

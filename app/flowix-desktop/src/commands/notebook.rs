@@ -276,6 +276,14 @@ fn set_current_notebook_inner(
     state: &AppState,
     app: &AppHandle,
 ) -> Result<(), String> {
+    // Every caller, including notebook create/delete fallback paths, uses the
+    // same serialized transition. The lock covers the complete operation so
+    // a second request cannot observe a half-switched MemoFile/search pair.
+    state.startup.wait_until_ready()?;
+    let _transition = state
+        .notebook_transition
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let previous_id = read_lock(&state.memo_file, "memo_file").current_notebook_id_value();
 
     // Fast path for ordinary switching: trust memo index and avoid synchronous
@@ -762,12 +770,16 @@ pub fn clear_notebooks(state: State<AppState>, app: AppHandle) -> bool {
 }
 
 #[tauri::command]
-pub fn set_current_notebook(
+pub async fn set_current_notebook(
     notebook_id: Option<String>,
-    state: State<AppState>,
     app: AppHandle,
 ) -> Result<(), String> {
-    set_current_notebook_inner(notebook_id, state.inner(), &app)
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        set_current_notebook_inner(notebook_id, state.inner(), &app)
+    })
+    .await
+    .map_err(|error| format!("notebook switch task failed: {error}"))?
 }
 
 #[cfg(test)]

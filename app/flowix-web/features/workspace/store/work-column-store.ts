@@ -15,6 +15,7 @@ import {
  */
 export interface WorkColumnStore {
   navigation: WorkColumnNavigationState;
+  notebookSwitchesInFlight: number;
   beginNavigation: (
     pendingTarget: WorkColumnTarget,
     retryToken: string | null,
@@ -25,9 +26,12 @@ export interface WorkColumnStore {
   failNavigation: (requestId: number, error: unknown) => boolean;
   dismissNavigationFailure: () => string | null;
   isCurrentNavigation: (requestId: number) => boolean;
+  beginNotebookSwitch: () => void;
+  endNotebookSwitch: () => void;
 }
 
 export const useWorkColumnStore = create<WorkColumnStore>()((set, get) => ({
+  notebookSwitchesInFlight: 0,
   navigation: {
     phase: 'idle',
     showWorkColumnLoading: false,
@@ -126,5 +130,11 @@ export const useWorkColumnStore = create<WorkColumnStore>()((set, get) => ({
     });
     return navigation.retryToken;
   },
+  beginNotebookSwitch: () => set((state) => ({
+    notebookSwitchesInFlight: state.notebookSwitchesInFlight + 1,
+  })),
+  endNotebookSwitch: () => set((state) => ({
+    notebookSwitchesInFlight: Math.max(0, state.notebookSwitchesInFlight - 1),
+  })),
   isCurrentNavigation: (requestId) => get().navigation.requestId === requestId,
 }));

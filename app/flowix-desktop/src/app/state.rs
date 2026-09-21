@@ -7,6 +7,7 @@ use crate::agent_external::runtime_registry::ExternalRuntimeRegistry;
 use crate::agent_external_config::AgentExternalConfig;
 use crate::agent_session::ThreadManager;
 use crate::app::search_index::SearchRebuildCoordinator;
+use crate::app::startup::StartupCoordinator;
 use crate::config::{AgentAccessStore, SecurityBookmarkStore, UserConfigStore};
 use crate::plugin::PluginRunCoordinator;
 use crate::system_data::SystemData;
@@ -78,4 +79,10 @@ pub struct AppState {
     /// AppState lets a Webview recover when it subscribes after an event was
     /// emitted or when a transient IPC/event bridge failure occurs.
     pub notebook_imports: Arc<Mutex<HashMap<String, NotebookImportStatus>>>,
+    /// Serializes the complete current-notebook transition, including its
+    /// migration, index invalidation, and persisted selection update.
+    pub notebook_transition: Arc<Mutex<()>>,
+    /// Native startup migrations are independent from WebView startup but
+    /// remain a gate for commands that depend on a consistent memo library.
+    pub startup: Arc<StartupCoordinator>,
 }

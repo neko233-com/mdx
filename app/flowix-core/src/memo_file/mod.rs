@@ -159,13 +159,33 @@ impl MemoFile {
 
     pub fn acquire_cross_process_write_lock(&self) -> io::Result<CrossProcessWriteGuard> {
         std::fs::create_dir_all(&self.config_dir)?;
+        const LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+        const RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
         let file = OpenOptions::new()
             .create(true)
             .read(true)
             .write(true)
             .truncate(false)
             .open(self.config_dir.join(".memo-write.lock"))?;
-        fs2::FileExt::lock_exclusive(&file)?;
+        let started = std::time::Instant::now();
+        loop {
+            match fs2::FileExt::try_lock_exclusive(&file) {
+                Ok(()) => break,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    if started.elapsed() >= LOCK_TIMEOUT {
+                        return Err(io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            format!(
+                                "timed out waiting for memo write lock after {} ms",
+                                LOCK_TIMEOUT.as_millis()
+                            ),
+                        ));
+                    }
+                    std::thread::sleep(RETRY_INTERVAL);
+                }
+                Err(error) => return Err(error),
+            }
+        }
         Ok(CrossProcessWriteGuard { file })
     }
 

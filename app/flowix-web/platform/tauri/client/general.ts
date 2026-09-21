@@ -17,7 +17,17 @@ export interface BootFeatures {
 export const boot = {
   getFeatures: () => invoke<BootFeatures>('get_boot_features'),
   setIntroDisplayed: () => invoke<void>('set_boot_intro_displayed'),
+  getStartupStatus: () => invoke<StartupStatus>('get_startup_status'),
+  waitForStartupReady: () => invoke<void>('wait_for_startup_ready'),
 };
+
+export type StartupPhase = 'pending' | 'running' | 'ready' | 'failed';
+
+export interface StartupStatus {
+  phase: StartupPhase;
+  step: string;
+  error: string | null;
+}
 
 export interface FontCacheStatus {
   fontId: string;

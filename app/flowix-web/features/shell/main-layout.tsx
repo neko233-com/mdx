@@ -29,6 +29,8 @@ import { useShallow } from 'zustand/react/shallow';
 import {
   product,
   windows,
+  boot,
+  type StartupStatus,
   type DshDownloadProgress,
 } from '@platform/tauri/client';
 import { WindowsTitlebarControls } from '@shared/window-titlebar-controls';
@@ -54,6 +56,7 @@ import {
 } from '@features/workspace/public/shell-api';
 import { MainStatusBarHost } from '@features/shell/components/main-status-bar-host';
 import { CenteredLoadingSpinner } from '@shared/ui/centered-loading-spinner';
+import { useWorkColumnStore } from '@features/workspace/store/work-column-store';
 import { MainPromptHost } from '@features/shell/components/main-prompt-host';
 import type { Editor } from '@tiptap/core';
 
@@ -67,6 +70,11 @@ const BrowserColumn = lazy(() =>
 
 function isWindowsPlatform(): boolean {
   return /Windows/i.test(navigator.userAgent) || /Win/i.test(navigator.platform);
+}
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined'
+    && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 }
 
 function isDifferentHistoryTarget(
@@ -208,6 +216,45 @@ export function MainLayout({
     focusWorkspaceHost,
     focusedHostId,
   } = useShellWorkspaceViewModel();
+  const notebookSwitching = useWorkColumnStore((state) => state.notebookSwitchesInFlight > 0);
+  const [startupStatus, setStartupStatus] = useState<StartupStatus>({
+    phase: 'pending',
+    step: 'initializing',
+    error: null,
+  });
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      setStartupStatus({ phase: 'ready', step: 'ready', error: null });
+      return;
+    }
+
+    let active = true;
+    let timer: number | undefined;
+    const refresh = async () => {
+      try {
+        const next = await boot.getStartupStatus();
+        if (!active) return;
+        setStartupStatus(next);
+        if (next.phase === 'ready' || next.phase === 'failed') {
+          if (timer !== undefined) window.clearInterval(timer);
+          timer = undefined;
+        }
+      } catch {
+        // Browser preview and older native shells have no startup coordinator;
+        // they should retain the existing interactive behavior.
+        if (active) setStartupStatus({ phase: 'ready', step: 'ready', error: null });
+        if (timer !== undefined) window.clearInterval(timer);
+        timer = undefined;
+      }
+    };
+
+    void refresh();
+    timer = window.setInterval(() => void refresh(), 250);
+    return () => {
+      active = false;
+      if (timer !== undefined) window.clearInterval(timer);
+    };
+  }, []);
   const documentHistory = useShellDocumentHistory();
   const canNavigateBack = documentHistory.backStack.some((entry) => (
     isDifferentHistoryTarget(
@@ -546,7 +593,7 @@ export function MainLayout({
 
   return (
     <div
-      className="flowix-main-layout flex h-screen w-screen overflow-hidden"
+      className="flowix-main-layout relative flex h-screen w-screen overflow-hidden"
       data-agent-conversation-view={isAgentConversationView || undefined}
       data-agent-conversation-detail={isAgentConversationDetail || undefined}
       style={{ backgroundColor: 'var(--frame-bg)' }}
@@ -696,6 +743,7 @@ export function MainLayout({
                   className={workColumnLoadingTone === 'agent' || workColumnLoadingTone === 'media'
                     ? 'absolute inset-0 z-40 bg-[var(--agent-bg,var(--document-bg))]'
                     : 'absolute inset-0 z-40 bg-[var(--document-bg)]'}
+                  label={notebookSwitching ? t('memo.navigation.preparingNotebook') : undefined}
                 />
               )}
             </div>
@@ -748,6 +796,18 @@ export function MainLayout({
         onDshIntroDisplayed={handleDshIntroDisplayed}
         onDshInstalled={handleDshInstalled}
       />
+
+      {startupStatus.phase !== 'ready' && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[var(--frame-bg)]">
+          {startupStatus.phase === 'failed' ? (
+            <div className="max-w-md px-6 text-center text-sm text-[var(--muted-foreground)]" role="alert">
+              {t('memo.navigation.startupMigrationFailed')}
+            </div>
+          ) : (
+            <CenteredLoadingSpinner label={t('memo.navigation.preparingWorkspace')} />
+          )}
+        </div>
+      )}
     </div>
   );
 }

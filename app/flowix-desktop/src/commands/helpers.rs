@@ -107,22 +107,6 @@ fn switch_notebook(
         .set_current_notebook(notebook_id.clone());
 
     if let Some(notebook_id) = notebook_id.as_deref() {
-        let moved_files = {
-            let memo_file = read_lock(&state.memo_file, "memo_file");
-            memo_file
-                .ensure_notebook_structure_migration(notebook_id)
-                .map_err(|error| format!("notebook structure migration failed: {error}"))?
-        };
-        if moved_files > 0 {
-            tracing::info!(
-                notebook = %notebook_id,
-                moved_files,
-                "notebook structure migrations completed"
-            );
-        }
-    }
-
-    if let Some(notebook_id) = notebook_id.as_deref() {
         let notebook_path = {
             let memo_file = read_lock(&state.memo_file, "memo_file");
             let report = memo_file

@@ -45,12 +45,22 @@ export function getSelectedWorkspaceNotebookId(): string | null {
   return state.selectedNotebookId ?? state.selectedNotebook?.id ?? null;
 }
 
+// The navigation transaction and the main-window synchronization effect can
+// observe the same selection change. Keep the last successful native sync so
+// the effect does not start a second migration pass for the same notebook.
+let lastPersistedWorkspaceNotebookId: string | null | undefined;
+
+export function getLastPersistedWorkspaceNotebookId(): string | null | undefined {
+  return lastPersistedWorkspaceNotebookId;
+}
+
 /** Persist the notebook selected by a workspace navigation transaction. */
 export async function setCurrentWorkspaceNotebook(
   notebook: Pick<Notebook, 'id'> | string | null,
 ): Promise<void> {
   const notebookId = typeof notebook === 'string' ? notebook : notebook?.id ?? null;
   await notebooksClient.setCurrent(notebookId);
+  lastPersistedWorkspaceNotebookId = notebookId;
 }
 
 export type { MemoItem, Notebook };

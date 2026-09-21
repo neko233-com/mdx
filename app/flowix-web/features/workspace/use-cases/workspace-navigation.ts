@@ -410,40 +410,45 @@ export async function selectNotebook(notebook: Notebook): Promise<void> {
     previousDocument,
   );
   let switchedNotebook = false;
+  useWorkColumnStore.getState().beginNotebookSwitch?.();
 
-  await runNavigation(
-    previousWorkColumnTarget,
-    async (requestId) => {
-      // Flush first. Changing the backend notebook before this point could
-      // make a pending save observe the wrong notebook context. Keep the
-      // document session alive so the workColumn remains visible while the
-      // notebook and middle-column list change.
-      await flushWorkspaceDocument();
-      if (!useWorkColumnStore.getState().isCurrentNavigation(requestId)) return;
+  try {
+    await runNavigation(
+      previousWorkColumnTarget,
+      async (requestId) => {
+        // Flush first. Changing the backend notebook before this point could
+        // make a pending save observe the wrong notebook context. Keep the
+        // document session alive so the workColumn remains visible while the
+        // notebook and middle-column list change.
+        await flushWorkspaceDocument();
+        if (!useWorkColumnStore.getState().isCurrentNavigation(requestId)) return;
 
-      await setCurrentWorkspaceNotebook(notebook);
-      switchedNotebook = true;
-      if (!useWorkColumnStore.getState().isCurrentNavigation(requestId)) return;
+        await setCurrentWorkspaceNotebook(notebook);
+        switchedNotebook = true;
+        if (!useWorkColumnStore.getState().isCurrentNavigation(requestId)) return;
 
-      getWorkspaceMemoState().setSelectedNotebook(notebook);
-      await getWorkspaceMemoState().loadMemos({ notebookId: notebook.id });
-      if (!useWorkColumnStore.getState().isCurrentNavigation(requestId)) return;
-      commitNavigation(requestId, previousWorkColumnTarget);
-    },
-    () => selectNotebook(notebook),
-    async (requestId) => {
-      if (!useWorkColumnStore.getState().isCurrentNavigation(requestId)) return;
-      if (switchedNotebook && previousNotebook?.id) {
-        await setCurrentWorkspaceNotebook(previousNotebook);
-      }
-      if (!useWorkColumnStore.getState().isCurrentNavigation(requestId)) return;
-      getWorkspaceMemoState().setSelectedNotebook(previousNotebook);
-      getWorkspaceMemoState().setSelectedMemo(previousMemo);
-      await restoreDocumentSnapshot(previousDocument);
-    },
-    true, // Preserve the current workColumn target during the transaction.
-    false, // Notebook switching changes list context, not workColumn content.
-  );
+        getWorkspaceMemoState().setSelectedNotebook(notebook);
+        await getWorkspaceMemoState().loadMemos({ notebookId: notebook.id });
+        if (!useWorkColumnStore.getState().isCurrentNavigation(requestId)) return;
+        commitNavigation(requestId, previousWorkColumnTarget);
+      },
+      () => selectNotebook(notebook),
+      async (requestId) => {
+        if (!useWorkColumnStore.getState().isCurrentNavigation(requestId)) return;
+        if (switchedNotebook && previousNotebook?.id) {
+          await setCurrentWorkspaceNotebook(previousNotebook);
+        }
+        if (!useWorkColumnStore.getState().isCurrentNavigation(requestId)) return;
+        getWorkspaceMemoState().setSelectedNotebook(previousNotebook);
+        getWorkspaceMemoState().setSelectedMemo(previousMemo);
+        await restoreDocumentSnapshot(previousDocument);
+      },
+      true,
+      false,
+    );
+  } finally {
+    useWorkColumnStore.getState().endNotebookSwitch?.();
+  }
 }
 
 function publishMemoTargetIfCurrent(

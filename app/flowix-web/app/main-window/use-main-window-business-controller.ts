@@ -6,7 +6,12 @@ import { useI18n } from '@/lib/i18n';
 import { createLogger } from '@/lib/logger';
 import { toast } from '@/lib/toast';
 import { useSettingsStore } from '@/lib/store/settings-store';
-import { type Notebook, useWorkspaceMemoViewModel } from '@features/memo/public/workspace-api';
+import {
+  getLastPersistedWorkspaceNotebookId,
+  setCurrentWorkspaceNotebook,
+  type Notebook,
+  useWorkspaceMemoViewModel,
+} from '@features/memo/public/workspace-api';
 import {
   clearPluginWorkbenchTarget,
   flushWorkspaceDocument,
@@ -50,8 +55,12 @@ export function useMainWindowBusinessController(): MainWindowBusinessController 
     if (navigationPhase === 'loading') return;
     const notebookId = selectedNotebook?.id ?? null;
     if (syncedNotebookIdRef.current === notebookId) return;
+    if (getLastPersistedWorkspaceNotebookId() === notebookId) {
+      syncedNotebookIdRef.current = notebookId;
+      return;
+    }
     syncedNotebookIdRef.current = notebookId;
-    void notebooksClient.setCurrent(notebookId).catch((error) => {
+    void setCurrentWorkspaceNotebook(notebookId).catch((error) => {
       logger.warn('sync current notebook failed', { error });
       syncedNotebookIdRef.current = undefined;
     });
