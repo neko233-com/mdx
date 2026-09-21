@@ -563,6 +563,10 @@ pub fn adapt_event(message: &Value, delivery_thread_id: &str) -> AdaptedEvent {
                     return AdaptedEvent::ChunkWithMetadata(
                         AgentChunk::Text { thread_id, text },
                         AgentChunkMetadata {
+                            codex_turn_id: message
+                                .pointer("/params/turnId")
+                                .and_then(Value::as_str)
+                                .map(str::to_string),
                             message_id: Some(id.to_string()),
                             source_message_id: Some(id.to_string()),
                             message_phase: Some("completed"),
@@ -751,10 +755,16 @@ fn app_server_turn_error_message(message: &Value, status: &str) -> String {
     let candidates = [
         message.pointer("/params/turn/error/message"),
         message.pointer("/params/turn/error"),
+        message.pointer("/params/turn/error/details/upstreamMessage"),
+        message.pointer("/params/turn/error/details/upstream_message"),
+        message.pointer("/params/turn/errorDetails/upstreamMessage"),
+        message.pointer("/params/turn/error_details/upstream_message"),
         message.pointer("/params/turn/reason/message"),
         message.pointer("/params/turn/reason/error/message"),
         message.pointer("/params/error/message"),
         message.pointer("/params/error"),
+        message.pointer("/params/event/data/reason/error/message"),
+        message.pointer("/params/event/data/reason/error"),
     ];
     for candidate in candidates.into_iter().flatten() {
         if let Some(value) = candidate.as_str().filter(|value| !value.trim().is_empty()) {

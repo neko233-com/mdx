@@ -64,6 +64,69 @@ describe("assistant message chunks", () => {
     expect(completed.pendingAssistantId).toBeNull();
   });
 
+  it("adopts the Codex provider id when the streamed delta had no item id", () => {
+    const streamed = applyTextChunk(emptyState(), "answer", {
+      phase: "updated",
+      contentMode: "delta",
+      codexTurnId: "turn-1",
+    });
+    const completed = applyTextChunk(streamed, "answer", {
+      id: "assistant-item-1",
+      phase: "completed",
+      contentMode: "snapshot",
+      codexTurnId: "turn-1",
+    });
+
+    expect(completed.messages).toHaveLength(1);
+    expect(completed.messages[0]).toMatchObject({
+      id: "assistant-item-1",
+      content: "answer",
+      codexTurnId: "turn-1",
+    });
+    expect(completed.pendingAssistantId).toBeNull();
+  });
+
+  it("does not collapse distinct Codex item ids with identical text", () => {
+    const first = applyTextChunk(emptyState(), "answer", {
+      id: "assistant-item-1",
+      phase: "completed",
+      contentMode: "snapshot",
+      codexTurnId: "turn-1",
+    });
+    const second = applyTextChunk(first, "answer", {
+      id: "assistant-item-2",
+      phase: "completed",
+      contentMode: "snapshot",
+      codexTurnId: "turn-1",
+    });
+
+    expect(second.messages).toHaveLength(2);
+    expect(second.messages.map((message) => message.id)).toEqual([
+      "assistant-item-1",
+      "assistant-item-2",
+    ]);
+  });
+
+  it("does not let a mismatched Codex snapshot overwrite the pending row", () => {
+    const streamed = applyTextChunk(emptyState(), "first answer", {
+      phase: "updated",
+      contentMode: "delta",
+      codexTurnId: "turn-1",
+    });
+    const completed = applyTextChunk(streamed, "second answer", {
+      id: "assistant-item-2",
+      phase: "completed",
+      contentMode: "snapshot",
+      codexTurnId: "turn-1",
+    });
+
+    expect(completed.messages).toHaveLength(2);
+    expect(completed.messages.map((message) => message.content)).toEqual([
+      "first answer",
+      "second answer",
+    ]);
+  });
+
   it("keeps every reference intact when a completed reasoning snapshot repeats itself", () => {
     const streamed = applyReasoningChunk(emptyState(), "plan", {
       id: "reasoning-item-1",

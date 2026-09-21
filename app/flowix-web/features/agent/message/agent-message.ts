@@ -24,7 +24,6 @@ export interface AgentMessageViewModel {
 
 const ERROR_GUIDANCE_KEYS: Readonly<Record<string, I18nKey>> = {
   authentication: "agent.error.guidance.authentication",
-  quota_exhausted: "agent.error.guidance.quota_exhausted",
   rate_limited: "agent.error.guidance.rate_limited",
   network: "agent.error.guidance.network",
   session_not_found: "agent.error.guidance.session_not_found",
@@ -34,7 +33,6 @@ const ERROR_GUIDANCE_KEYS: Readonly<Record<string, I18nKey>> = {
   invalid_request: "agent.error.guidance.invalid_request",
   process: "agent.error.guidance.process",
   provider: "agent.error.guidance.provider",
-  unknown: "agent.error.guidance.unknown",
 };
 
 export function agentMessageValueToText(value: unknown): string {
@@ -112,6 +110,8 @@ export function getAgentMessageVisibleContent(
         message.content || "",
         message.errorDetails,
         language,
+        /^msg:deepseek-harness:/u.test(message.id) ||
+          message.errorDetails?.source === "dsh-history",
       ),
     );
   }
@@ -123,6 +123,7 @@ function formatExternalAgentErrorMessage(
   content: string,
   details: ChatMessage["errorDetails"],
   language: AppLanguage,
+  hideProviderDiagnostics = false,
 ): string {
   const upstream = details?.upstreamMessage?.trim();
   const rawBody = upstream || stripCliFailureWrapper(content.trim());
@@ -130,25 +131,20 @@ function formatExternalAgentErrorMessage(
   if (!body) return content;
 
   const diagnostics: string[] = [];
-  if (details?.statusCode) diagnostics.push(`HTTP ${details.statusCode}`);
-  if (details?.requestId) {
+  if (!hideProviderDiagnostics && details?.statusCode) {
+    diagnostics.push(`HTTP ${details.statusCode}`);
+  }
+  if (!hideProviderDiagnostics && details?.requestId) {
     diagnostics.push(
       translate(language, "agent.error.diagnostic.requestId", {
         value: details.requestId,
       }),
     );
   }
-  if (details?.retryAfter) {
+  if (!hideProviderDiagnostics && details?.retryAfter) {
     diagnostics.push(
       translate(language, "agent.error.diagnostic.retryAfter", {
         value: details.retryAfter,
-      }),
-    );
-  }
-  if (details?.exitCode !== undefined) {
-    diagnostics.push(
-      translate(language, "agent.error.diagnostic.exitStatus", {
-        value: details.exitCode,
       }),
     );
   }

@@ -63,7 +63,7 @@ const PRINT_BASE_STYLES = `
     background: #f6f8fa;
   }
   code {
-    font-family: "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-family: "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", "DengXian", "等线", "Microsoft YaHei", "微软雅黑", monospace;
     font-size: 0.9em;
     background: rgba(175, 184, 193, 0.2);
     padding: 0.15em 0.35em;

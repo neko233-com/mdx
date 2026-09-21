@@ -12,6 +12,15 @@ const DEEPSEEK_HARNESS_MESSAGE_MAX_CHARS = 240;
  * recognizable after reload.
  */
 export function isDeepSeekHarnessReconnectError(message: ChatMessage): boolean {
+  const category = message.errorDetails?.category;
+  if (
+    category &&
+    category !== "unknown" &&
+    category !== "network" &&
+    category !== "process"
+  ) {
+    return false;
+  }
   return (
     message.notice === "deepseek-harness-reconnect-failed" ||
     DEEPSEEK_HARNESS_ERROR_ID.test(message.id)
@@ -55,7 +64,7 @@ function formatDeepSeekHarnessFailureMessage(content: string): string {
   // The HTTP status and provider code are diagnostic details; only expose the
   // human-readable upstream message in the conversation.
   const upstreamMessage = extractJsonErrorMessage(
-    messageWithoutCode.replace(/^\d{3}:\s*/, ""),
+    messageWithoutCode.replace(/^\d{3}(?::|\s)\s*/u, ""),
   );
   const message = upstreamMessage || messageWithoutCode;
   return truncateErrorMessage(message);
@@ -107,7 +116,7 @@ export function formatAgentErrorMessage(content: string): string {
 export function extractStandaloneAgentErrorMessage(
   content: string,
 ): string | null {
-  const trimmed = content.trim().replace(/^\d{3}:\s*/u, "");
+  const trimmed = content.trim().replace(/^\d{3}(?::|\s)\s*/u, "");
   if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
   return extractJsonErrorMessage(trimmed);
 }

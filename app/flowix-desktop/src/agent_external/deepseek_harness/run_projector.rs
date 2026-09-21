@@ -53,6 +53,28 @@ impl RunEventProjector {
             // App Server deltas carry the stable transient item id in
             // metadata. Keep that metadata on the buffered chunk; otherwise
             // the final item snapshot cannot reconcile the streamed row.
+            //
+            // A completed assistant item is different: it is a full
+            // provider snapshot, not another delta. Flush the pending
+            // deltas first and deliver the snapshot as a boundary so the
+            // frontend replaces the streamed row by identity instead of
+            // appending the full answer to itself.
+            AdaptedEvent::ChunkWithMetadata(AgentChunk::Text { thread_id, text }, metadata)
+                if metadata.content_mode == Some("snapshot")
+                    || metadata.message_phase == Some("completed") =>
+            {
+                append_thinking_segments(
+                    &mut self.buffer,
+                    self.thinking.flush_pending(),
+                    self.assistant_segment,
+                );
+                let buffered = self.buffer.flush_with_metadata();
+                Projection::Boundary {
+                    buffered,
+                    chunk: AgentChunk::Text { thread_id, text },
+                    metadata,
+                }
+            }
             AdaptedEvent::ChunkWithMetadata(AgentChunk::Text { text, .. }, metadata) => {
                 append_thinking_segments_with_metadata(
                     &mut self.buffer,
@@ -221,5 +243,53 @@ mod tests {
             Some("stable-assistant-item")
         );
         assert_eq!(metadata.content_mode, Some("delta"));
+    }
+
+    #[test]
+    fn delivers_completed_assistant_snapshot_as_a_replacement_boundary() {
+        let mut projector = RunEventProjector::new("t".into());
+        projector.accept(AdaptedEvent::ChunkWithMetadata(
+            AgentChunk::Text {
+                thread_id: "t".into(),
+                text: "hello".into(),
+            },
+            AgentChunkMetadata {
+                message_id: Some("assistant-item-1".into()),
+                source_message_id: Some("assistant-item-1".into()),
+                message_phase: Some("updated"),
+                content_mode: Some("delta"),
+                ..AgentChunkMetadata::default()
+            },
+        ));
+
+        let Projection::Boundary {
+            buffered,
+            chunk: AgentChunk::Text { text, .. },
+            metadata,
+        } = projector.accept(AdaptedEvent::ChunkWithMetadata(
+            AgentChunk::Text {
+                thread_id: "t".into(),
+                text: "hello".into(),
+            },
+            AgentChunkMetadata {
+                message_id: Some("assistant-item-1".into()),
+                source_message_id: Some("assistant-item-1".into()),
+                message_phase: Some("completed"),
+                content_mode: Some("snapshot"),
+                ..AgentChunkMetadata::default()
+            },
+        ))
+        else {
+            panic!("expected completed assistant snapshot boundary");
+        };
+
+        assert_eq!(buffered.len(), 1);
+        assert!(matches!(
+            &buffered[0].0,
+            AgentChunk::Text { text, .. } if text == "hello"
+        ));
+        assert_eq!(text, "hello");
+        assert_eq!(metadata.content_mode, Some("snapshot"));
+        assert!(projector.finish().is_empty());
     }
 }

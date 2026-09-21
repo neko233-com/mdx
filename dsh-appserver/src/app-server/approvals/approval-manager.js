@@ -57,6 +57,19 @@ export class ApprovalManager {
     else settle()
   }
 
+  forget(connectionId) {
+    const timer = this.disconnectTimers.get(connectionId)
+    if (timer) clearTimeout(timer)
+    this.disconnectTimers.delete(connectionId)
+    for (const pending of [...this.pending.values()]) {
+      if (pending.connectionId === connectionId) this.settle(pending, 'unavailable')
+    }
+    this.connections.delete(connectionId)
+    for (const [threadId, lease] of this.leases) {
+      if (lease.connectionId === connectionId) this.leases.delete(threadId)
+    }
+  }
+
   async handle(request, next = () => Promise.resolve('unavailable')) {
     const threadId = String(request.agent?.session?.id ?? '')
     const lease = this.leases.get(threadId)
@@ -138,7 +151,10 @@ export class ApprovalManager {
 
   dispose() {
     for (const timer of this.disconnectTimers.values()) clearTimeout(timer)
+    this.disconnectTimers.clear()
     for (const pending of [...this.pending.values()]) this.settle(pending, 'unavailable')
+    this.connections.clear()
+    this.leases.clear()
     this.listeners.clear()
   }
 }

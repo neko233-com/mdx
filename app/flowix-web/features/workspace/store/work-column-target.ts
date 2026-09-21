@@ -60,6 +60,8 @@ export interface WorkColumnNavigationFailure {
 export interface WorkColumnNavigationState {
   /** The last successfully committed workColumn target. */
   phase: WorkColumnNavigationPhase;
+  /** Whether an in-flight transaction should visually block the workColumn. */
+  showWorkColumnLoading: boolean;
   requestId: number;
   target: WorkColumnTarget;
   /** The target currently being attempted, if any. */

@@ -358,12 +358,24 @@ export function DocumentContainer({
       consumeSelfDocumentPathUpdate(memoId, filePath)
     ) {
       prevFilePathRef.current = filePath;
+      // The self-path update has already been applied to the retained editor.
+      // It therefore skips reloadDocument, whose normal completion path would
+      // release the transition overlay. Release it explicitly before leaving.
+      if (documentSessionMode !== 'isolated' && transitionId !== null) {
+        useDocumentStore.getState().finishDocumentTransition(transitionId);
+      }
       return;
     }
 
     const isDirtyForRename = !instanceKeyChanged && hasDocumentUnsavedChanges(documentIdentity);
     if (isDirtyForRename) {
       prevFilePathRef.current = filePath;
+      // A dirty rename deliberately skips the disk reload so we do not lose
+      // the live draft, but it still needs to finish the transition that
+      // caused this effect to run.
+      if (documentSessionMode !== 'isolated' && transitionId !== null) {
+        useDocumentStore.getState().finishDocumentTransition(transitionId);
+      }
       return;
     }
     prevFilePathRef.current = filePath;

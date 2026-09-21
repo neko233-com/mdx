@@ -281,6 +281,52 @@ export function applyTextChunk(
       pendingReasoningId: null,
     };
   }
+
+  // Some Codex app-server versions omit `itemId` on the first delta. The
+  // streaming buffer then creates an optimistic assistant row, while the
+  // completed snapshot carries the provider item id. Adopt that id in place
+  // instead of inserting the same answer a second time. Restrict this to a
+  // Codex turn and to the currently pending row: equal answers in separate
+  // turns are valid messages and must remain independent.
+  if (
+    metadata.contentMode === "snapshot" &&
+    metadata.codexTurnId &&
+    metadata.id &&
+    st.pendingAssistantId &&
+    targetId === metadata.id
+  ) {
+    const pendingIndex = closedMessages.findIndex(
+      (message) =>
+        message.id === st.pendingAssistantId && message.role === "assistant",
+    );
+    if (pendingIndex >= 0) {
+      const existing = closedMessages[pendingIndex];
+      // Without the provider item id this is only a compatibility join. Do
+      // not let a late snapshot for another item rename and overwrite the
+      // currently pending assistant row.
+      if (existing.content !== text) {
+        return applyTextSnapshotAsNewMessage(closedMessages, text, metadata);
+      }
+      const messages = [...closedMessages];
+      messages[pendingIndex] = {
+        ...existing,
+        id: metadata.id,
+        content: text,
+        messageType: metadata.messageType ?? existing.messageType,
+        sourceTimestamp: existing.sourceTimestamp ?? metadata.sourceTimestamp,
+        sourceSequence: existing.sourceSequence ?? metadata.sourceSequence,
+        sourceSubsequence:
+          existing.sourceSubsequence ?? metadata.sourceSubsequence,
+        codexTurnId: existing.codexTurnId ?? metadata.codexTurnId,
+      };
+      return {
+        messages,
+        pendingAssistantId: metadata.phase === "completed" ? null : metadata.id,
+        pendingReasoningId: null,
+      };
+    }
+  }
+
   if (!targetId) {
     const id = generatedAssistantMessageId();
     const message = {
@@ -315,6 +361,30 @@ export function applyTextChunk(
   return {
     messages: insertAgentMessageBySourceOrder(closedMessages, message),
     pendingAssistantId: metadata.phase === "completed" ? null : targetId,
+    pendingReasoningId: null,
+  };
+}
+
+function applyTextSnapshotAsNewMessage(
+  messages: ChatMessage[],
+  text: string,
+  metadata: MessageChunkMetadata,
+): ApplyResult {
+  const id = metadata.id ?? generatedAssistantMessageId();
+  const message = {
+    id,
+    role: "assistant" as const,
+    content: text,
+    timestamp: messageTimestamp(metadata.sourceTimestamp),
+    sourceTimestamp: metadata.sourceTimestamp,
+    sourceSequence: metadata.sourceSequence,
+    sourceSubsequence: metadata.sourceSubsequence,
+    codexTurnId: metadata.codexTurnId,
+    messageType: metadata.messageType,
+  };
+  return {
+    messages: insertAgentMessageBySourceOrder(messages, message),
+    pendingAssistantId: metadata.phase === "completed" ? null : id,
     pendingReasoningId: null,
   };
 }

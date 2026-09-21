@@ -91,6 +91,7 @@ function navigation(target: WorkColumnTarget | WorkColumnNavigationState) {
     ? target
     : {
         phase: 'committed' as const,
+        showWorkColumnLoading: false,
         requestId: 1,
         target,
         pendingTarget: null,

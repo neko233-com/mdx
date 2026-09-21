@@ -74,6 +74,48 @@ describe("createStreamEventDispatcher", () => {
     );
   });
 
+  it("joins a buffered Codex delta to its later provider completion snapshot", () => {
+    const { ports, projections } = createPorts();
+    const dispatcher = createStreamEventDispatcher(ports);
+
+    dispatcher.dispatch({
+      kind: "stream_start",
+      agentType: "codex",
+      threadId: "thread-1",
+      runId: "run-1",
+      timestamp: 1,
+    });
+    dispatcher.dispatch({
+      kind: "text_delta",
+      agentType: "codex",
+      threadId: "thread-1",
+      runId: "run-1",
+      timestamp: 2,
+      text: "answer",
+      messagePhase: "updated",
+      contentMode: "delta",
+      codexTurnId: "turn-1",
+    });
+    dispatcher.dispatch({
+      kind: "final_message",
+      agentType: "codex",
+      threadId: "thread-1",
+      runId: "run-1",
+      timestamp: 3,
+      text: "answer",
+      messageId: "assistant-item-1",
+      messagePhase: "completed",
+      contentMode: "snapshot",
+      codexTurnId: "turn-1",
+    });
+
+    expect(projections["thread-1"].messages).toHaveLength(1);
+    expect(projections["thread-1"].messages[0]).toMatchObject({
+      id: "assistant-item-1",
+      content: "answer",
+    });
+  });
+
   it("routes session resolution through the injected atomic action", () => {
     const { ports, applySessionResolved } = createPorts();
     const dispatcher = createStreamEventDispatcher(ports);

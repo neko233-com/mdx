@@ -6,10 +6,22 @@ describe('dsh-appserver protocol', () => {
     const server = new AppServer(null, { adapter: new InMemoryHarnessAdapter() })
     const initialized = await server.dispatch({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 1 } })
     expect(initialized.result?.protocolVersion).toBe(1)
+    expect(initialized.result?.apiVersion).toBe('v2')
+    expect(initialized.result?.features?.capabilityNegotiation).toBe(true)
+    expect(initialized.result?.limits?.maxEventList).toBe(1000)
 
     const incompatible = new AppServer(null, { adapter: new InMemoryHarnessAdapter() })
     const result = await incompatible.dispatch({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 2 } })
     expect(result.error?.code).toBe(-32602)
+  })
+
+  it('exposes the same protocol descriptor through runtime status', async () => {
+    const server = new AppServer(null, { adapter: new InMemoryHarnessAdapter() })
+    await server.dispatch({ jsonrpc: '2.0', id: 1, method: 'initialize' })
+    const result = await server.dispatch({ jsonrpc: '2.0', id: 2, method: 'runtime/status' })
+    expect(result.result?.protocolVersion).toBe(1)
+    expect(result.result?.apiVersion).toBe('v2')
+    expect(result.result?.features?.revisionedMutations).toBe(true)
   })
 
   it('requires initialize before thread operations', async () => {
@@ -32,6 +44,8 @@ describe('dsh-appserver protocol', () => {
     expect(fork.error).toBeUndefined()
     expect((read.result as { thread: { parentThreadId?: string } }).thread.parentThreadId).toBe(root)
     expect((page.result as { page: { data: unknown[] } }).page.data).toHaveLength(1)
+    const compactPage = await server.dispatch({ jsonrpc: '2.0', id: 7, method: 'thread/turns/list', params: { threadId: root, limit: 1, itemsView: 'notLoaded' } })
+    expect((compactPage.result as { page: { data: Array<{ itemsView?: string; items: unknown[] }> } }).page.data[0]).toMatchObject({ itemsView: 'notLoaded', items: [] })
   })
 
   it('supports provider-backed thread archive', async () => {
@@ -42,6 +56,40 @@ describe('dsh-appserver protocol', () => {
     const archived = await server.dispatch({ jsonrpc: '2.0', id: 3, method: 'thread/archive', params: { threadId } })
     expect(archived.error).toBeUndefined()
     expect(archived.result).toEqual({ archived: true })
+  })
+
+  it('exposes durable goal get/set/clear operations with optimistic revisions', async () => {
+    const events: any[] = [{
+      type: 'goal/change', seq: 1,
+      data: { kind: 'goal/change', version: 1, operation: 'set', goal: { id: 'goal-1', revision: 1, objective: 'old objective', phase: 'active' } },
+    }]
+    const commands: string[] = []
+    const adapter = {
+      subscribe: () => () => {},
+      listEvents: async (_threadId: string, afterSeq = -1) => ({
+        data: events.filter(event => event.seq > afterSeq), nextCursor: null,
+      }),
+      executeCommand: async (_threadId: string, command: string) => {
+        commands.push(command)
+        if (command.startsWith('/goal set ')) events.push({
+          type: 'goal/change', seq: events.length + 1,
+          data: { kind: 'goal/change', version: 2, operation: 'set', goal: { id: 'goal-1', revision: 2, objective: command.slice('/goal set '.length), phase: 'active' } },
+        })
+        if (command === '/goal clear') events.push({ type: 'goal/change', seq: events.length + 1, data: { kind: 'goal/change', operation: 'clear', goalId: 'goal-1' } })
+        return { execution: { result: { kind: 'success' } } }
+      },
+    }
+    const server = new AppServer(null, { adapter })
+    await server.dispatch({ jsonrpc: '2.0', id: 1, method: 'initialize' })
+    const before = await server.dispatch({ jsonrpc: '2.0', id: 2, method: 'thread/goal/get', params: { threadId: 'thread-1' } })
+    expect(before.result?.goal).toMatchObject({ id: 'goal-1', version: 1, objective: 'old objective', status: 'active' })
+    const updated = await server.dispatch({ jsonrpc: '2.0', id: 3, method: 'thread/goal/set', params: { threadId: 'thread-1', objective: 'new objective', expectedVersion: 1 } })
+    expect(updated.result?.goal).toMatchObject({ version: 2, objective: 'new objective' })
+    expect(commands).toEqual(['/goal set new objective'])
+    const conflict = await server.dispatch({ jsonrpc: '2.0', id: 4, method: 'thread/goal/set', params: { threadId: 'thread-1', objective: 'stale', expectedVersion: 1 } })
+    expect(conflict.error?.data).toMatchObject({ kind: 'revision_conflict', expected: 1, actual: 2 })
+    const cleared = await server.dispatch({ jsonrpc: '2.0', id: 5, method: 'thread/goal/clear', params: { threadId: 'thread-1', expectedVersion: 2 } })
+    expect(cleared.result).toEqual({ cleared: true, goal: null })
   })
 
   it('forwards turn and command attachments without turning them into paths', async () => {
@@ -88,7 +136,7 @@ describe('dsh-appserver protocol', () => {
     })
     expect(result.error).toBeUndefined()
     expect(launch).toEqual({
-      cwd: '/workspace', workspacePaths: ['/workspace', '/notes'],
+      cwd: '/workspace',
       provider: 'deepseek', model: 'deepseek-chat', maxTokens: 4096,
       agentPreset: 'standard', permissionMode: 'workspace-write',
     })
@@ -139,6 +187,14 @@ describe('dsh-appserver protocol', () => {
     expect(first.error).toBeUndefined()
     expect(second.error).toBeUndefined()
     expect(duplicate.error?.code).toBe(-32003)
+  })
+
+  it('allows a released HTTP connection identity to initialize again', async () => {
+    const server = new AppServer(null, { adapter: new InMemoryHarnessAdapter() })
+    await server.dispatch({ jsonrpc: '2.0', id: 1, method: 'initialize' }, 'mobile-a')
+    server.disconnectConnection('mobile-a', 0)
+    const reinitialized = await server.dispatch({ jsonrpc: '2.0', id: 2, method: 'initialize' }, 'mobile-a')
+    expect(reinitialized.error).toBeUndefined()
   })
 
   it('applies notification opt-out per connection', async () => {

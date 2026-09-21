@@ -5,9 +5,10 @@ import { requiredString } from '../protocol/json-rpc.js'
  * keep Flowix-owned extensions separate from the generic App Server surface
  * to product-specific UI concerns. */
 export function flowixMethods(adapter) {
+  const query = adapter.sessionQueryService
   return {
     'flowix/jobs/list': p => adapter.listJobs(requiredString(p.threadId, 'threadId')),
-    'flowix/session/usage': p => adapter.sessionUsage(requiredString(p.sessionId || p.threadId, 'sessionId')),
+    'flowix/session/usage': p => query?.usage(requiredString(p.sessionId || p.threadId, 'sessionId')) ?? adapter.sessionUsage(requiredString(p.sessionId || p.threadId, 'sessionId')),
     'flowix/plugins/list': () => adapter.listPlugins(),
     'flowix/runtime/profile': () => adapter.profileInfo(),
   }

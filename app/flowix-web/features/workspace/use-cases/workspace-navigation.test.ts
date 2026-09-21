@@ -74,7 +74,7 @@ vi.mock('@platform/tauri/client', () => ({
 vi.mock('@features/workspace/store/work-column-store', () => ({
   useWorkColumnStore: {
     getState: () => ({
-      navigation: { phase: 'committed', requestId: 1, target: mocks.navigationTarget, pendingTarget: null, previousTarget: null, failure: null, retryToken: null },
+      navigation: { phase: 'committed', showWorkColumnLoading: false, requestId: 1, target: mocks.navigationTarget, pendingTarget: null, previousTarget: null, failure: null, retryToken: null },
       beginNavigation: mocks.beginNavigation,
       commitNavigation: mocks.commitNavigation,
       failNavigation: mocks.failNavigation,

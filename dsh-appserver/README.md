@@ -1,109 +1,132 @@
 # dsh-appserver
 
-## Approvals
+独立的 DSH App Server。它直接使用 DSH Cordis 原生服务，为 Flowix 提供接近 Codex app-server 的 Thread、Turn、Item 和管理接口，不依赖旧版 Flowix bridge。
 
-The server is a channel adapter for DSH's native `ctx.approval` seam. It never writes
-`approval/asked` or `approval/decided` itself. Owned agent requests are delivered as
-server-initiated JSON-RPC requests and resolve to DSH's one-shot outcomes:
+## 架构
+
+```text
+stdio / HTTP / SSE
+        ↓
+DshAppServer（握手、校验、调度、错误映射）
+        ↓
+Resource Methods（Thread / Turn / Command / Model / Credential / Runtime / Session）
+        ↓
+NativeDshAdapter
+        ↓
+DSH Services（agents / sessions / persistence / llm / settings / credentials）
+```
+
+进程内 Agent 句柄和流式投影状态由 `AgentRuntimeRegistry` 管理；持久历史始终以 DSH Session event log 为事实源。通知投影放在 `projections/` 中，协议级校验和领域错误放在 `protocol/` 中。
+
+Session 只读访问与查询、Thread/Turn 生命周期、附件准入、命令与 Skill、模型目录、模型配置、凭证管理和 Runtime 能力探测分别由独立 Service 负责。`NativeDshAdapter` 保留为兼容门面。
+
+## 接口
+
+- 生命周期：`initialize`、`shutdown`
+- Thread：`thread/start`、`thread/resume`、`thread/read`、`thread/list`、`thread/fork`、`thread/close`、`thread/archive`
+- Turn：`turn/start`、`turn/steer`、`turn/interrupt`、`thread/turns/list`
+- 历史：`thread/events/list`、`session/history`
+- 命令：`thread/command`、`thread/skills`
+- 模型：`model/catalog`、`model/discover`、`model/config/*`
+- 凭证：`credential/read`、`credential/set`、`credential/unset`
+- Runtime：`runtime/capabilities`、`runtime/status`
+- Session：`session/flush`、`session/ensure`、`session/prompt`、`session/dispose`、`run/cancel`
+
+`initialize` 返回的 capabilities 根据当前 Cordis Context 中实际存在的服务动态生成。Flowix 自有扩展统一使用 `flowix/*` 命名空间。
+
+## Transport
+
+### stdio
+
+stdio 使用 JSONL，一行一个 JSON-RPC 消息。相同 Thread 的请求串行，不同 Thread 可以并行。
+
+### HTTP / SSE
+
+- `POST /rpc`
+- `GET /events?threadId=<id>&afterSeq=<seq>&clientId=<id>`
+- `GET /readyz`
+- `GET /healthz`
+
+HTTP 默认监听 `127.0.0.1`。SSE 支持 `Last-Event-ID`、事件 `id`、心跳、慢客户端背压，以及回放和实时事件之间的缓冲去重。
+
+HTTP 配置项：
+
+```yaml
+http:
+  host: 127.0.0.1
+  port: 0
+  maxBodyBytes: 1048576
+  heartbeatMs: 15000
+  maxSseConnections: 64
+  maxReplayEvents: 5000
+  authToken: optional-local-secret
+  secureClientIdentity: false
+  pairingMaxAttempts: 5
+  pairingWindowMs: 60000
+  pairingBlockMs: 300000
+  requestTimeoutMs: 30000
+  headersTimeoutMs: 15000
+  keepAliveTimeoutMs: 5000
+  clientIdentityTtlMs: 86400000
+```
+
+移动端推荐流程：
+
+```text
+POST /auth/pair       配对设备，获得 accessToken / refreshToken
+POST /auth/refresh    刷新 Token（刷新后旧 accessToken 失效）
+POST /rpc             发送 JSON-RPC 命令
+GET  /events          SSE 实时事件（accessToken 可放 query，供原生 EventSource 使用）
+GET  /sync            前台恢复后按 afterSeq 补事件
+GET  /exports/:id     下载受认证的临时导出文件
+POST /auth/revoke     撤销当前设备
+```
+
+移动认证可通过 `http.mobileAuth.pairingSecret` 开启，建议同时设置 `persistencePath` 持久化设备 Token。移动 Web 需要显式配置 `allowedOrigins`；原生 App 不需要 CORS。
+
+Server 配置支持 `server.maxQueuedRequests`。设置 `telemetry: true` 后会通过 Cordis logger 输出脱敏的 RPC 完成事件，只包含方法、请求 ID、连接 ID、Thread ID、耗时、结果状态和队列统计，不记录 prompt、凭证或附件内容。也可以传入自定义 `observer(event)`。
+
+长历史保护配置：
+
+```yaml
+server:
+  connectionTtlMs: 86400000
+  history:
+    concurrency: 2
+    maxQueued: 16
+    timeoutMs: 3000
+    warningEvents: 5000
+    maxProjectionEvents: 20000
+    maxResultBytes: 10485760
+  projection:
+    maxSessions: 64
+    ttlMs: 300000
+    maxEstimatedBytes: 67108864
+  workers:
+    size: 2
+    thresholdEvents: 5000
+    timeoutMs: 5000
+  exports:
+    inlineBytes: 1048576
+    maxBytes: 104857600
+    ttlMs: 900000
+```
+
+超过限制时返回稳定的 `history_too_large` 或 `result_too_large`，不会继续占用实时 Turn、Approval 和 SSE 所需的执行资源。
+
+设置 `authToken` 后，除 `/readyz` 外的请求必须携带 `Authorization: Bearer <token>`。如果监听非回环地址，宿主必须配置认证和 TLS。
+
+启用 `secureClientIdentity` 后，首次 `initialize` 会通过 `x-dsh-client-id` 和 `x-dsh-client-secret` 响应头签发连接身份。后续 RPC 必须回传这两个请求头；SSE 使用 `clientId`、`clientSecret` 查询参数。该模式用于防止同机进程伪造 Approval 所有权，默认关闭以兼容旧客户端。
+
+## Approval
+
+服务端通过 JSON-RPC server request 转发 DSH 原生 approval：
 
 - `accept` → `allowed-once`
 - `decline` → `rejected`
 - `cancel` → `cancelled`
 
-stdio clients answer with a normal JSON-RPC response using the server request id.
-Split HTTP/SSE clients call `serverRequest/respond` with `{ requestId, decision }`.
-Pending requests are process-local and replayed on an SSE reconnect; durable approval
-events are audit history only. Session policy is exposed through
-`thread/approvalPolicy/read` and `thread/approvalPolicy/write` (`ask` or `never`).
-
-独立的 DSH App Server。它直接使用 DSH Cordis 原生服务，不依赖 Flowix bridge、`dsh-sdk-jsonrpc-server` 或 SDK extension 环境。
-
-接口按 Codex app-server 的资源目录组织：初始化、Thread、Turn、Model、Credential、Runtime 和 Session。生产运行时、协议测试和 HTTP 测试共用同一个 dispatcher。
-
-## Standalone launcher
-
-`bin/flowix-dsh-appserver.mjs` is the stable Flowix process entrypoint for
-direct App Server migration. It intentionally delegates the actual DSH runtime
-command to `FLOWIX_DSH_RUNTIME_COMMAND` and optional JSON string arguments in
-`FLOWIX_DSH_RUNTIME_ARGS`, while setting `FLOWIX_DSH_APPSERVER_STDIO=1` and
-preserving stdin/stdout/stderr. This keeps upstream CLI invocation details out
-of the Desktop client.
-
-## 目录
-
-```text
-src/app-server/
-├── server.js                 # 握手、请求队列、错误边界、方法注册
-├── methods/                  # 按 JSON-RPC 资源拆分的 handlers
-│   ├── thread.js
-│   ├── turn.js
-│   ├── model.js
-│   ├── credential.js
-│   ├── runtime.js
-│   └── session.js
-├── protocol/json-rpc.js      # JSON-RPC 校验、错误码、响应构造
-├── adapters/
-│   └── native-dsh-adapter.js # 唯一的 DSH 原生依赖边界
-└── transports/
-    ├── stdio.js
-    └── http.js
-```
-
-根目录下的 `native-jsonrpc-server.js`、`native-adapter.js` 和 `http-transport.js` 仅是向后兼容导出。
-
-## 接口目录
-
-```text
-initialize
-shutdown
-
-thread/start
-thread/resume
-thread/read
-thread/list
-thread/fork
-thread/turns/list
-thread/events/list
-thread/close
-
-turn/start
-turn/interrupt
-
-model/catalog
-model/discover
-model/config/read
-model/config/upsert
-model/config/remove
-
-credential/read
-credential/set
-credential/unset
-
-runtime/capabilities
-runtime/status
-
-session/flush
-session/ensure
-session/prompt
-session/history
-session/dispose
-run/cancel
-```
-
-协议只暴露一套 canonical 方法名；Flowix 自有扩展统一放在 `flowix/*` 下。
-
-## Transport
-
-- stdio：JSONL，一行一个 JSON-RPC 消息。
-- HTTP：`POST /rpc`。
-- SSE：`GET /events?threadId=<id>&afterSeq=<seq>&clientId=<client-id>`，历史回放和实时事件使用相同的 `thread/*`、`turn/*`、`item/*` 通知格式。
-- 健康检查：`GET /readyz`、`GET /healthz`。
-
-HTTP 默认监听 `127.0.0.1`。对外暴露前应在宿主层增加鉴权和 TLS。
-
-HTTP 多客户端通过 `x-dsh-client-id` 请求头区分连接级初始化状态；SSE 可使用同名请求头或 `clientId` 查询参数。`initialize.params.capabilities.optOutNotificationMethods` 只影响当前客户端。
-
-同一个 Thread 的请求串行执行，不同 Thread 可并行。stdio transport 保持输入消息顺序，因此批量写入的 fork/read 等依赖请求不会抢跑。
+Pending approval 是进程内状态，会在 SSE 重连时回放；持久化的 approval event 只作为审计历史。
 
 ## Cordis 挂载
 
@@ -114,23 +137,16 @@ HTTP 多客户端通过 `x-dsh-client-id` 请求头区分连接级初始化状�
     stdio: true
 ```
 
-模型与凭据服务按请求动态解析：核心 Thread/Turn 服务只要求 `agents` 和 `sessions`；模型配置需要 `settings`，模型发现需要 `llm`，凭据管理需要 `credentials`。
-
-## 测试
+## 开发检查
 
 ```sh
 npm run typecheck
+npm run docs:protocol
 npm test
 npm run test:models
 npm run test:http-transport
-# Cross-platform runtime smokes against the locally installed Flowix DSH
-# (auto-discovered from ~/Library/Application Support/Flowix/dsh/current.json,
-# or set DSH_RUNTIME_ROOT to a versions/<v> runtime root):
 npm run test:runtime-stdio
 npm run test:runtime-http
-# Legacy Windows-only runtime smokes (hardcoded dev-machine paths):
-npm run test:runtime-profile
-npm run test:runtime-jsonrpc
 ```
 
-`test:runtime-stdio` / `test:runtime-http` 用 Flowix 安装的 DSH 作为真实 Cordis 宿主：由 `test/runtime/host.mjs` 拍平运行时自带 `dsh-base` roster（headless 裁剪的 typert 行就地 disable）生成配置，再以 `dsh-sdk-jsonrpc-demo/packaged-bin` 启动。stdio 冒烟覆盖握手、错误码、Thread/Turn/Fork、审批策略、凭据与模型配置 CRUD、session 别名与崩溃重启恢复；HTTP 冒烟覆盖 `/rpc`、`/events` SSE 回放、`afterSeq` 游标、多客户端隔离、通知 opt-out 与请求体上限。项目代码不导入或依赖 DSH SDK server。真实模型调用与审批决策环需要有效凭据，未在这些冒烟中触发。
+`typecheck` 严格检查 TypeScript 协议类型，并对核心 JavaScript、Service、Projection 模块执行模块解析和语法检查。Runtime smoke test 需要本机已安装的 Flowix DSH。

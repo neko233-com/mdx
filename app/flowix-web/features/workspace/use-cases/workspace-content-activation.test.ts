@@ -9,6 +9,7 @@ function resetWorkspace() {
   useWorkColumnStore.setState({
     navigation: {
       phase: 'idle',
+      showWorkColumnLoading: false,
       requestId: 0,
       target: { kind: 'empty' },
       pendingTarget: null,

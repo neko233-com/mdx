@@ -76,6 +76,17 @@ struct ActiveTurn {
     started_at: i64,
     last_event_at: i64,
     stream_end_emitted: Arc<AtomicBool>,
+    /// Completed agent item snapshots can be present both in
+    /// `item/completed` and in the terminal turn payload. Keep the snapshots
+    /// per active turn so the terminal payload remains a true fallback
+    /// instead of a second delivery.
+    completed_agent_messages: Arc<Mutex<Vec<CompletedAgentMessage>>>,
+}
+
+#[derive(Clone, Debug)]
+struct CompletedAgentMessage {
+    id: Option<String>,
+    text: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -692,6 +703,7 @@ impl CodexAppServerManager {
             .await;
 
         let stream_end_emitted = Arc::new(AtomicBool::new(false));
+        let completed_agent_messages = Arc::new(Mutex::new(Vec::new()));
         let started = async {
             let (codex_thread_id, cwd) = self.resolve_codex_thread(&flowix_thread_id, &message).await?;
             let approval = app_server_approval_policy(message.permission_mode_for_runtime(AGENT_TYPE));
@@ -729,6 +741,7 @@ impl CodexAppServerManager {
                 started_at: chrono::Utc::now().timestamp_millis(),
                 last_event_at: chrono::Utc::now().timestamp_millis(),
                 stream_end_emitted: stream_end_emitted.clone(),
+                completed_agent_messages: completed_agent_messages.clone(),
             });
             let result = self.request("turn/start", json!({
                 "threadId": codex_thread_id,
@@ -1526,6 +1539,7 @@ impl CodexAppServerManager {
         let waits_for_provider_turn =
             is_codex_compact_command(command) || is_codex_goal_mutation_command(command);
         let ended = Arc::new(AtomicBool::new(false));
+        let completed_agent_messages = Arc::new(Mutex::new(Vec::new()));
         // Native commands can either be an immediate thread operation or
         // return/start a provider turn. `/goal` is a mutation RPC whose
         // response is followed by an autonomous provider turn, as shown by
@@ -1550,6 +1564,7 @@ impl CodexAppServerManager {
                 started_at,
                 last_event_at: chrono::Utc::now().timestamp_millis(),
                 stream_end_emitted: ended.clone(),
+                completed_agent_messages: completed_agent_messages.clone(),
             },
         );
         self.emit_codex_command(
@@ -2192,6 +2207,7 @@ async fn dispatch_notification_inner(inner: &Arc<Inner>, message: &Value) {
                 active.run_id.clone(),
                 active.app_handle.clone(),
                 active.stream_end_emitted.clone(),
+                active.completed_agent_messages.clone(),
                 active.command_id.clone(),
                 active.command.clone(),
                 active.started_at,
@@ -2203,8 +2219,17 @@ async fn dispatch_notification_inner(inner: &Arc<Inner>, message: &Value) {
             )
         })
     };
-    let Some((flowix_thread_id, run_id, app, ended, command_id, command, started_at, pending)) =
-        active
+    let Some((
+        flowix_thread_id,
+        run_id,
+        app,
+        ended,
+        completed_agent_messages,
+        command_id,
+        command,
+        started_at,
+        pending,
+    )) = active
     else {
         return;
     };
@@ -2308,15 +2333,21 @@ async fn dispatch_notification_inner(inner: &Arc<Inner>, message: &Value) {
                 if let Some((chunk, metadata)) =
                     completed_message_chunk(&flowix_thread_id, item, turn_id.as_deref())
                 {
-                    emit_notification_chunk_with_metadata(
-                        inner,
-                        &flowix_thread_id,
-                        &run_id,
-                        &app,
-                        chunk,
-                        metadata,
-                    )
-                    .await;
+                    let should_emit = item.get("type").and_then(Value::as_str)
+                        != Some("agentMessage")
+                        || should_emit_completed_agent_message(&completed_agent_messages, item)
+                            .await;
+                    if should_emit {
+                        emit_notification_chunk_with_metadata(
+                            inner,
+                            &flowix_thread_id,
+                            &run_id,
+                            &app,
+                            chunk,
+                            metadata,
+                        )
+                        .await;
+                    }
                 } else if let Some((id, name)) = tool_identity(item) {
                     emit_notification_chunk_with_metadata(
                         inner,
@@ -2370,15 +2401,19 @@ async fn dispatch_notification_inner(inner: &Arc<Inner>, message: &Value) {
                     if let Some((chunk, metadata)) =
                         completed_message_chunk(&flowix_thread_id, item, turn_id.as_deref())
                     {
-                        emit_notification_chunk_with_metadata(
-                            inner,
-                            &flowix_thread_id,
-                            &run_id,
-                            &app,
-                            chunk,
-                            metadata,
-                        )
-                        .await;
+                        if should_emit_completed_agent_message(&completed_agent_messages, item)
+                            .await
+                        {
+                            emit_notification_chunk_with_metadata(
+                                inner,
+                                &flowix_thread_id,
+                                &run_id,
+                                &app,
+                                chunk,
+                                metadata,
+                            )
+                            .await;
+                        }
                     }
                 }
                 if let Some(reason) = &reason {
@@ -2571,6 +2606,51 @@ fn item_metadata_from_id(item_id: Option<String>) -> AgentChunkMetadata {
         source_message_id: item_id,
         ..AgentChunkMetadata::default()
     }
+}
+
+fn completed_agent_message(item: &Value) -> Option<CompletedAgentMessage> {
+    if item.get("type").and_then(Value::as_str) != Some("agentMessage") {
+        return None;
+    }
+    let message = CompletedAgentMessage {
+        id: item
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.trim().is_empty())
+            .map(str::to_string),
+        text: item
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    };
+    (!message.text.trim().is_empty()).then_some(message)
+}
+
+async fn should_emit_completed_agent_message(
+    messages: &Arc<Mutex<Vec<CompletedAgentMessage>>>,
+    item: &Value,
+) -> bool {
+    let Some(candidate) = completed_agent_message(item) else {
+        return true;
+    };
+    let mut seen = messages.lock().await;
+    let duplicate = seen
+        .iter()
+        .any(|previous| match (&candidate.id, &previous.id) {
+            // Stable provider ids are authoritative. Two different ids remain
+            // distinct even when the rendered text happens to match.
+            (Some(candidate_id), Some(previous_id)) => candidate_id == previous_id,
+            // If one side lacks an id, text is the only compatibility identity
+            // available for the terminal fallback. This branch is deliberately
+            // limited to that malformed/legacy boundary.
+            _ => candidate.text == previous.text,
+        });
+    if duplicate {
+        return false;
+    }
+    seen.push(candidate);
+    true
 }
 
 fn with_turn_id(mut metadata: AgentChunkMetadata, turn_id: Option<&str>) -> AgentChunkMetadata {
@@ -3819,6 +3899,61 @@ Budget:
         assert_eq!(metadata.source_message_id.as_deref(), Some("message-1"));
         assert_eq!(metadata.message_phase.as_deref(), Some("completed"));
         assert_eq!(metadata.content_mode.as_deref(), Some("snapshot"));
+    }
+
+    #[tokio::test]
+    async fn suppresses_a_terminal_agent_snapshot_already_forwarded_for_the_turn() {
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let completed = json!({
+            "id": "message-1",
+            "type": "agentMessage",
+            "text": "Final answer"
+        });
+
+        assert!(should_emit_completed_agent_message(&messages, &completed).await);
+        assert!(!should_emit_completed_agent_message(&messages, &completed).await);
+        assert!(
+            should_emit_completed_agent_message(
+                &messages,
+                &json!({ "id": "message-2", "type": "agentMessage", "text": "Final answer" }),
+            )
+            .await
+        );
+    }
+
+    #[tokio::test]
+    async fn matches_legacy_terminal_snapshots_when_one_side_lacks_an_id() {
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let completed = json!({ "type": "agentMessage", "text": "Final answer" });
+
+        assert!(should_emit_completed_agent_message(&messages, &completed).await);
+        assert!(!should_emit_completed_agent_message(&messages, &completed).await);
+        assert!(
+            !should_emit_completed_agent_message(
+                &messages,
+                &json!({ "id": "message-1", "type": "agentMessage", "text": "Final answer" }),
+            )
+            .await
+        );
+    }
+
+    #[tokio::test]
+    async fn does_not_mark_an_empty_agent_snapshot_as_completed() {
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let empty = json!({
+            "id": "message-1",
+            "type": "agentMessage",
+            "text": ""
+        });
+        let complete = json!({
+            "id": "message-1",
+            "type": "agentMessage",
+            "text": "Final answer"
+        });
+
+        assert!(should_emit_completed_agent_message(&messages, &empty).await);
+        assert!(should_emit_completed_agent_message(&messages, &complete).await);
+        assert!(!should_emit_completed_agent_message(&messages, &complete).await);
     }
 
     #[test]

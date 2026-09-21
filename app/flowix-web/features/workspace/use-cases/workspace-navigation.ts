@@ -183,6 +183,7 @@ function beginNavigation(
   pendingTarget: WorkColumnTarget,
   retry: RetryAction | null,
   preservePreviousTarget = false,
+  showWorkColumnLoading = true,
 ): number {
   const previousRetryToken = useWorkColumnStore.getState().navigation.retryToken;
   if (previousRetryToken) retryActions.delete(previousRetryToken);
@@ -192,6 +193,7 @@ function beginNavigation(
     pendingTarget,
     retryToken,
     preservePreviousTarget,
+    showWorkColumnLoading,
   );
   if (retryToken && retry) retryActions.set(retryToken, retry);
   return requestId;
@@ -248,8 +250,14 @@ async function runNavigation(
   retry: RetryAction,
   rollback?: (requestId: number) => Promise<void>,
   preservePreviousTarget = false,
+  showWorkColumnLoading = true,
 ): Promise<void> {
-  const requestId = beginNavigation(pendingTarget, retry, preservePreviousTarget);
+  const requestId = beginNavigation(
+    pendingTarget,
+    retry,
+    preservePreviousTarget,
+    showWorkColumnLoading,
+  );
   try {
     await operation(requestId);
   } catch (error) {
@@ -433,7 +441,8 @@ export async function selectNotebook(notebook: Notebook): Promise<void> {
       getWorkspaceMemoState().setSelectedMemo(previousMemo);
       await restoreDocumentSnapshot(previousDocument);
     },
-    true,
+    true, // Preserve the current workColumn target during the transaction.
+    false, // Notebook switching changes list context, not workColumn content.
   );
 }
 

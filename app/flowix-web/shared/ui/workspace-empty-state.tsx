@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import backgroundImage from '@/assets/bg.document.png';
+import backgroundImage from '@/assets/bg.document.svg';
 
 export interface WorkspaceEmptyStateProps {
   message: ReactNode;
@@ -22,7 +22,7 @@ export function WorkspaceEmptyState({ message, tone = 'document', className }: W
     >
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-no-repeat bg-bottom bg-[length:auto_800px] opacity-[0.32]"
+        className="pointer-events-none absolute inset-0 bg-no-repeat bg-bottom bg-[length:auto_800px] opacity-[0.42]"
         style={{ backgroundImage: `url(${backgroundImage})` }}
       />
       <span className="relative text-center text-sm text-[var(--muted-foreground)]">

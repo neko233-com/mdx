@@ -74,10 +74,16 @@ describe('NativeDshAdapter thread launch', () => {
       { type: 'goal/change', seq: 4, data: { kind: 'goal/change', operation: 'pause' } },
     )
 
-    expect(notifications).toEqual([expect.objectContaining({
-      method: 'goal/changed',
-      params: { threadId: 'session-1', sourceSeq: 4, change: { kind: 'goal/change', operation: 'pause' } },
-    })])
+    expect(notifications).toEqual([
+      expect.objectContaining({
+        method: 'goal/changed',
+        params: { threadId: 'session-1', sourceSeq: 4, change: { kind: 'goal/change', operation: 'pause' } },
+      }),
+      expect.objectContaining({
+        method: 'thread/goal/updated',
+        params: expect.objectContaining({ threadId: 'session-1', sourceSeq: 4, goal: expect.objectContaining({ status: 'paused' }) }),
+      }),
+    ])
   })
 
   it('forwards DSH transient assistant stream frames and reconciles the final snapshot', () => {
@@ -112,6 +118,44 @@ describe('NativeDshAdapter thread launch', () => {
     expect(completed).toMatchObject({ method: 'item/completed', params: { item: { type: 'agentMessage', text: 'hello' } } })
     expect(completed.params.item.id).toBe(delta.params.itemId)
     expect(completed.params.item.id).not.toBe('session-1-item-durable-a1')
+  })
+
+  it('keeps the stream identity when the end frame omits the committed sequence', () => {
+    let sessionEvent: ((session: any, event: any) => void) | undefined
+    let assistantStream: ((payload: any) => void) | undefined
+    const adapter = new NativeDshAdapter({
+      on: (name: string, listener: any) => {
+        if (name === 'session/event') sessionEvent = listener
+        if (name === 'agent/assistant-stream') assistantStream = listener
+        return () => {}
+      },
+    })
+    const notifications: any[] = []
+    adapter.subscribe(event => notifications.push(event))
+    const agent = { session: { id: 'session-no-seq', events: [] } }
+
+    sessionEvent?.(agent.session, { type: 'turn/start', seq: 1, data: { turn: 1 } })
+    assistantStream?.({ agent, frame: { type: 'start', attemptId: 'attempt-1', turn: 1, step: 1 } })
+    assistantStream?.({
+      agent,
+      frame: { type: 'chunk', attemptId: 'attempt-1', index: 0, chunk: { type: 'text-delta', text: 'hello' } },
+    })
+    assistantStream?.({
+      agent,
+      // Older DSH hosts omit outcome.seq even though the durable snapshot is
+      // published immediately afterwards.
+      frame: { type: 'end', attemptId: 'attempt-1', outcome: { kind: 'committed' } },
+    })
+    sessionEvent?.(agent.session, {
+      type: 'assistant/message',
+      seq: 3,
+      data: { turn: 1, step: 1, message: { id: 'durable-a1', content: [{ type: 'text', text: 'hello' }] } },
+    })
+
+    const delta = notifications.find(event => event.method === 'item/agentMessage/delta')
+    const completed = notifications.find(event => event.method === 'item/completed')
+    expect(completed.params.item.id).toBe(delta.params.itemId)
+    expect(completed.params.item.text).toBe('hello')
   })
 
   it('coalesces legacy assistant chunks and keeps tool calls out of assistant text', () => {
@@ -386,7 +430,7 @@ describe('NativeDshAdapter thread launch', () => {
     })
 
     expect(options?.sessionId).toBe('thread-1')
-    expect(options?.meta).toEqual({ cwd: '/workspace', agentPreset: 'standard', workspacePaths: ['/workspace', '/notes'] })
+    expect(options?.meta).toEqual({ cwd: '/workspace', agentPreset: 'standard' })
     expect(options?.agentOptions).toEqual({ provider: 'deepseek', model: 'deepseek-chat', maxTokens: 4096 })
     await options?.setup({})
     expect(mounted).toEqual(['standard'])

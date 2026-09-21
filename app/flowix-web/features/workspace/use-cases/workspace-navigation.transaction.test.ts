@@ -101,6 +101,7 @@ function resetWorkspace() {
   useWorkColumnStore.setState({
     navigation: {
       phase: 'idle',
+      showWorkColumnLoading: false,
       requestId: 0,
       target: { kind: 'empty' },
       pendingTarget: null,
@@ -470,6 +471,7 @@ describe('workspace navigation transaction', () => {
     useWorkColumnStore.setState({
       navigation: {
         phase: 'committed',
+        showWorkColumnLoading: false,
         requestId: 4,
         target,
         pendingTarget: null,
@@ -484,6 +486,7 @@ describe('workspace navigation transaction', () => {
     await selectNotebook(nextNotebook);
 
     expect(useWorkColumnStore.getState().navigation.target).toEqual(target);
+    expect(useWorkColumnStore.getState().navigation.showWorkColumnLoading).toBe(false);
     expect(useWorkColumnStore.getState().navigation.pendingTarget).toBeNull();
     expect(mocks.memoState.selectedNotebook).toEqual(nextNotebook);
   });
@@ -558,6 +561,7 @@ describe('workspace navigation transaction', () => {
     useWorkColumnStore.setState({
       navigation: {
         phase: 'committed',
+        showWorkColumnLoading: false,
         requestId: 3,
         target: underlyingTarget,
         pendingTarget: null,

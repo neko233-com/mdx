@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 // @ts-ignore production JavaScript module
-import { assistantChunkText, itemFromEvent, messageFromEvent, projectHistoryMessages, projectNotifications, projectTurns, turnEndError, turnEndStatus } from '../src/app-server/adapters/event-projector.js'
+import { assistantChunkText, itemFromEvent, messageFromEvent, projectHistoryMessages, projectNotifications, projectTurns, selectItemsView, turnEndError, turnEndStatus } from '../src/app-server/adapters/event-projector.js'
 
 describe('durable event projector', () => {
   it('ends a max-token round as failed so automatic continuation can stop', () => {
@@ -38,6 +38,28 @@ describe('durable event projector', () => {
     })
   })
 
+  it('unwraps provider JSON nested in a failed turn and keeps its request id', () => {
+    const failure = {
+      reason: {
+        kind: 'error',
+        error: {
+          message: '429 {"type":"error","error":{"message":"Token Plan exhausted"},"request_id":"req-2056"}',
+          code: 'RATE_LIMIT',
+        },
+      },
+    }
+    expect(turnEndError(failure)).toMatchObject({
+      message: 'Token Plan exhausted',
+      details: {
+        category: 'quota_exhausted',
+        statusCode: 429,
+        requestId: 'req-2056',
+        upstreamMessage: 'Token Plan exhausted',
+        retryable: false,
+      },
+    })
+  })
+
   it('rebuilds stable turns and items from DSH events', () => {
     const events = [
       { type: 'turn/start', seq: 1, data: { turn: 1 } },
@@ -52,6 +74,20 @@ describe('durable event projector', () => {
     expect(turns.map((turn: { id: string }) => turn.id)).toEqual(['thread-a-turn-1', 'thread-a-turn-2'])
     expect(turns[0].items.map((item: { id: string }) => item.id)).toEqual(['thread-a-item-u1', 'thread-a-item-a1'])
     expect(turns[1].status).toBe('interrupted')
+    expect(turns[0].itemsView).toBe('full')
+    expect(turns[0].items[0]).toMatchObject({ threadId: 'thread-a', turnId: 'thread-a-turn-1', status: 'completed' })
+  })
+
+  it('supports notLoaded and summary item views without changing the durable projection', () => {
+    const turns = projectTurns('thread-a', [
+      { type: 'turn/start', seq: 1, data: { turn: 1 } },
+      { type: 'user/message', seq: 2, data: { id: 'u1', content: [{ type: 'text', text: 'a'.repeat(300) }] } },
+      { type: 'turn/end', seq: 3, data: { turn: 1, reason: 'completed' } },
+    ])
+    expect(selectItemsView(turns, 'notLoaded')[0]).toMatchObject({ itemsView: 'notLoaded', items: [] })
+    expect(selectItemsView(turns, 'summary')[0]).toMatchObject({ itemsView: 'summary', items: [{ id: 'thread-a-item-u1', status: 'completed' }] })
+    expect(selectItemsView(turns, 'summary')[0].items[0].text).toHaveLength(160)
+    expect(turns[0].items[0].text).toHaveLength(300)
   })
 
   it('adds compact checkpoints to thread/read without hiding transcript turns', () => {
@@ -114,6 +150,29 @@ describe('durable event projector', () => {
     })).toMatchObject({ type: 'userMessage', text: 'visible' })
   })
 
+  it('filters DSH system user messages by their source markers', () => {
+    const relay = {
+      type: 'user/message', seq: 111,
+      data: {
+        id: 'relay-1',
+        content: [{ type: 'text', text: 'Agent child sent a message: tool output' }],
+        source: { kind: 'agent-message', form: 'relay', senderSessionId: 'child-1' },
+      },
+    }
+    const settled = {
+      type: 'user/message', seq: 122,
+      data: {
+        id: 'settled-1',
+        content: [{ type: 'text', text: 'Background subagent child finished. Its closing message: result' }],
+        source: { kind: 'subagent-settled', form: 'notice', senderSessionId: 'child-1' },
+      },
+    }
+    expect(messageFromEvent('thread-a', relay)).toBeUndefined()
+    expect(messageFromEvent('thread-a', settled)).toBeUndefined()
+    expect(itemFromEvent('thread-a', relay)).toBeUndefined()
+    expect(projectHistoryMessages('thread-a', [relay, settled])).toEqual([])
+  })
+
   it('folds a durable approval audit pair into one completed item', () => {
     const turns = projectTurns('thread-a', [
       { seq: 0, type: 'turn/start', data: { turn: 1 } },
@@ -145,13 +204,14 @@ describe('durable event projector', () => {
     expect(projectNotifications('thread-a', [
       { type: 'turn/start', seq: 0, data: { turn: 1 } },
       ...events,
-    ])).toEqual([
+    ])).toEqual(expect.arrayContaining([
       expect.objectContaining({ method: 'turn/started' }),
+      expect.objectContaining({ method: 'item/started', params: expect.objectContaining({ item: expect.objectContaining({ type: 'agentMessage', status: 'inProgress' }) }) }),
       expect.objectContaining({
         method: 'item/agentMessage/delta',
         params: expect.objectContaining({ delta: 'hello' }),
       }),
-    ])
+    ]))
   })
 
   it('does not serialize assistant tool-call blocks into live assistant text', () => {
@@ -219,10 +279,13 @@ describe('durable event projector', () => {
           roundsStarted: 2, createdAt: 1, updatedAt: 7,
         },
       },
-    ])).toEqual([expect.objectContaining({
+    ])).toEqual(expect.arrayContaining([expect.objectContaining({
       method: 'goal/changed',
       params: expect.objectContaining({ threadId: 'thread-a', sourceSeq: 7 }),
-    })])
+    }), expect.objectContaining({
+      method: 'thread/goal/updated',
+      params: expect.objectContaining({ threadId: 'thread-a', sourceSeq: 7, goal: expect.objectContaining({ status: 'completed', objective: 'ship it' }) }),
+    })]))
   })
 
   it('keeps a tool call running when its result is not in history yet', () => {

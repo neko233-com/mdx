@@ -690,7 +690,8 @@ export function MainLayout({
             {/* Content area */}
             <div className="relative isolate flex-1 min-w-0 overflow-hidden">
               <WorkColumnContentHost content={workColumnPresentation.content} />
-              {(isDocumentTransitioning || navigationState.phase === 'loading') && (
+              {(isDocumentTransitioning
+                || (navigationState.phase === 'loading' && navigationState.showWorkColumnLoading)) && (
                 <CenteredLoadingSpinner
                   className={workColumnLoadingTone === 'agent' || workColumnLoadingTone === 'media'
                     ? 'absolute inset-0 z-40 bg-[var(--agent-bg,var(--document-bg))]'

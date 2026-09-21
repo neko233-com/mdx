@@ -7,6 +7,10 @@ import { turnMethods } from './turn.js'
 import { approvalMethods } from './approval.js'
 import { flowixMethods } from './flowix.js'
 import { commandMethods } from './command.js'
+import { goalMethods } from './goal.js'
+import { configMethods } from './config.js'
+import { mcpMethods } from './mcp.js'
+import { subagentMethods } from './subagent.js'
 
 export function createMethodRegistry(adapter, notify) {
   return new Map(Object.entries({
@@ -19,5 +23,9 @@ export function createMethodRegistry(adapter, notify) {
     ...approvalMethods(adapter),
     ...flowixMethods(adapter),
     ...commandMethods(adapter),
+    ...goalMethods(adapter),
+    ...configMethods(adapter),
+    ...mcpMethods(adapter),
+    ...subagentMethods(adapter, notify),
   }))
 }

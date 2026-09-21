@@ -11,12 +11,22 @@
     }
   },
   "main": "src/cordis-plugin.js",
+  "types": "src/index.d.ts",
   "exports": {
-    ".": "./src/cordis-plugin.js",
-    "./protocol": "./src/index.ts"
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/cordis-plugin.js"
+    },
+    "./protocol": {
+      "types": "./src/protocol.d.ts",
+      "import": "./src/protocol.js"
+    }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.js.json",
+    "docs:protocol": "node scripts/generate-protocol-docs.mjs",
+    "smoke:projection-worker": "node scripts/smoke-projection-worker.mjs",
+    "smoke:mobile-http": "node test/mobile-http.smoke.mjs",
     "test": "vitest run",
     "test:runtime-stdio": "node test/runtime-stdio.smoke.mjs",
     "test:runtime-http": "node test/runtime-http.smoke.mjs",

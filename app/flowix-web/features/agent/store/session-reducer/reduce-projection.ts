@@ -490,10 +490,9 @@ function applyErrorToProjection(
   const live = projectionToLive(p);
   const next = applyErrorChunk(live, event.message, {
     id: event.messageId,
-    notice:
-      event.agentType === "deepseek-harness"
-        ? "deepseek-harness-reconnect-failed"
-        : undefined,
+    notice: shouldUseDeepSeekHarnessReconnectNotice(event)
+      ? "deepseek-harness-reconnect-failed"
+      : undefined,
     errorDetails: event.errorDetails,
   });
   const runsNext = applyRunFailed(projectionToRuns(p), event, event.message);
@@ -507,6 +506,29 @@ function applyErrorToProjection(
     },
     runs: runsToProjectionRuns(runsNext),
   };
+}
+
+function shouldUseDeepSeekHarnessReconnectNotice(
+  event: AgentEvent & { kind: "error" },
+): boolean {
+  if (event.agentType !== "deepseek-harness") return false;
+
+  // A classified provider error has its own user-facing guidance. It must not
+  // be presented as a transport/reconnect failure.
+  const category = event.errorDetails?.category;
+  if (
+    category &&
+    category !== "unknown" &&
+    category !== "network" &&
+    category !== "process"
+  ) {
+    return false;
+  }
+
+  if (!event.errorDetails) return true;
+  return /reconnect|json-rpc|connection|input\s+closed|runtime[_ -]?crash/iu.test(
+    event.message,
+  );
 }
 
 function applyUsageToProjection(

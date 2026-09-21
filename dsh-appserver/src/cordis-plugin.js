@@ -14,6 +14,10 @@ export const inject = [
   'sessionPersistence',
   'sessionQuery',
   'sessionProjections',
+  // The native continuable-subagent seam is the durable source for the
+  // app-server's Codex-shaped collaboration surface. Inject it so the
+  // server cannot start before DSH has mounted the authoritative registry.
+  'subagents',
   'credentials',
   'approval',
   'commands',
@@ -21,10 +25,18 @@ export const inject = [
 
 export default function dshAppServer(ctx, config = {}) {
   if (!ctx.get?.('approval')) throw new Error('dsh-appserver requires the native DSH approval service')
-  const server = new DshAppServer(ctx)
+  const logger = ctx.logger?.('dsh-appserver')
+  const observer = config.observer || (config.telemetry === true && logger?.debug
+    ? event => logger.debug(event)
+    : undefined)
+  const server = new DshAppServer(ctx, { ...config.server, observer })
   const disposeApproval = ctx.on?.('approval/request', (request, next) => server.handleApproval(request, next))
   server.addDisposer(disposeApproval)
   const http = config.http ? createHttpTransport(server, config.http) : null
+  const httpReady = http?.listen()
+  httpReady?.catch(error => {
+    logger?.error?.(`HTTP transport failed to listen: ${error instanceof Error ? error.message : String(error)}`)
+  })
   const service = {
     dispatch: (request, connectionId) => server.dispatch(request, connectionId),
     receiveResponse: (response, connectionId) => server.receiveResponse(response, connectionId),
@@ -34,14 +46,16 @@ export default function dshAppServer(ctx, config = {}) {
     pendingServerRequests: (connectionId, threadId) => server.pendingServerRequests(connectionId, threadId),
     listEvents: (...args) => server.listEvents(...args),
     serveStdio: () => server.serveStdio(),
-    listenHttp: () => http?.listen(),
+    listenHttp: () => httpReady,
+    ready: httpReady || Promise.resolve(),
     dispose: async () => { await http?.close(); await server.dispose() }
   }
   ctx.provide('dshAppServer', service)
   // Profile configuration/environment owns the stdio switch. Do not inject
   // the CLI-only cmdlineArgs service: embedded SDK runners do not provide it.
   if (config.stdio || process.env.FLOWIX_DSH_APPSERVER_STDIO === '1') server.serveStdio()
-  if (http) http.listen()
   return () => service.dispose()
 }
 dshAppServer.inject = inject
+
+export { DshAppServer, createHttpTransport }

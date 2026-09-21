@@ -7,6 +7,7 @@ import type { MarkdownSurface } from './types';
 function navigation(target: WorkColumnTarget): WorkColumnNavigationState {
   return {
     phase: 'committed',
+    showWorkColumnLoading: false,
     requestId: 1,
     target,
     pendingTarget: null,

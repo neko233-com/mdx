@@ -15,6 +15,7 @@ function navigation(
 ): WorkColumnNavigationState {
   return {
     phase: target.kind === 'empty' ? 'idle' : 'committed',
+    showWorkColumnLoading: false,
     requestId: 1,
     target,
     pendingTarget: null,

@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/app-server/server.js",
+    "src/app-server/protocol/**/*.js",
+    "src/app-server/runtime/**/*.js",
+    "src/app-server/services/**/*.js",
+    "src/app-server/projections/**/*.js",
+    "src/app-server/transports/**/*.js"
+  ]
+}

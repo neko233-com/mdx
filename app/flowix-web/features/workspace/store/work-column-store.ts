@@ -19,6 +19,7 @@ export interface WorkColumnStore {
     pendingTarget: WorkColumnTarget,
     retryToken: string | null,
     preservePreviousTarget?: boolean,
+    showWorkColumnLoading?: boolean,
   ) => number;
   commitNavigation: (requestId: number, target: WorkColumnTarget) => boolean;
   failNavigation: (requestId: number, error: unknown) => boolean;
@@ -29,6 +30,7 @@ export interface WorkColumnStore {
 export const useWorkColumnStore = create<WorkColumnStore>()((set, get) => ({
   navigation: {
     phase: 'idle',
+    showWorkColumnLoading: false,
     requestId: 0,
     target: EMPTY_WORK_COLUMN_TARGET,
     pendingTarget: null,
@@ -36,11 +38,17 @@ export const useWorkColumnStore = create<WorkColumnStore>()((set, get) => ({
     failure: null,
     retryToken: null,
   },
-  beginNavigation: (pendingTarget, retryToken, preservePreviousTarget = false) => {
+  beginNavigation: (
+    pendingTarget,
+    retryToken,
+    preservePreviousTarget = false,
+    showWorkColumnLoading = true,
+  ) => {
     const requestId = get().navigation.requestId + 1;
     set((state) => ({
       navigation: {
         phase: 'loading',
+        showWorkColumnLoading,
         requestId,
         target: state.navigation.target,
         pendingTarget,
@@ -59,6 +67,7 @@ export const useWorkColumnStore = create<WorkColumnStore>()((set, get) => ({
       navigation: target.kind === 'empty'
         ? {
             phase: 'idle',
+            showWorkColumnLoading: false,
             requestId,
             target,
             pendingTarget: null,
@@ -68,6 +77,7 @@ export const useWorkColumnStore = create<WorkColumnStore>()((set, get) => ({
           }
         : {
             phase: 'committed',
+            showWorkColumnLoading: false,
             requestId,
             target,
             pendingTarget: null,
@@ -83,6 +93,7 @@ export const useWorkColumnStore = create<WorkColumnStore>()((set, get) => ({
     set((state) => ({
       navigation: {
         phase: 'failed',
+        showWorkColumnLoading: false,
         requestId,
         target: state.navigation.target,
         pendingTarget: state.navigation.pendingTarget,
@@ -104,6 +115,7 @@ export const useWorkColumnStore = create<WorkColumnStore>()((set, get) => ({
     set({
       navigation: {
         phase: navigation.target.kind === 'empty' ? 'idle' : 'committed',
+        showWorkColumnLoading: false,
         requestId: navigation.requestId,
         target: navigation.target,
         pendingTarget: null,

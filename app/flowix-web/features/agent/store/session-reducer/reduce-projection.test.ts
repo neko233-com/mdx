@@ -4,6 +4,7 @@ import {
   emptyProjection,
   reduceProjection,
 } from "@features/agent/store/session-reducer";
+import { mergeLiveMessagesIntoRenderableMessages } from "@features/agent/store/thread-history";
 
 function event<K extends AgentEvent["kind"]>(
   kind: K,
@@ -153,6 +154,84 @@ describe("reduceProjection / emptyProjection", () => {
 });
 
 describe("reduceProjection / text streaming lifecycle", () => {
+  it("keeps one Codex assistant through snapshots, stream end, and history replay", () => {
+    let p = emptyProjection();
+    p = reduceProjection(
+      p,
+      event("stream_start", {
+        agentType: "codex",
+        threadId: "t1",
+        runId: "codex-run-1",
+        timestamp: 0,
+        model: "codex-test",
+      }),
+    );
+    // Older Codex app-server versions can omit itemId on the first delta.
+    p = reduceProjection(
+      p,
+      event("text_delta", {
+        agentType: "codex",
+        threadId: "t1",
+        runId: "codex-run-1",
+        timestamp: 1000,
+        text: "Final answer",
+        messagePhase: "updated",
+        contentMode: "delta",
+        codexTurnId: "turn-1",
+      }),
+    );
+    const completedSnapshot = event("text_delta", {
+      agentType: "codex",
+      threadId: "t1",
+      runId: "codex-run-1",
+      timestamp: 1100,
+      text: "Final answer",
+      messageId: "assistant-item-1",
+      messagePhase: "completed",
+      contentMode: "snapshot",
+      codexTurnId: "turn-1",
+    });
+    // item/completed and turn/completed fallback carry the same snapshot.
+    p = reduceProjection(p, completedSnapshot);
+    p = reduceProjection(p, completedSnapshot);
+    p = reduceProjection(
+      p,
+      event("stream_end", {
+        agentType: "codex",
+        threadId: "t1",
+        runId: "codex-run-1",
+        timestamp: 1200,
+        reason: null,
+      }),
+    );
+
+    expect(p.messages.filter((message) => message.role === "assistant")).toEqual([
+      expect.objectContaining({
+        id: "assistant-item-1",
+        content: "Final answer",
+        codexTurnId: "turn-1",
+      }),
+    ]);
+
+    const history = [{
+      id: "assistant-item-1",
+      role: "assistant" as const,
+      content: "Final answer",
+      timestamp: new Date(1100).toISOString(),
+      codexTurnId: "turn-1",
+    }];
+    const replayed = mergeLiveMessagesIntoRenderableMessages(
+      history,
+      p.messages,
+      "codex",
+    );
+    expect(replayed).toHaveLength(1);
+    expect(replayed[0]).toMatchObject({
+      id: "assistant-item-1",
+      content: "Final answer",
+    });
+  });
+
   it("stream_start → text_delta → text_delta appends content", () => {
     let p = emptyProjection();
     p = reduceProjection(p, streamStart("r1"));
@@ -359,6 +438,34 @@ describe("reduceProjection / text streaming lifecycle", () => {
       content: "Request timed out.",
       notice: "deepseek-harness-reconnect-failed",
     });
+  });
+
+  it("does not mark classified DeepSeek Harness provider errors as reconnect failures", () => {
+    let p = emptyProjection();
+    p = reduceProjection(
+      p,
+      event("error", {
+        agentType: "deepseek-harness",
+        threadId: "t1",
+        runId: "r1",
+        timestamp: 9600,
+        messageId: "msg:deepseek-harness:r1:error:quota",
+        message: "Token Plan exhausted",
+        errorDetails: {
+          category: "quota_exhausted",
+          statusCode: 429,
+          requestId: "req-2056",
+          upstreamMessage: "Token Plan exhausted",
+          retryable: false,
+        },
+      }),
+    );
+
+    expect(p.messages[p.messages.length - 1]).toMatchObject({
+      content: "Token Plan exhausted",
+      errorDetails: { category: "quota_exhausted", statusCode: 429 },
+    });
+    expect(p.messages[p.messages.length - 1].notice).toBeUndefined();
   });
 });
 

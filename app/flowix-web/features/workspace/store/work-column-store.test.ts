@@ -7,6 +7,7 @@ describe('work-column store', () => {
     useWorkColumnStore.setState({
       navigation: {
         phase: 'idle',
+        showWorkColumnLoading: false,
         requestId: 0,
         target: { kind: 'empty' },
         pendingTarget: null,
@@ -31,6 +32,7 @@ describe('work-column store', () => {
 
     expect(useWorkColumnStore.getState().navigation).toEqual({
       phase: 'committed',
+      showWorkColumnLoading: false,
       requestId,
       target: {
         kind: 'external',
@@ -59,6 +61,21 @@ describe('work-column store', () => {
     expect(useWorkColumnStore.getState().navigation.phase).toBe('loading');
   });
 
+  it('can run a transaction without visually blocking the current surface', () => {
+    const requestId = useWorkColumnStore.getState().beginNavigation(
+      { kind: 'web', url: 'https://one.test' },
+      null,
+      true,
+      false,
+    );
+
+    expect(useWorkColumnStore.getState().navigation).toMatchObject({
+      requestId,
+      phase: 'loading',
+      showWorkColumnLoading: false,
+    });
+  });
+
   it('records the latest navigation failure without discarding the last surface', () => {
     const requestId = useWorkColumnStore.getState().beginNavigation({ kind: 'web', url: 'https://one.test' }, 'retry-1');
     useWorkColumnStore.getState().commitNavigation(requestId, { kind: 'web', url: 'https://one.test' });
@@ -67,6 +84,7 @@ describe('work-column store', () => {
     expect(useWorkColumnStore.getState().failNavigation(retryId, new Error('save refused'))).toBe(true);
     expect(useWorkColumnStore.getState().navigation).toEqual({
       phase: 'failed',
+      showWorkColumnLoading: false,
       requestId: retryId,
       target: { kind: 'web', url: 'https://one.test' },
       pendingTarget: { kind: 'empty' },

@@ -68,12 +68,10 @@ export function useMainWindowBusinessController(): MainWindowBusinessController 
 
   const handleSelectNotebook = useCallback((notebook: Notebook) => {
     if (selectedNotebook?.id === notebook.id) return;
-    void selectNotebook(notebook).then(() => {
-      triggerRefresh();
-    }).catch((error) => {
+    void selectNotebook(notebook).catch((error) => {
       logger.warn('select notebook failed', { error });
     });
-  }, [selectedNotebook?.id, triggerRefresh]);
+  }, [selectedNotebook?.id]);
 
   const handleEditNotebook = useCallback((notebook: Notebook) => {
     setTimeout(() => {

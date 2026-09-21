@@ -85,6 +85,24 @@ describe("DeepSeek Harness reconnect error display", () => {
     );
   });
 
+  it("parses a provider JSON error prefixed by an HTTP status and a space", () => {
+    const content =
+      '429 {"type":"error","error":{"type":"rate_limit_error","message":"已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2056)"},"request_id":"07005fb7c16d866bd9b4e496c69f4058"}';
+
+    expect(
+      getAgentMessageVisibleContent(
+        errorMessage({ id: "assistant-429-space", content, notice: undefined }),
+        "zh-CN",
+      ),
+    ).toContain("已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2056)");
+    expect(
+      getAgentMessageVisibleContent(
+        errorMessage({ id: "assistant-429-space-2", content, notice: undefined }),
+        "zh-CN",
+      ),
+    ).not.toContain('{"type":"error"');
+  });
+
   it("shows the upstream provider message before diagnostic metadata", () => {
     expect(
       getAgentMessageVisibleContent(
@@ -103,7 +121,7 @@ describe("DeepSeek Harness reconnect error display", () => {
         "zh-CN",
       ),
     ).toBe(
-      "5 hour usage limit reached\n\n请求受到限流，请等待配额恢复后重试。\n\nHTTP 429 · 请求 ID：req-1 · CLI 退出状态：1",
+      "5 hour usage limit reached\n\n请求受到限流，请等待配额恢复后重试。\n\nHTTP 429 · 请求 ID：req-1",
     );
 
     expect(
@@ -124,6 +142,86 @@ describe("DeepSeek Harness reconnect error display", () => {
     ).toBe(
       "rate limited\n\nThe request was rate limited. Retry after the quota recovers.\n\nHTTP 429 · Request ID: req-1 · Retry after: 60s",
     );
+  });
+
+  it("does not wrap a persisted DSH quota error as a reconnect failure", () => {
+    const content = getAgentMessageVisibleContent(
+      errorMessage({
+        content: "DeepSeek Harness turn failed (failed)",
+        errorDetails: {
+          category: "quota_exhausted",
+          statusCode: 429,
+          requestId: "req-2056",
+          upstreamMessage: "Token Plan exhausted",
+          retryable: false,
+        },
+      }),
+      "zh-CN",
+    );
+    expect(content).toContain("Token Plan exhausted");
+    expect(content).not.toContain("重连失败");
+    expect(content).not.toContain("HTTP 429");
+    expect(content).not.toContain("req-2056");
+  });
+
+  it("also hides diagnostics for the same DSH error after history refresh", () => {
+    const content = getAgentMessageVisibleContent(
+      errorMessage({
+        id: "thread-a-turn-1-error",
+        content: "Token Plan exhausted",
+        errorDetails: {
+          category: "quota_exhausted",
+          statusCode: 429,
+          requestId: "req-2056",
+          upstreamMessage: "Token Plan exhausted",
+          source: "dsh-history",
+          exitCode: 1,
+          retryable: false,
+        },
+      }),
+      "zh-CN",
+    );
+    expect(content).toBe(
+      "Token Plan exhausted",
+    );
+  });
+
+  it("shows only the original Codex quota error without Flowix guidance", () => {
+    expect(
+      getAgentMessageVisibleContent(
+        errorMessage({
+          id: "msg:codex:run-1:error:error",
+          content: "Insufficient Balance",
+          errorDetails: {
+            category: "quota_exhausted",
+            upstreamMessage: "Insufficient Balance",
+            retryable: false,
+          },
+        }),
+        "zh-CN",
+      ),
+    ).toBe("Insufficient Balance");
+  });
+
+  it("does not show the CLI exit status for a Codex interruption", () => {
+    const content = getAgentMessageVisibleContent(
+      errorMessage({
+        id: "msg:codex:run-1:error:error",
+        content: "Codex turn interrupted",
+        errorDetails: {
+          category: "unknown",
+          exitCode: 1,
+          upstreamMessage: "Codex turn interrupted",
+          retryable: false,
+        },
+      }),
+      "zh-CN",
+    );
+
+    expect(content).toBe(
+      "Codex turn interrupted",
+    );
+    expect(content).not.toContain("CLI 退出状态");
   });
 
   it("removes the legacy Claude/Codex process wrapper when details are absent", () => {

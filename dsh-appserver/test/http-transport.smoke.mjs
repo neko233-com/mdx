@@ -6,6 +6,10 @@ const app = {
   subscribe: () => () => {},
   replayNotifications: async threadId => ({ data: [{ jsonrpc: '2.0', method: 'turn/started', params: { threadId, sourceSeq: 1 } }], nextCursor: null }),
 }
+assert.throws(
+  () => createHttpTransport(app, { host: '0.0.0.0' }),
+  /requires authToken or mobileAuth\.pairingSecret/,
+)
 const transport = createHttpTransport(app)
 const address = await transport.listen()
 const base = `http://127.0.0.1:${address.port}`
