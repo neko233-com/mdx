@@ -239,7 +239,17 @@ export const useDocumentStore = create<DocumentStore>()(
     }) => {
       const startedAt = performance.now();
       const canonicalNewPath = path ? canonicalPath(path) : null;
-      if (isSameMemoTarget(get(), memoId, canonicalNewPath)) {
+      const current = get();
+      if (isSameMemoTarget(current, memoId, canonicalNewPath)) {
+        // The active note can be reselected while a different note is still
+        // flushing. Invalidate that pending selection instead of letting it
+        // replace the note the user just chose to keep.
+        if (
+          current.isDocumentTransitioning &&
+          current.activeMemoSession?.transitionId !== current.documentTransitionId
+        ) {
+          set({ documentTransitionId: current.documentTransitionId + 1, isDocumentTransitioning: false });
+        }
         logOpenDocPerf('openMemoDocument:same-target', startedAt, { memoId });
         return;
       }
@@ -259,6 +269,9 @@ export const useDocumentStore = create<DocumentStore>()(
       return enqueueTransition(async () => {
         const queuedAt = performance.now();
         try {
+          // A later selection owns the visible session. Do not hydrate a note
+          // which was superseded while this transition waited in the queue.
+          if (get().documentTransitionId !== transitionId) return;
           if (isSameMemoTarget(get(), memoId, canonicalNewPath)) {
             get().finishDocumentTransition(transitionId);
             logOpenDocPerf('openMemoDocument:queued-same-target', startedAt, { memoId, transitionId });
@@ -278,6 +291,9 @@ export const useDocumentStore = create<DocumentStore>()(
               transitionId,
               previousPath: prev.path,
             });
+            // The save may take long enough for another note to be selected.
+            // Keep its disk commit, but skip this obsolete render and history entry.
+            if (get().documentTransitionId !== transitionId) return;
           }
           if (
             history === 'push' &&
@@ -329,7 +345,14 @@ export const useDocumentStore = create<DocumentStore>()(
     openExternalDocument: async (path, { history = 'push', scopePath = null } = {}) => {
       const canonicalNewPath = path ? canonicalPath(path) : null;
       const canonicalScopePath = scopePath ? canonicalPath(scopePath) : null;
-      if (isSameExternalTarget(get(), canonicalNewPath, canonicalScopePath)) {
+      const current = get();
+      if (isSameExternalTarget(current, canonicalNewPath, canonicalScopePath)) {
+        if (
+          current.isDocumentTransitioning &&
+          current.activeExternalSession?.transitionId !== current.documentTransitionId
+        ) {
+          set({ documentTransitionId: current.documentTransitionId + 1, isDocumentTransitioning: false });
+        }
         return;
       }
 
@@ -345,6 +368,7 @@ export const useDocumentStore = create<DocumentStore>()(
       set({ isDocumentTransitioning: true, documentTransitionId: transitionId });
       return enqueueTransition(async () => {
         try {
+          if (get().documentTransitionId !== transitionId) return;
           if (isSameExternalTarget(get(), canonicalNewPath, canonicalScopePath)) {
             get().finishDocumentTransition(transitionId);
             return;
@@ -359,6 +383,7 @@ export const useDocumentStore = create<DocumentStore>()(
               sessionScopePath(prev),
             );
             if (!flushed) throw new Error('Document switch cancelled because saving did not complete');
+            if (get().documentTransitionId !== transitionId) return;
           }
           if (history === 'push' && previousHistoryEntry && canonicalNewPath) {
             useDocumentHistoryStore.getState().pushBack(previousHistoryEntry);
@@ -412,13 +437,22 @@ export const useDocumentStore = create<DocumentStore>()(
       set({ activeAgentConversationId: null });
     },
     clearDocument: async () => {
+      const transitionId = get().documentTransitionId + 1;
+      set({ isDocumentTransitioning: true, documentTransitionId: transitionId });
       return enqueueTransition(async () => {
-        const prev = get().activeMemoSession ?? get().activeExternalSession;
-        if (prev) {
-          const flushed = await flushDocumentPath(sessionIdentity(prev), prev.path, sessionScopePath(prev));
-          if (!flushed) throw new Error('Document close cancelled because saving did not complete');
+        try {
+          if (get().documentTransitionId !== transitionId) return;
+          const prev = get().activeMemoSession ?? get().activeExternalSession;
+          if (prev) {
+            const flushed = await flushDocumentPath(sessionIdentity(prev), prev.path, sessionScopePath(prev));
+            if (!flushed) throw new Error('Document close cancelled because saving did not complete');
+            if (get().documentTransitionId !== transitionId) return;
+          }
+          set(documentState(null, null));
+        } catch (error) {
+          get().finishDocumentTransition(transitionId);
+          throw error;
         }
-        set(documentState(null, null));
       });
     },
     discardMemoDocument: async (memoId) => {
