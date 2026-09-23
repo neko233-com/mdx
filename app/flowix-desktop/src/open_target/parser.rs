@@ -86,13 +86,14 @@ fn split_scheme<'a>(raw: &'a str) -> Option<(&'a str, &'a str)> {
     //     任何大写字�?都是无效 id, 直接�?`is_valid_memo_id` 里拒�?
     //     不�?�?lowercase 否则 `mdx://memo/ABCDEF` 会�?�?��为合法�?
     let lower = raw.to_ascii_lowercase();
-    if let Some(rest) = lower.strip_prefix("mdx://") {
-        // 鍚屾牱鍋忕Щ鍦ㄥ師 `raw` 涓婂彇 rest, 淇濇寔鍘熷ぇ灏忓啓
-        let original_rest = &raw[raw.len() - rest.len()..];
-        Some(("mdx", original_rest))
-    } else {
-        None
+    for (prefix, scheme) in [("mdx://", "mdx"), ("flowix://", "flowix")] {
+        if let Some(rest) = lower.strip_prefix(prefix) {
+            // Keep the original path case: memo ids are case sensitive.
+            let original_rest = &raw[raw.len() - rest.len()..];
+            return Some((scheme, original_rest));
+        }
     }
+    None
 }
 
 fn split_path_query(rest: &str) -> (String, Vec<(String, String)>) {
@@ -321,6 +322,8 @@ mod tests {
     fn case_insensitive_scheme() {
         // macOS / Windows 投递过来的 scheme 大小写不一�? 都�?能解�?
         let t = parse_open_target("FLOWIX://memo/abc12345").unwrap();
+        assert!(matches!(t, OpenTarget::DeepLink { .. }));
+        let t = parse_open_target("MDX://memo/abc12345").unwrap();
         assert!(matches!(t, OpenTarget::DeepLink { .. }));
     }
 

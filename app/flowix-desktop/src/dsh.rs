@@ -1393,8 +1393,9 @@ mod tests {
     use super::{archive::safe_archive_path, dsh_version_is_at_least, validate_manifest_version};
     use std::path::Path;
 
+    use super::DshArtifact;
     #[cfg(unix)]
-    use super::{DshArtifact, DshManifest};
+    use super::DshManifest;
     #[cfg(unix)]
     use std::collections::HashMap;
 
