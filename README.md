@@ -6,7 +6,7 @@ MDX is a local Markdown editor for Windows and macOS, with Typora as its writing
 
 ## Install
 
-Download the current Windows NSIS installer or macOS app from [Releases](https://github.com/neko233-com/mdx/releases). A release is needed before the commands below work.
+Download the current Windows NSIS installer or macOS app from [Releases](https://github.com/neko233-com/mdx/releases).
 
 Windows PowerShell:
 
