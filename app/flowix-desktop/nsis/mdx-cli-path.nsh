@@ -128,6 +128,9 @@
   WriteRegStr HKCU "Software\MDX\Capabilities\FileAssociations" ".md" "MDX.Markdown"
   WriteRegStr HKCU "Software\MDX\Capabilities\FileAssociations" ".markdown" "MDX.Markdown"
   WriteRegStr HKCU "Software\RegisteredApplications" "MDX" "Software\MDX\Capabilities"
+  WriteRegStr HKCU "Software\Classes\MDX.Markdown" "AppUserModelID" "com.neko233.mdx"
+  ; Tauri's generated command omits quotes around the executable path.
+  WriteRegStr HKCU "Software\Classes\MDX.Markdown\shell\open\command" "" '$\"$INSTDIR\MDX.exe$\" $\"%1$\"'
   ; Keep MDX available in Open with even when another editor owns UserChoice.
   WriteRegStr HKCU "Software\Classes\.md\OpenWithProgids" "MDX.Markdown" ""
   WriteRegStr HKCU "Software\Classes\.markdown\OpenWithProgids" "MDX.Markdown" ""
@@ -141,6 +144,7 @@
   Delete "${MDX_LEGACY_CLI_SHIM}"
   RMDir "${MDX_CLI_BIN_DIR}"
   DeleteRegValue HKCU "Software\RegisteredApplications" "MDX"
+  DeleteRegValue HKCU "Software\Classes\MDX.Markdown" "AppUserModelID"
   DeleteRegValue HKCU "Software\Classes\.md\OpenWithProgids" "MDX.Markdown"
   DeleteRegValue HKCU "Software\Classes\.markdown\OpenWithProgids" "MDX.Markdown"
   DeleteRegKey HKCU "Software\MDX\Capabilities"
