@@ -132,6 +132,14 @@
   WriteRegStr HKCU "Software\MDX\Capabilities\FileAssociations" ".md" "MDX.Markdown"
   WriteRegStr HKCU "Software\MDX\Capabilities\FileAssociations" ".markdown" "MDX.Markdown"
   WriteRegStr HKCU "Software\RegisteredApplications" "MDX" "Software\MDX\Capabilities"
+  ; Register the executable as an Open with candidate as well as a Default
+  ; apps candidate. Windows may use either registration in its chooser.
+  WriteRegStr HKCU "Software\Classes\Applications\MDX.exe" "FriendlyAppName" "MDX"
+  WriteRegStr HKCU "Software\Classes\Applications\MDX.exe\SupportedTypes" ".md" ""
+  WriteRegStr HKCU "Software\Classes\Applications\MDX.exe\SupportedTypes" ".markdown" ""
+  WriteRegStr HKCU "Software\Classes\Applications\MDX.exe\shell\open\command" "" '$\"$INSTDIR\MDX.exe$\" $\"%1$\"'
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\App Paths\MDX.exe" "" "$INSTDIR\MDX.exe"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\App Paths\MDX.exe" "Path" "$INSTDIR"
   WriteRegStr HKCU "Software\Classes\MDX.Markdown" "AppUserModelID" "com.neko233.mdx"
   ; Tauri's generated command omits quotes around the executable path.
   WriteRegStr HKCU "Software\Classes\MDX.Markdown\shell\open\command" "" '$\"$INSTDIR\MDX.exe$\" $\"%1$\"'
@@ -151,6 +159,8 @@
   DeleteRegValue HKCU "Software\Classes\MDX.Markdown" "AppUserModelID"
   DeleteRegValue HKCU "Software\Classes\.md\OpenWithProgids" "MDX.Markdown"
   DeleteRegValue HKCU "Software\Classes\.markdown\OpenWithProgids" "MDX.Markdown"
+  DeleteRegKey HKCU "Software\Classes\Applications\MDX.exe"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\App Paths\MDX.exe"
   DeleteRegKey HKCU "Software\MDX\Capabilities"
   DeleteRegKey /ifempty HKCU "Software\MDX"
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0x1003, p 0, p 0)'

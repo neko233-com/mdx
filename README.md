@@ -36,7 +36,7 @@ The installers try GitHub first and then [ghproxy.net](https://ghproxy.net/) if 
 
 Installation and updates refresh a single MDX desktop shortcut on Windows. The macOS installer places MDX in `~/Applications` and creates a `~/Desktop/MDX.app` link when that path is free; it keeps any existing non-MDX desktop item there.
 
-Automatic update checking and installation are enabled by default. Turn them off in Preferences → General → Install updates automatically. The app registers `.md` and `.markdown` as supported document types. On Windows, Preferences → General → Default Markdown app opens the system page where you can assign both extensions to MDX. On macOS, use Finder → Get Info → Open with → MDX → Change All.
+Automatic update checking and installation are enabled by default. Turn them off in Preferences → General → Install updates automatically. The app registers `.md` and `.markdown` as supported document types. On Windows, Preferences → General → Default Markdown app opens the system page where you can assign both extensions to MDX. If Windows does not list MDX yet, right-click a Markdown file, choose **Open with → Choose another app → Choose an app on your PC**, select `%LOCALAPPDATA%\MDX\MDX.exe`, and choose **Always**; repeat for the other extension. On macOS, use Finder → Get Info → Open with → MDX → Change All.
 
 ## Build
 
