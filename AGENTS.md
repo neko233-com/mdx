@@ -8,6 +8,6 @@
 - Do not expose an in-app conversation/chat surface. Agent access is through the `mdx` CLI and MCP integration for reading and editing Markdown; keep those settings discoverable.
 - Default to the folder tree view. Preserve existing explicit user view choices and keep other themes functional.
 - CLI executable: `mdx-cli`; user command: `mdx`; user config: `~/.mdx`; notebook metadata: `.mdx`.
-- Never commit the updater signing private key. The local copy stays in the user's profile; CI reads GitHub Actions secrets. GitHub Releases is the primary distribution source; the mirrored manifest is the fallback.
+- Never commit the updater signing private key. The local copy stays in the user's profile; CI reads GitHub Actions secrets. GitHub Releases is the primary distribution source; the desktop updater checks the mirrored manifest first so a GitHub timeout does not block updates.
 - Build the CLI sidecar before building the desktop app: `npm run cli:build:dev`, then `npm run build` and `cargo check --manifest-path app/Cargo.toml -p flowix-desktop`.
 - Do not claim macOS packaging or system default app selection was verified by a Windows-only check.
