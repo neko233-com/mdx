@@ -1,0 +1,36 @@
+name: macOS install smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the published app twice
+        env:
+          MDX_DOWNLOAD_SOURCE: github
+        run: |
+          set -eu
+          sh scripts/install.sh
+          sh scripts/install.sh
+          app="$HOME/Applications/MDX.app"
+          test -d "$app"
+          test -x "$app/Contents/MacOS/MDX"
+          test -x "$app/Contents/MacOS/mdx-cli"
+          test -L "$HOME/Desktop/MDX.app"
+          test "$(readlink "$HOME/Desktop/MDX.app")" = "$app"
+          test "$(find "$HOME/Desktop" -maxdepth 1 -name MDX.app | wc -l | tr -d ' ')" = 1
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$(node -p 'require("./package.json").version')"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleDocumentTypes' "$app/Contents/Info.plist" | grep -E 'md|markdown'
+          cmp "$app/Contents/Resources/icon.icns" app/flowix-desktop/icons/icon.icns
+          "$HOME/.local/bin/mdx" --version
+          codesign --verify --deep --strict "$app"
