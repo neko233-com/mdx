@@ -11,6 +11,11 @@ if (tag !== `v${manifest.version}` || !manifest.platforms || typeof manifest.pla
   throw new Error('updater manifest version or platforms are invalid')
 }
 if (!Array.isArray(release.assets)) throw new Error('GitHub release asset list is missing')
+for (const platform of ['windows-x86_64', 'darwin-aarch64', 'darwin-x86_64']) {
+  if (!manifest.platforms[platform]) {
+    throw new Error(`updater manifest is missing ${platform}`)
+  }
+}
 
 const assetsByApiUrl = new Map(release.assets.map(asset => [asset.apiUrl, asset.name]))
 const assetNames = new Set(release.assets.map(asset => asset.name))

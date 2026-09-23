@@ -3,6 +3,7 @@
   "identifier": "com.neko233.mdx",
   "bundle": {
     "targets": [
+      "app",
       "dmg"
     ],
     "macOS": {
