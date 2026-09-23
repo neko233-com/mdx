@@ -1,6 +1,7 @@
 # MDX development notes
 
 - Desktop targets are Windows and macOS. The Rust workspace is in `app/`; the React/Tiptap renderer is in `app/flowix-web/`.
+- Every installer run refreshes one MDX desktop launch icon idempotently. Use the packaged MDX logo on Windows and macOS, and preserve unrelated desktop items.
 - This is an MIT-licensed derivative of Flowix. Keep its copyright notice, license, and upstream attribution.
 - Typora is the complete interaction and visual reference: a Markdown file tree on the left, a focused WYSIWYG document on the right, restrained controls, and Typora-like colors. Flowix supplies the local storage and editor core, not the product interaction contract.
 - Inserted local images use document-relative Markdown paths by default so moving a notebook preserves them. Keep existing absolute asset links readable; remote image URLs remain usable for image hosts. PicGo upload is an explicit editor action; never upload pasted images by default or rewrite a user's existing Markdown just because it was opened.

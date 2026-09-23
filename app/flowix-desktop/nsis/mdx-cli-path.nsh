@@ -111,6 +111,10 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  ; Always refresh the same desktop shortcut, including GUI installs and
+  ; updater installs. The executable owns the current MDX icon resource.
+  CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe" "" "$INSTDIR\${MAINBINARYNAME}.exe" 0
+  !insertmacro SetLnkAppUserModelId "$DESKTOP\${PRODUCTNAME}.lnk"
   CreateDirectory "${MDX_CLI_BIN_DIR}"
   Delete "${MDX_LEGACY_CLI_SHIM}"
   FileOpen $0 "${MDX_CLI_SHIM}" w

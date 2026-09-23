@@ -52,6 +52,17 @@ tar -xzf "$work/mdx.tar.gz" -C "$work/extracted"
 [ -d "$work/extracted/MDX.app" ] || { echo 'The release did not contain MDX.app.' >&2; exit 1; }
 mkdir -p "$HOME/Applications"
 /usr/bin/ditto "$work/extracted/MDX.app" "$HOME/Applications/MDX.app"
+desktop_app="$HOME/Desktop/MDX.app"
+mkdir -p "$HOME/Desktop"
+if [ -L "$desktop_app" ]; then
+  if [ "$(readlink "$desktop_app")" != "$HOME/Applications/MDX.app" ]; then
+    echo "Leaving existing desktop link at $desktop_app unchanged." >&2
+  fi
+elif [ -e "$desktop_app" ]; then
+  echo "Leaving existing desktop item at $desktop_app unchanged." >&2
+else
+  ln -s "$HOME/Applications/MDX.app" "$desktop_app"
+fi
 cli="$HOME/Applications/MDX.app/Contents/MacOS/mdx-cli"
 if [ -x "$cli" ]; then
   mkdir -p "$HOME/.local/bin"
