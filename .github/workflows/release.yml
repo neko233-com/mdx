@@ -72,6 +72,8 @@ jobs:
           set -euo pipefail
           tag="v$(node -p 'require("./package.json").version')"
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir "$RUNNER_TEMP"
-          node scripts/create-mirror-manifest.mjs "$RUNNER_TEMP/latest.json" "$RUNNER_TEMP/latest-mirror.json"
-          gh release upload "$tag" "$RUNNER_TEMP/latest-mirror.json" --repo "$GITHUB_REPOSITORY" --clobber
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets > "$RUNNER_TEMP/assets.json"
+          node scripts/create-mirror-manifest.mjs "$RUNNER_TEMP/latest.json" "$RUNNER_TEMP/assets.json" "$tag" "$RUNNER_TEMP/latest-public.json" "$RUNNER_TEMP/latest-mirror.json"
+          mv "$RUNNER_TEMP/latest-public.json" "$RUNNER_TEMP/latest.json"
+          gh release upload "$tag" "$RUNNER_TEMP/latest.json" "$RUNNER_TEMP/latest-mirror.json" --repo "$GITHUB_REPOSITORY" --clobber
           gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
