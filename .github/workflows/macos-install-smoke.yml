@@ -20,6 +20,7 @@ jobs:
           MDX_DOWNLOAD_SOURCE: github
         run: |
           set -eu
+          printf 'Runner architecture: %s\n' "$(uname -m)"
           sh scripts/install.sh
           sh scripts/install.sh
           app="$HOME/Applications/MDX.app"
@@ -34,3 +35,5 @@ jobs:
           cmp "$app/Contents/Resources/icon.icns" app/flowix-desktop/icons/icon.icns
           "$HOME/.local/bin/mdx" --version
           codesign --verify --deep --strict "$app"
+          sleep 2
+          pgrep -x MDX
