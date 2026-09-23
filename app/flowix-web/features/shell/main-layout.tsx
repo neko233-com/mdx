@@ -49,12 +49,12 @@ import {
 import type { PluginDescriptor } from '@platform/tauri/client';
 import {
   useShellWorkspaceViewModel,
+  useNotebookSwitching,
   BROWSER_COLUMN_MIN_WIDTH,
   type WorkColumnTarget,
 } from '@features/workspace/public/shell-api';
 import { MainStatusBarHost } from '@features/shell/components/main-status-bar-host';
 import { CenteredLoadingSpinner } from '@shared/ui/centered-loading-spinner';
-import { useWorkColumnStore } from '@features/workspace/store/work-column-store';
 import { MainPromptHost } from '@features/shell/components/main-prompt-host';
 import type { Editor } from '@tiptap/core';
 
@@ -198,7 +198,7 @@ export function MainLayout({
     focusWorkspaceHost,
     focusedHostId,
   } = useShellWorkspaceViewModel();
-  const notebookSwitching = useWorkColumnStore((state) => state.notebookSwitchesInFlight > 0);
+  const notebookSwitching = useNotebookSwitching();
   const [startupStatus, setStartupStatus] = useState<StartupStatus>({
     phase: 'pending',
     step: 'initializing',

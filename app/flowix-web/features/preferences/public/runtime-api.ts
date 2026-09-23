@@ -1,6 +1,7 @@
 import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 import type { AgentTypeKey } from '@/types/agent';
 import type { UserSettings } from '@/lib/constants';
+export { PREFERENCE_TAB_GROUPS } from '@features/preferences/preferences-tab-config';
 
 export function getCurrentAppLanguage() {
   return useUserSettingsStore.getState().settings.language;

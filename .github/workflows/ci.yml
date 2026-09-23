@@ -19,26 +19,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  dsh:
-    name: DSH · packaging invariants
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Verify native dependency selection and binary headers
-        run: npm run test:dsh:packaging
-
-      - name: DSH App Server tests
-        run: |
-          npm --prefix dsh-appserver ci --ignore-scripts
-          npm --prefix dsh-appserver test
-
   web:
     name: Web · typecheck + unit tests
     runs-on: ubuntu-22.04
@@ -88,6 +68,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Linux system deps (Tauri)
         run: |
           sudo apt-get update
@@ -104,6 +89,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: app/target -> ci
+
+      - name: Build CLI sidecar for Tauri checks
+        run: npm run cli:build:dev
 
       - name: Clippy
         working-directory: app

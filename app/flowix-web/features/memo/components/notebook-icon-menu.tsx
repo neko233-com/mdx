@@ -10,7 +10,7 @@ import {
 } from '@shared/ui/dropdown-menu';
 import { useI18n } from '@/lib/i18n';
 import { ArrowLeftToLine, ArrowRightToLine } from 'lucide-react';
-import { PREFERENCE_TAB_GROUPS } from '@features/preferences/preferences-tab-config';
+import { PREFERENCE_TAB_GROUPS } from '@features/preferences/public/runtime-api';
 import { ShortcutKbd } from '@shared/ui/shortcut-kbd';
 import productLogo from '@/assets/productlogo.png';
 import { cn } from '@/lib/utils';
@@ -34,12 +34,12 @@ const NOTEBOOK_ICON_MENU_CLASS =
 const NOTEBOOK_ICON_MENU_ITEM_CLASS =
   'group h-7 items-center justify-start gap-1.5 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]';
 const NOTEBOOK_ICON_MENU_DIVIDER_CLASS = 'mx-1 my-1 h-px bg-[var(--border-popup)] opacity-60';
-const OFFICIAL_SITE_URL = 'https://flowix.cc';
-const COMMUNITY_URL = 'https://github.com/text2future/flowix';
+const OFFICIAL_SITE_URL = 'https://github.com/neko233-com/mdx';
+const COMMUNITY_URL = 'https://github.com/neko233-com/mdx/issues';
 
 /**
  * 中间列顶部的图标 (统一展示产品图标):
- * - hover 图标 → 延迟展示 Flowix 下拉菜单 (笔记导航 / 偏好设置)
+ * - hover 图标 → 延迟展示 MDX 下拉菜单 (笔记导航 / 偏好设置)
  * - 点击整个产品图标按钮 → 展示下拉菜单
  */
 export function NotebookIconMenu({

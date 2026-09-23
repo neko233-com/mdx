@@ -25,6 +25,10 @@ export function useShellWorkspaceViewModel() {
   return { navigation, ...browser, ...focus };
 }
 
+export function useNotebookSwitching() {
+  return useWorkColumnStore((state) => state.notebookSwitchesInFlight > 0);
+}
+
 export function useWorkColumnTransferViewModel() {
   const target = useWorkColumnStore((state) => state.navigation.target);
   const canOpenInBrowserColumn = target.kind !== 'empty'
