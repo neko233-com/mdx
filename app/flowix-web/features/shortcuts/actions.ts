@@ -38,8 +38,8 @@ import { resolveSystemTheme, type ResolvedThemeId, type ThemeId } from '@feature
  *     editor.toggleTaskList     ⌘⌥9         editor  — 块元素 → 待办列表
  *
  *   navigation
- *     palette.search  ⌘K          no-input — 打开/关闭命令面板 (toggle)
- *     menu.open       ⌘P / Ctrl+P window — 打开偏好设置窗口
+ *     palette.search  ⌘⇧O / Ctrl+P window — 快速打开笔记 (⌘K / Ctrl+K 也可用)
+ *     menu.open       ⌘, / Ctrl+, window — 打开偏好设置窗口
  *
  *   memo
  *     memo.create            ⌘N          no-input — 新建 Memo
@@ -276,6 +276,8 @@ defineAction({
 
 /**
  * 打开/关闭全局搜索 / 命令面板 (GlobalSearchCommand) — toggle 语义。
+ * Windows 使用 Typora 的 Ctrl+P 快速打开，macOS 使用 ⌘⇧O；
+ * 保留原有的 ⌘K / Ctrl+K 作为附加绑定。
  *
  * 实现: dispatch `flowix:toggle-palette` 事件, MemoListServicesHost 监听后
  * `setSearchOpen(prev => !prev)`。沿用仓库里 `flowix:open-create-notebook` /
@@ -291,9 +293,14 @@ defineAction({
   group: 'navigation',
   scope: 'window',
   defaultBinding: {
-    mac: 'Mod+K',
-    windows: 'Mod+K',
-    linux: 'Mod+K',
+    mac: 'Mod+Shift+O',
+    windows: 'Mod+P',
+    linux: 'Mod+P',
+  },
+  alternateBindings: {
+    mac: ['Mod+K'],
+    windows: ['Mod+K'],
+    linux: ['Mod+K'],
   },
   run: () => {
     window.dispatchEvent(new CustomEvent('flowix:toggle-palette'));
@@ -303,7 +310,7 @@ defineAction({
 /**
  * 打开偏好设置。
  *
- * Mac / Windows 通用约定: ⇧⌘, / Ctrl+Shift+, 即 "Preferences / 设置"。当前选择
+ * Mac / Windows 通用约定: ⌘, / Ctrl+, 即 "Preferences / 设置"。当前选择
  * 打开独立的 Tauri 偏好窗口 (`windows.openPreferences`), 不复用 in-window
  * MenuBoard — MenuBoard 现有调用链为零, 偏好窗口已经承担所有 settings tab
  * (见 windows/preferences/sections/), 跨窗口体验更一致。
@@ -315,9 +322,9 @@ defineAction({
   group: 'navigation',
   scope: 'window',
   defaultBinding: {
-    mac: 'Mod+P',
-    windows: 'Mod+P',
-    linux: 'Mod+P',
+    mac: 'Mod+,',
+    windows: 'Mod+,',
+    linux: 'Mod+,',
   },
   run: () => {
     void windows.openPreferences();
