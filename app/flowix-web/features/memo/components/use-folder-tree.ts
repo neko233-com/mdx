@@ -233,6 +233,7 @@ export function useFolderTree(folderPath: string, options?: FolderTreeOptions) {
 
   const toggle = useCallback((dirPath: string) => {
     const key = canonicalDirectoryPath(dirPath);
+    const opening = !expanded.has(key);
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(key)) {
@@ -242,8 +243,8 @@ export function useFolderTree(folderPath: string, options?: FolderTreeOptions) {
       }
       return next;
     });
-    void loadChildren(dirPath);
-  }, [loadChildren]);
+    if (opening) void loadChildren(dirPath);
+  }, [expanded, loadChildren]);
 
   /** 折叠所有已展开的 folder ── 清空 expanded 集合。 */
   const collapseAll = useCallback(() => {

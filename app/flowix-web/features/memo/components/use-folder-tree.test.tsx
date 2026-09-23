@@ -94,6 +94,23 @@ describe('useFolderTree', () => {
     expect(getDirChildrenMock).toHaveBeenCalledTimes(1);
   });
 
+  it('空目录收起时不触发读取，再展开时刷新子级', async () => {
+    getTreeMock.mockResolvedValue([dir('/root/empty', 'empty')]);
+    getDirChildrenMock.mockResolvedValue([]);
+    mount('/root');
+    await vi.waitFor(() => expect(lastState?.loading).toBe(false));
+
+    act(() => lastState?.toggle('/root/empty'));
+    await vi.waitFor(() => expect(getDirChildrenMock).toHaveBeenCalledTimes(1));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    act(() => lastState?.toggle('/root/empty'));
+    expect(lastState?.expanded.has('/root/empty')).toBe(false);
+    expect(getDirChildrenMock).toHaveBeenCalledTimes(1);
+
+    act(() => lastState?.toggle('/root/empty'));
+    await vi.waitFor(() => expect(getDirChildrenMock).toHaveBeenCalledTimes(2));
+  });
+
   it('根目录不可读时置 error 且列表为空', async () => {
     getTreeMock.mockResolvedValue(null);
     mount('/root');
