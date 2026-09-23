@@ -158,7 +158,7 @@ describe("ComposerController note references", () => {
     draft.flush();
 
     expect(controller.getPrompt()).toBe(
-      "before [Reference](flowix://memo/abc123) after",
+      "before [Reference](mdx://memo/abc123) after",
     );
     expect(editor.getJSON().content?.[0]?.content).toEqual(
       expect.arrayContaining([
@@ -166,7 +166,7 @@ describe("ComposerController note references", () => {
       ]),
     );
     expect(getPersistedDraft()).toBe(
-      "before [Reference](flowix://memo/abc123) after",
+      "before [Reference](mdx://memo/abc123) after",
     );
   });
 
@@ -174,13 +174,13 @@ describe("ComposerController note references", () => {
     const { controller } = setup();
     const editor = controller.editorInstance;
     editor.commands.setContent(
-      "[/goal](flowix://slash/deepseek-harness/goal) define the milestone",
+      "[/goal](mdx://slash/deepseek-harness/goal) define the milestone",
       { contentType: "markdown" },
     );
     expect(controller.getPrompt()).toBe("/goal define the milestone");
 
     editor.commands.setContent(
-      "[/feedback](flowix://slash/feedback) ignored",
+      "[/feedback](mdx://slash/feedback) ignored",
       { contentType: "markdown" },
     );
     expect(controller.getPrompt()).toBe(" ignored");
@@ -190,7 +190,7 @@ describe("ComposerController note references", () => {
     const { controller } = setup();
     const editor = controller.editorInstance;
     editor.commands.setContent(
-      "[Browser](flowix://skill/codex/browser%3Acontrol-in-app-browser)",
+      "[Browser](mdx://skill/codex/browser%3Acontrol-in-app-browser)",
       { contentType: "markdown" },
     );
 
@@ -198,7 +198,7 @@ describe("ComposerController note references", () => {
       .toBe("Browser");
     expect(controller.getPrompt()).toBe("$browser:control-in-app-browser");
     expect(editor.getMarkdown()).toBe(
-      "[Browser](flowix://skill/codex/browser%3Acontrol-in-app-browser)",
+      "[Browser](mdx://skill/codex/browser%3Acontrol-in-app-browser)",
     );
   });
 
@@ -206,7 +206,7 @@ describe("ComposerController note references", () => {
     const { controller } = setup();
     const editor = controller.editorInstance;
     editor.commands.setContent(
-      "[control-in-app-browser](flowix://skill/codex/browser%3Acontrol-in-app-browser)",
+      "[control-in-app-browser](mdx://skill/codex/browser%3Acontrol-in-app-browser)",
       { contentType: "markdown" },
     );
 

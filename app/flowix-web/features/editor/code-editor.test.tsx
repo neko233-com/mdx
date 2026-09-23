@@ -5,6 +5,7 @@ import { EditorView } from '@codemirror/view';
 
 import { CodeEditor, type CodeEditorHandle } from '@features/editor/code-editor';
 import { ShortcutsProvider } from '@features/shortcuts';
+import { isMac } from '@/lib/shortcuts/platform';
 import '@features/shortcuts/actions';
 
 vi.mock(
@@ -362,7 +363,8 @@ describe('CodeEditor', () => {
       const event = new KeyboardEvent('keydown', {
         key,
         code: key === 'z' ? 'KeyZ' : 'KeyY',
-        metaKey: true,
+        metaKey: isMac(),
+        ctrlKey: !isMac(),
         shiftKey,
         bubbles: true,
         cancelable: true,

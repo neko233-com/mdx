@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::RwLock;
 
-/// 进程�?external CLI �?��注册�?── �?��时由 `agent_external_config` 模块�?/// `~/.flowix/agent-external-config.json` 加载并通过 `set_external_cli_registry`
+/// 进程�?external CLI �?��注册�?── �?��时由 `agent_external_config` 模块�?/// `~/.mdx/agent-external-config.json` 加载并通过 `set_external_cli_registry`
 /// 灌入。`None` = �?���?(冷启动尚�?���?/ 单测), 此时 `resolve_external_cli`
 /// 閫€鍖栦负鍘熸帰娴嬮摼鐨勭函鍑芥暟琛屼负, 淇濊瘉鐜版湁鍗曟祴闆舵敼鍔ㄣ€?///
 /// "�?��参照"�?��: 注册表命�?���? 不校验可执�?性、不回退探测。path 失效�?/// 上层 `executable_available` �?false 标红, 由偏好�?�?��"重新探测"按钮触发
@@ -293,7 +293,7 @@ mod tests {
     fn query_cli_binary_with_shell_finds_path_once() {
         let _guard = acquire_env_lock();
         let dir = std::env::temp_dir().join(format!(
-            "flowix-cli-query-test-{}-{}",
+            "mdx-cli-query-test-{}-{}",
             std::process::id(),
             chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
         ));

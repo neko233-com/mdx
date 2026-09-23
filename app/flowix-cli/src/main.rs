@@ -1,4 +1,4 @@
-//! `flowix-cli` 独立二进制入口。
+//! `mdx-cli` 独立二进制入口。
 //!
 //! 与桌面端二进制 `flowix` 共用 `flowix-core` 业务核心, 但**不**启动 Tauri
 //! runtime、不注册 plugin、不绑端口 ── 仅做命令行解析 + memo_file IO。
@@ -32,7 +32,7 @@ fn main() -> ExitCode {
                     })
                 );
             } else {
-                eprintln!("flowix: {e}");
+                eprintln!("mdx: {e}");
             }
             ExitCode::from(e.exit_code())
         }

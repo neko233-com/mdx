@@ -7,13 +7,6 @@ import { Tooltip } from '@shared/ui/tooltip';
 import type { Notebook } from '@features/memo/store/memo-store';
 import { NotebookSelectorPopup } from '@features/shell/components/status-bar/notebook-selector-popup';
 import { ProductUpdatePill } from '@features/shell/components/status-bar/product-update-pill';
-import {
-  AgentConversationStatusBar,
-  AgentIcon,
-  createAndOpenDshConversation,
-} from '@features/agent/public/shell-api';
-import { useAgentRuntimeStore } from '@features/agent/store/agent-runtime-store';
-import { normalizeAgentRuntimeStatus } from '@features/agent/runtime/agent-runtime-status';
 import { useI18n } from '@/lib/i18n';
 import { useDocumentMetricsStore } from '@features/document/store/document-metrics-store';
 import { useMemoStore } from '@features/memo/store/memo-store';
@@ -24,7 +17,6 @@ import {
   listenToCloudStateChanges,
   listenToCloudSyncStatusChanges,
   type CloudSyncStatus,
-  type DshDownloadProgress,
 } from '@platform/tauri/client';
 import type { AppUpdaterState } from '@features/shell/hooks/use-app-updater';
 
@@ -36,100 +28,14 @@ interface StatusBarProps {
   onOpenTodos: () => void;
   onToggleNoteNavigation: () => void;
   onOpenMcpPreferences: () => void;
-  onOpenDshPreferences: () => void;
-  dshDownload: DshDownloadProgress | null;
   updater: AppUpdaterState;
-}
-
-function DshDownloadProgressIcon({ percent }: { percent: number | null | undefined }) {
-  const radius = 5;
-  const circumference = 2 * Math.PI * radius;
-  const progress = percent == null ? 0.25 : Math.min(100, Math.max(0, percent)) / 100;
-
-  return (
-    <svg
-      aria-hidden="true"
-      className={`h-3.5 w-3.5 shrink-0${percent == null ? ' animate-spin' : ''}`}
-      viewBox="0 0 12 12"
-    >
-      <circle
-        cx="6"
-        cy="6"
-        r={radius}
-        fill="none"
-        stroke="currentColor"
-        strokeOpacity="0.25"
-        strokeWidth="1.5"
-      />
-      <circle
-        cx="6"
-        cy="6"
-        r={radius}
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.5"
-        strokeDasharray={circumference}
-        strokeDashoffset={circumference * (1 - progress)}
-        transform="rotate(-90 6 6)"
-      />
-    </svg>
-  );
-}
-
-function DshRuntimeStatusIndicator({ onOpenPreferences }: { onOpenPreferences: () => void }) {
-  const { t } = useI18n();
-  const dshStatus = useAgentRuntimeStore((state) => state.statusByType['deepseek-harness']);
-  const isChecking = useAgentRuntimeStore((state) => state.isChecking);
-  const refreshIfStale = useAgentRuntimeStore((state) => state.refreshIfStale);
-
-  useEffect(() => {
-    void refreshIfStale();
-  }, [refreshIfStale]);
-
-  const runtimeStatus = normalizeAgentRuntimeStatus(dshStatus, isChecking);
-  const statusText = runtimeStatus.state === 'ready'
-    ? t('agent.status.available')
-    : runtimeStatus.state === 'checking'
-      ? t('agent.status.checking')
-      : runtimeStatus.state === 'unknown'
-        ? t('agent.status.notChecked')
-        : t('agent.status.setup');
-  const label = `${t('agent.types.deepseekHarness.name')} · ${statusText}`;
-  const available = runtimeStatus.state === 'ready';
-
-  const handleClick = () => {
-    if (available) {
-      createAndOpenDshConversation();
-      return;
-    }
-    onOpenPreferences();
-  };
-
-  return (
-    <Tooltip content={label} side="top">
-      <button
-        type="button"
-        onClick={handleClick}
-        className="h-full flex items-center justify-center px-1.5 py-0 hover:bg-[var(--muted)]"
-        aria-label={label}
-      >
-        <AgentIcon
-          typeKey="deepseek-harness"
-          alt=""
-          color={available ? 'var(--foreground)' : 'var(--muted-foreground)'}
-          className="h-3.5 w-3.5"
-        />
-      </button>
-    </Tooltip>
-  );
 }
 
 /**
  * Bottom status bar for the main window.
  *
  * Layout (two columns):
- *   [NotebookSwitcher] | [Todos] [char count]   …flex spacer…   [Note Nav] [AI Chat] [⚙]
+ *   [NotebookSwitcher] | [Note Nav] [Todos] [char count] ... [Updates] [MCP]
  *
  * The left column is the notebook switcher (fixed width by its own button
  * content); the right column takes the remaining width for the status actions.
@@ -144,8 +50,6 @@ export function StatusBar({
   onOpenTodos,
   onToggleNoteNavigation,
   onOpenMcpPreferences,
-  onOpenDshPreferences,
-  dshDownload,
   updater,
 }: StatusBarProps) {
   const { t } = useI18n();
@@ -250,19 +154,7 @@ export function StatusBar({
         >
           <ListTodo className="w-3.5 h-3.5 shrink-0" />
         </button>
-        <AgentConversationStatusBar />
         <div className="flex-1" />
-        {dshDownload && (
-          <button
-            type="button"
-            onClick={onOpenDshPreferences}
-            className="inline-flex h-[22px] items-center gap-0.5 rounded-md px-2 text-xs leading-none text-[var(--primary)] hover:bg-[var(--muted)]"
-            title={t('preferences.dsh.runtime.downloadProgress')}
-          >
-            <DshDownloadProgressIcon percent={dshDownload.percent} />
-            <span>{t('preferences.dsh.runtime.downloading')}</span>
-          </button>
-        )}
         <ProductUpdatePill updater={updater} />
         {cloudSyncInProgress && (
           <div
@@ -283,7 +175,6 @@ export function StatusBar({
             {t('status.characters')} {charCount}
           </span>
         )}
-        <DshRuntimeStatusIndicator onOpenPreferences={onOpenDshPreferences} />
         <Tooltip content={t('preferences.tabs.mcp')} side="top">
           <button
             type="button"

@@ -157,9 +157,9 @@ pub async fn install_app_update(
 /// Prevent the bundled product CLI from keeping the NSIS update payload locked.
 ///
 /// Windows does not allow the installer to replace an executable while another
-/// process has it open. `flowix-cli` is intentionally a product-owned process,
+/// process has it open. `mdx-cli` is intentionally a product-owned process,
 /// so the updater closes only instances whose full executable path matches the
-/// CLI next to the current Flowix executable. It never kills by image name.
+/// CLI next to the current MDX executable. It never kills by image name.
 struct CliUpdateGuard {
     #[cfg(target_os = "windows")]
     _update_lock: UpdateLock,
@@ -191,7 +191,7 @@ fn prepare_cli_for_update() -> Result<CliUpdateGuard, String> {
             }
             if Instant::now() >= deadline {
                 return Err(format!(
-                    "cannot update while flowix-cli is still running (pid: {})",
+                    "cannot update while mdx-cli is still running (pid: {})",
                     remaining
                         .iter()
                         .map(ToString::to_string)
@@ -213,7 +213,7 @@ struct UpdateLock {
 fn acquire_update_lock() -> Result<UpdateLock, String> {
     let dir = dirs::data_local_dir()
         .ok_or_else(|| "LOCALAPPDATA is unavailable".to_string())?
-        .join("Flowix");
+        .join("MDX");
     std::fs::create_dir_all(&dir)
         .map_err(|error| format!("failed to create update lock directory: {error}"))?;
     let file = OpenOptions::new()
@@ -223,18 +223,18 @@ fn acquire_update_lock() -> Result<UpdateLock, String> {
         .open(dir.join("update.lock"))
         .map_err(|error| format!("failed to open update lock: {error}"))?;
     fs2::FileExt::try_lock_exclusive(&file)
-        .map_err(|_| "another Flowix update is already in progress".to_string())?;
+        .map_err(|_| "another MDX update is already in progress".to_string())?;
     Ok(UpdateLock { _file: file })
 }
 
 #[cfg(target_os = "windows")]
 fn current_cli_path() -> Result<PathBuf, String> {
     let exe = std::env::current_exe()
-        .map_err(|error| format!("failed to resolve Flowix executable: {error}"))?;
+        .map_err(|error| format!("failed to resolve MDX executable: {error}"))?;
     let parent = exe
         .parent()
-        .ok_or_else(|| "Flowix executable has no parent directory".to_string())?;
-    Ok(parent.join("flowix-cli.exe"))
+        .ok_or_else(|| "MDX executable has no parent directory".to_string())?;
+    Ok(parent.join("mdx-cli.exe"))
 }
 
 #[cfg(target_os = "windows")]
@@ -300,11 +300,11 @@ fn terminate_process(pid: u32) -> Result<(), String> {
 
     let access = PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | PROCESS_SYNCHRONIZE;
     let process = unsafe { OpenProcess(access, false, pid) }
-        .map_err(|error| format!("failed to open flowix-cli process {pid}: {error}"))?;
+        .map_err(|error| format!("failed to open mdx-cli process {pid}: {error}"))?;
     let terminated = unsafe { TerminateProcess(process, 1).is_ok() };
     if !terminated {
         unsafe { let _ = CloseHandle(process); }
-        return Err(format!("failed to terminate flowix-cli process {pid}"));
+        return Err(format!("failed to terminate mdx-cli process {pid}"));
     }
     unsafe { WaitForSingleObject(process, 5_000) };
     unsafe { let _ = CloseHandle(process); }

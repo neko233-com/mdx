@@ -96,7 +96,7 @@ pub use versions::{
 /// 笔记本目录 / 笔记文件的存储管理。
 ///
 /// 字段:
-/// - `config_dir`: 用户配置目录 (`~/.flowix/`). 笔记本注册表 + memo index
+/// - `config_dir`: 用户配置目录 (`~/.mdx/`). 笔记本注册表 + memo index
 ///   + todo metadata 都存放在 `<config_dir>/index.db` 关联的 SQLite 文件里
 ///     (分别走 [`MemoFile::get_index_db_path`] / `<notebook>/.metadata/` 派生)。
 /// - `current_notebook_id`: 当前活跃 notebook id, `None` 表示走默认。
@@ -131,6 +131,22 @@ pub struct CrossProcessWriteGuard {
 impl Drop for CrossProcessWriteGuard {
     fn drop(&mut self) {
         let _ = fs2::FileExt::unlock(&self.file);
+    }
+}
+
+fn is_write_lock_contention(error: &io::Error) -> bool {
+    if error.kind() == io::ErrorKind::WouldBlock {
+        return true;
+    }
+    // fs2's Windows LockFileEx maps ERROR_LOCK_VIOLATION to Uncategorized.
+    // Treat it like WouldBlock so another MDX process can finish its write.
+    #[cfg(windows)]
+    {
+        return matches!(error.raw_os_error(), Some(32 | 33));
+    }
+    #[cfg(not(windows))]
+    {
+        false
     }
 }
 
@@ -171,7 +187,7 @@ impl MemoFile {
         loop {
             match fs2::FileExt::try_lock_exclusive(&file) {
                 Ok(()) => break,
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                Err(error) if is_write_lock_contention(&error) => {
                     if started.elapsed() >= LOCK_TIMEOUT {
                         return Err(io::Error::new(
                             io::ErrorKind::TimedOut,
@@ -229,12 +245,12 @@ impl MemoFile {
         self.get_default_notebook_path()
     }
 
-    /// Notebook-local Flowix data root: `<notebook>/.flowix/`.
+    /// Notebook-local Flowix data root: `<notebook>/.mdx/`.
     pub fn get_flowix_dir(&self) -> PathBuf {
-        self.get_memo_base().join(".flowix")
+        self.get_memo_base().join(".mdx")
     }
 
-    /// Notebook-local version history root: `<notebook>/.flowix/versions/`.
+    /// Notebook-local version history root: `<notebook>/.mdx/versions/`.
     pub fn get_versions_dir(&self) -> PathBuf {
         self.get_flowix_dir().join("versions")
     }

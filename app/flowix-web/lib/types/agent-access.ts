@@ -2,7 +2,7 @@
  * Agent 访问目录 (可访问文件夹) — 镜像后端 `app/flowix-desktop/src/agent_access.rs`
  * 的 `AgentAccessConfig` / `AgentAccessEntry` / `AgentAccessKind`。
  *
- * 真源在 `~/.flowix/agent-access.json` (后端 `agent_access::AgentAccessStore`),
+ * 真源在 `~/.mdx/agent-access.json` (后端 `agent_access::AgentAccessStore`),
  * 前端走 `lib/tauri/client.ts::agentAccess` IPC 读写。 整份 set 走乐观更新,
  * 跨窗口同步靠后端 emit 的 `agent-access-changed` 事件。
  */
@@ -16,7 +16,7 @@ import type {
 } from "@/types/agent";
 
 /**
- * Responsibility split for `~/.flowix/agent-access.json`:
+ * Responsibility split for `~/.mdx/agent-access.json`:
  *
  * - `defaults`: default runtime values copied into a newly created
  *   agent-thread-card instance; file defaults are legacy read-only data.
@@ -52,7 +52,7 @@ export interface AgentAccessDefaultRuntime {
 
 /**
  * Legacy `defaults.files` global key retained for read-only migration of old
- * installations. New writes always target notebook `.flowix/agent.json`.
+ * installations. New writes always target notebook `.mdx/agent.json`.
  */
 export const DEFAULT_FILES_GLOBAL_KEY = "_global";
 
@@ -76,7 +76,7 @@ export interface AgentAccessConfig {
   defaults?: AgentAccessDefaults;
 }
 
-/** Notebook-local `.flowix/agent.json`. The notebook itself is always cwd;
+/** Notebook-local `.mdx/agent.json`. The notebook itself is always cwd;
  * `addDirs` contains only additional runtime roots. */
 export interface NotebookAddDir {
   id: string;

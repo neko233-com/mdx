@@ -18,59 +18,59 @@ const CLI_COMMANDS: CliCommandItem[] = [
   {
     command: 'notebooks',
     alias: 'nb',
-    usage: 'flowix notebooks',
+    usage: 'mdx notebooks',
     descriptionKey: 'preferences.cli.commands.notebooks',
   },
   {
     command: 'list',
     alias: 'ls',
-    usage: 'flowix list <notebook>',
+    usage: 'mdx list <notebook>',
     descriptionKey: 'preferences.cli.commands.list',
   },
   {
     command: 'show',
     alias: 's',
-    usage: 'flowix show <id>',
+    usage: 'mdx show <id>',
     descriptionKey: 'preferences.cli.commands.show',
   },
   {
     command: 'create',
     alias: 'new, c',
-    usage: 'echo "# title" | flowix create <notebook>',
+    usage: 'echo "# title" | mdx create <notebook>',
     descriptionKey: 'preferences.cli.commands.create',
   },
   {
     command: 'delete',
     alias: 'rm',
-    usage: 'flowix delete <id>',
+    usage: 'mdx delete <id>',
     descriptionKey: 'preferences.cli.commands.delete',
   },
   {
     command: 'edit',
     alias: 'e',
-    usage: 'flowix edit <id> --old <text> --new <text>',
+    usage: 'mdx edit <id> --old <text> --new <text>',
     descriptionKey: 'preferences.cli.commands.edit',
   },
   {
     command: 'write',
     alias: 'w',
-    usage: 'printf "# title\\nbody\\n" | flowix write <id>',
+    usage: 'printf "# title\\nbody\\n" | mdx write <id>',
     descriptionKey: 'preferences.cli.commands.write',
   },
   {
     command: 'search',
     alias: 'q',
-    usage: 'flowix search <query> --limit 20',
+    usage: 'mdx search <query> --limit 20',
     descriptionKey: 'preferences.cli.commands.search',
   },
   {
     command: 'completion',
-    usage: 'flowix completion <bash|zsh|fish>',
+    usage: 'mdx completion <bash|zsh|fish>',
     descriptionKey: 'preferences.cli.commands.completion',
   },
   {
     command: 'plugin create',
-    usage: 'printf "# Root\\n\\n## Branch\\n- Leaf\\n" | flowix plugin create mindmap -b <notebook> --json',
+    usage: 'printf "# Root\\n\\n## Branch\\n- Leaf\\n" | mdx plugin create mindmap -b <notebook> --json',
     descriptionKey: 'preferences.cli.commands.pluginCreate',
   },
 ];
@@ -110,7 +110,7 @@ export function CliSection() {
                   {t('preferences.cli.binary')}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <code className="text-sm text-[var(--foreground)]">flowix</code>
+                  <code className="text-sm text-[var(--foreground)]">mdx</code>
                   <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted-foreground)]">
                     {!status?.needsInstall && (
                       <Check className="size-3.5 text-[var(--success)]" />

@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Flowix Dev",
-  "mainBinaryName": "Flowix Dev",
-  "version": "1.2.6",
-  "identifier": "com.flowix.app.dev",
+  "productName": "MDX Dev",
+  "mainBinaryName": "MDX Dev",
+  "version": "0.1.0",
+  "identifier": "com.neko233.mdx.dev",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
   "app": {
     "windows": [
       {
-        "title": "Flowix Dev",
+        "title": "MDX Dev",
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "trafficLightPosition": {
@@ -27,7 +27,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost https://cdn.jsdelivr.net data: blob:; media-src 'self' asset: http://asset.localhost https://asset.localhost data: blob:; font-src 'self' asset: http://asset.localhost https://asset.localhost data:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost http://asset.localhost https://asset.localhost https:; frame-src 'self' http: https:; worker-src 'self' blob:",
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost http: https: data: blob:; media-src 'self' asset: http://asset.localhost https://asset.localhost data: blob:; font-src 'self' asset: http://asset.localhost https://asset.localhost data:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost http://asset.localhost https://asset.localhost https:; frame-src 'self' http: https:; worker-src 'self' blob:",
       "assetProtocol": {
         "enable": true,
         "scope": [
@@ -44,7 +44,7 @@
     ],
     "windows": {
       "nsis": {
-        "installerHooks": "nsis/flowix-cli-path.nsh",
+        "installerHooks": "nsis/mdx-cli-path.nsh",
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico"
       }
@@ -62,7 +62,7 @@
       }
     ],
     "macOS": {
-      "bundleName": "Flowix Dev",
+      "bundleName": "MDX Dev",
       "infoPlist": "Info.plist"
     },
     "icon": [
@@ -73,7 +73,7 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/flowix-cli"
+      "binaries/mdx-cli"
     ]
   }
 }

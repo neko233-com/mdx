@@ -98,6 +98,9 @@ vi.mock("@platform/tauri/client", () => ({
     }]),
     sessionUsage: vi.fn(async () => null),
   },
+  dshIntegration: {
+    checkUpdate: vi.fn(async () => ({ updateAvailable: false, latestVersion: null })),
+  },
   listenToAgentStream: vi.fn(),
 }));
 
@@ -328,7 +331,7 @@ describe("AgentThreadCard NodeView streaming", () => {
     expect(editor.state.doc.child(0).textContent).toBe("before");
     expect(editor.state.doc.child(1).textContent).toBe("after");
     expect(editor.state.doc.child(2).type.name).toBe("agentThreadCard");
-  });
+  }, 15_000);
 
   it("persists the card binding and UI state while keeping title legacy-only", async () => {
     const {

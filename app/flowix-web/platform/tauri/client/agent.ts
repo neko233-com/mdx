@@ -292,7 +292,7 @@ export const agent = {
     invoke<void>('open_codex_cli_install_terminal'),
   openCodexConfig: () =>
     invoke<void>('open_codex_config'),
-  // ── External CLI 路径配置 (~/.flowix/agent-external-config.json) ──
+  // ── External CLI 路径配置 (~/.mdx/agent-external-config.json) ──
   // 唯一参照: 启动探测写入, 偏好设置可改 path / 重新探测。
   getExternalConfig: () =>
     invoke<Record<string, AgentExternalEntry>>('get_agent_external_config'),

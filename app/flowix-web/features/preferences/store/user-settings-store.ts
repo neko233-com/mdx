@@ -30,6 +30,7 @@ const logger = createLogger('user-settings');
 
 const LEGACY_SERIF_FONT_FAMILY =
   "'Noto Serif CJK SC', 'Songti SC', 'SimSun', 'Times New Roman', serif, Georgia";
+const TREE_LAYOUT_MIGRATION_KEY = 'mdx:tree-layout-v1';
 
 function normalizeFontFamily(fontFamily: string): string {
   if (fontFamily === LEGACY_SERIF_FONT_FAMILY) {
@@ -76,7 +77,9 @@ function normalizePreferredLanguage(preferredLanguage: string): string {
 
 function normalizeMemoListView(value: unknown): MemoListView {
   // `cards` is the legacy persisted value for the detailed list.
-  return value === 'folders' ? 'folders' : DEFAULT_USER_SETTINGS.memoListView;
+  return value === 'folders' || value === 'detailed'
+    ? value
+    : DEFAULT_USER_SETTINGS.memoListView;
 }
 
 /**
@@ -88,7 +91,7 @@ function normalizeMemoListView(value: unknown): MemoListView {
  * 看不到 — 导致"刚改的值在另一处读不到、刷新后丢失"的诡异 bug。
  *
  * 用 zustand 单例后, 任何订阅者拿到的都是同一份 state, 写入立即通知
- * 所有订阅者。 后端 IPC 仍走 ~/.flowix/boot/preference.json, 这里只是前端
+ * 所有订阅者。 后端 IPC 仍走 ~/.mdx/boot/preference.json, 这里只是前端
  * 状态层的统一源。
  */
 
@@ -347,6 +350,10 @@ export const useUserSettingsStore = create<UserSettingsState>((set, get) => ({
       // 首次安装: preference.json 里 language 是空串, 跟随系统语言。
       // 规则: zh-* → zh-CN, 其他 → en-US。 落盘后后续启动以用户偏好为准。
       const isFirstInstall = !loaded?.language;
+      // Earlier MDX builds saved Flowix's detailed-list default. Migrate it
+      // once; after that, an explicit switch back to the detailed list sticks.
+      const migrateTreeLayout = localStorage.getItem(TREE_LAYOUT_MIGRATION_KEY) !== '1'
+        && loaded?.memoListView === 'detailed';
       const language = isFirstInstall
         ? detectSystemLanguage()
         : sanitizeAppLanguage(loaded.language);
@@ -357,6 +364,7 @@ export const useUserSettingsStore = create<UserSettingsState>((set, get) => ({
 
       const merged = mergeSettings(DEFAULT_USER_SETTINGS, {
         ...loaded,
+        memoListView: migrateTreeLayout ? 'folders' : loaded?.memoListView,
         theme,
         language,
       });
@@ -365,13 +373,14 @@ export const useUserSettingsStore = create<UserSettingsState>((set, get) => ({
         sanitizeSettings({ ...merged, region }),
       );
       set({ settings: sanitized, isLoading: false });
+      localStorage.setItem(TREE_LAYOUT_MIGRATION_KEY, '1');
 
       // 同步给 useRegionStore (非 React 代码 / 旧订阅者读这里)
       useRegionStore.getState().initialize(region);
 
       // 首次安装时立即落盘 (不走 debounce), 避免用户首次启动后立刻改语言
       // 又被下次启动的"首次安装"判定覆盖。
-      if (isFirstInstall) {
+      if (isFirstInstall || migrateTreeLayout) {
         await writeToBackend(sanitized);
       }
     } catch (error) {

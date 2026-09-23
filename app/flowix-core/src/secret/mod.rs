@@ -3,7 +3,7 @@
 //!
 //! ## 存储
 //!
-//! - 数据库文件: `<config_dir>/default.db` (生产环境 `~/.flowix/default.db`),
+//! - 数据库文件: `<config_dir>/default.db` (生产环境 `~/.mdx/default.db`),
 //!   与 `index.db` 同目录, 受 `~/.flowix` 目录 `0o700` 权限保护; unix 下
 //!   db 文件本身再设一次 `0o600`。
 //! - 表 `secret_kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)`, 通用
@@ -75,7 +75,7 @@ impl KeyBackend {
 pub enum KeySource {
     /// 来自 `default.db` 的 secret_kv 表
     Database,
-    /// 来自 `~/.flowix/agent-config.toml` 老 plaintext (迁移中状态)
+    /// 来自 `~/.mdx/agent-config.toml` 老 plaintext (迁移中状态)
     Plaintext,
     /// 没找到
     None,
@@ -225,7 +225,7 @@ impl SecretBackend for DbBackend {
 ///
 /// 用法:
 /// ```ignore
-/// let store = SecretStore::new("~/.flowix/default.db");
+/// let store = SecretStore::new("~/.mdx/default.db");
 /// store.save("openai_responses::default", "sk-...")?;
 /// let key = store.load("openai_responses::default")?.unwrap();
 /// ```
@@ -235,7 +235,7 @@ pub struct SecretStore {
 
 impl SecretStore {
     /// 构造真实 SQLite 后端的 SecretStore ── db 路径由调用方 (UserConfigStore)
-    /// 按 config_dir 派生 (`~/.flowix/default.db`), desktop / CLI 共用。
+    /// 按 config_dir 派生 (`~/.mdx/default.db`), desktop / CLI 共用。
     pub fn new(db_path: impl AsRef<Path>) -> Self {
         Self {
             backend: Box::new(DbBackend::new(db_path)),

@@ -360,17 +360,19 @@ export const useMemoStore = create<MemoStore>()(
         }
         set({ selectedNotebook: notebook, selectedNotebookId: nextNotebookId });
       },
-      // 中间列五种入口互斥单选 ── 全集: 全部 / 对话 / 待办 / 标签 /
-      // 文件夹浏览。每条 setter 都把其他状态归位, 避免点标签时文件树还
+      // 中间列入口互斥单选。MDX 不展示会话列表；旧版本保存的
+      // agents filter 回到笔记，避免启动后落在不可见的对话页。
+      // 每条 setter 都把其他状态归位, 避免点标签时文件树还
       // 霸着中间列。
-      setMiddleColumnView: (view) => {
-        get().setActiveFilter(view === 'conversations' ? 'agents' : 'all');
+      setMiddleColumnView: (_view) => {
+        get().setActiveFilter('all');
       },
       setActiveFilter: (filter) => {
+        if (filter === 'agents') filter = 'all';
         const previous = get();
         const selectedTagId = useTagStore.getState().selectedTagId;
         const shouldClearTag = filter !== 'tagged';
-        const nextView: MiddleColumnView = filter === 'agents' ? 'conversations' : 'notes';
+        const nextView: MiddleColumnView = 'notes';
         // Artifact plugins use `activeFilter: 'all'` as their list fallback.
         // Clicking the notes entry must still leave that plugin view, even
         // when the filter value itself is already `all`.
@@ -787,8 +789,8 @@ export const useMemoStore = create<MemoStore>()(
         return {
           ...current,
           ...legacy,
-          middleColumnView: legacy.middleColumnView
-            ?? (legacy.activeFilter === 'agents' ? 'conversations' : 'notes'),
+          middleColumnView: 'notes',
+          activeFilter: legacy.activeFilter === 'agents' ? 'all' : legacy.activeFilter ?? 'all',
           selectedNotebook: null,
           selectedMemo: null,
           selectedNotebookId: legacy.selectedNotebookId

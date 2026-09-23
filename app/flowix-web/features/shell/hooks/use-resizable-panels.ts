@@ -7,7 +7,7 @@ type UseResizablePanelsOptions = {
   noteNavigationWidth: number;
 };
 
-const MEMO_LIST_DEFAULT_WIDTH = 320;
+const MEMO_LIST_DEFAULT_WIDTH = 280;
 const MEMO_LIST_MIN_WIDTH = 255;
 const MEMO_LIST_MAX_WIDTH = 500;
 const PANEL_DIVIDER_WIDTH = 1;

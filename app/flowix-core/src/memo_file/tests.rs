@@ -1,4 +1,4 @@
-﻿//! v3 单测 — 围绕 `ops` 原语 + memo index 真源语义。
+//! v3 单测 — 围绕 `ops` 原语 + memo index 真源语义。
 //!
 //! 覆盖:
 //! - helpers: `sanitize_filename_component` / `base_filename` / `resolve_filename_conflict` /
@@ -243,8 +243,8 @@ fn pending_data_migrations_run_once_and_persist_version() {
     assert_eq!(first.from_version, 0);
     assert_eq!(first.to_version, super::LATEST_DATA_MIGRATION_VERSION);
     assert_eq!(first.applied, super::LATEST_DATA_MIGRATION_VERSION as usize);
-    assert!(base.join(".flowix/versions/note1/v_1.md").is_file());
-    assert!(base.join(".flowix/notebook.json").is_file());
+    assert!(base.join(".mdx/versions/note1/v_1.md").is_file());
+    assert!(base.join(".mdx/notebook.json").is_file());
 
     let second = mf.run_pending_data_migrations().unwrap();
     assert_eq!(second.from_version, super::LATEST_DATA_MIGRATION_VERSION);
@@ -274,8 +274,8 @@ fn pending_data_migrations_skip_unavailable_notebooks() {
 
     let report = mf.run_pending_data_migrations().unwrap();
     assert_eq!(report.to_version, super::LATEST_DATA_MIGRATION_VERSION);
-    assert!(base.join(".flowix/notebook.json").is_file());
-    assert!(!base.join("missing-notebook/.flowix").exists());
+    assert!(base.join(".mdx/notebook.json").is_file());
+    assert!(!base.join("missing-notebook/.mdx").exists());
 }
 
 #[test]
@@ -1456,7 +1456,7 @@ fn delete_memo_removes_version_history() {
         .create_memo_version(&memo.id, "old body", super::MemoVersionSource::Manual)
         .unwrap()
         .unwrap();
-    let version_dir = base.join(".flowix/versions").join(&memo.id);
+    let version_dir = base.join(".mdx/versions").join(&memo.id);
     assert!(version_dir.join(format!("{}.md", version.id)).exists());
     let legacy_dir = base.join(".metadata/versions").join(&memo.id);
     fs::create_dir_all(&legacy_dir).unwrap();
@@ -1488,7 +1488,7 @@ fn delete_memo_returns_false_when_unknown() {
 #[test]
 fn version_cleanup_retains_recent_unknown_history() {
     let (mf, base) = fresh_memo_file();
-    let orphan = base.join(".flowix/versions/abcdefgh");
+    let orphan = base.join(".mdx/versions/abcdefgh");
     fs::create_dir_all(&orphan).unwrap();
     fs::write(
         orphan.join("manifest.json"),
@@ -1513,7 +1513,7 @@ fn deleting_last_version_removes_empty_history_directory_and_rejects_traversal()
         .unwrap();
     assert!(!mf.delete_memo_version(&memo.id, "../../outside"));
     assert!(mf.delete_memo_version(&memo.id, &version.id));
-    assert!(!base.join(".flowix/versions").join(&memo.id).exists());
+    assert!(!base.join(".mdx/versions").join(&memo.id).exists());
 }
 
 #[test]

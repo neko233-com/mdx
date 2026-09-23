@@ -4,11 +4,11 @@ use tauri::menu::{
 use tauri::{Emitter, Manager};
 
 const SELECT_ALL_MENU_ID: &str = "flowix.select-all";
-const SELECT_ALL_EVENT: &str = "flowix://editor-select-all";
+const SELECT_ALL_EVENT: &str = "mdx://editor-select-all";
 const UNDO_MENU_ID: &str = "flowix.undo";
-const UNDO_EVENT: &str = "flowix://editor-undo";
+const UNDO_EVENT: &str = "mdx://editor-undo";
 const REDO_MENU_ID: &str = "flowix.redo";
-const REDO_EVENT: &str = "flowix://editor-redo";
+const REDO_EVENT: &str = "mdx://editor-redo";
 const FILE_SUBMENU_ID: &str = "flowix.file";
 const EDIT_SUBMENU_ID: &str = "flowix.edit";
 const VIEW_SUBMENU_ID: &str = "flowix.view";

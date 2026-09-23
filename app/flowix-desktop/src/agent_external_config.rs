@@ -1,4 +1,4 @@
-//! External CLI path config ── 持久化在 `~/.flowix/agent-external-config.json`�?//!
+//! External CLI path config ── 持久化在 `~/.mdx/agent-external-config.json`�?//!
 //! 作为�?external agent (codex / claude / gemini / hermes / openclaw) 执�?�?��
 //! �?�?��参照":
 //! - �?��时探测一�?(`run_startup_detect`), 把命�?�� path 写入文件并灌�?//!   `agent_external::cli_resolver::REGISTRY`; 此后运�?�?`resolve_external_cli`

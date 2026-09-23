@@ -34,7 +34,7 @@ pub(crate) fn agent_image_extension(mime_type: &str) -> Option<&'static str> {
 
 fn agent_image_cache_root() -> Result<PathBuf, String> {
     dirs::home_dir()
-        .map(|home| home.join(".flowix").join("cache").join("images"))
+        .map(|home| home.join(".mdx").join("cache").join("images"))
         .ok_or_else(|| "Home directory is unavailable".to_string())
 }
 

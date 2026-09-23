@@ -27,7 +27,7 @@ fn read_notebook_configs_strict(mf: &MemoFile) -> Result<Vec<NotebookConfig>, Cl
     mf.read_notebook_configs().map_err(CliError::Io)
 }
 
-/// `flowix-cli notebooks --json` ── 输出 JSON 形式。
+/// `mdx-cli notebooks --json` ── 输出 JSON 形式。
 pub fn cmd_notebooks_json() -> Result<(), CliError> {
     let (configs, selected_notebook_id) = notebooks_list_data()?;
     let note_counts = notebook_note_counts(&configs)?;
@@ -49,7 +49,7 @@ pub(crate) fn notebooks_list_data() -> Result<(Vec<NotebookConfig>, Option<Strin
     Ok((configs, selected_notebook_id))
 }
 
-/// `flowix-cli notebooks` ── 列出所有 notebook。
+/// `mdx-cli notebooks` ── 列出所有 notebook。
 pub fn cmd_notebooks() -> Result<(), CliError> {
     let mf = open()?;
     let configs = read_notebook_configs_strict(&mf)?;
@@ -129,7 +129,7 @@ pub(crate) fn resolve_notebook_key(notebook: Option<&str>) -> Result<String, Cli
         .ok_or_else(|| CliError::NotFound("no notebook is configured".into()))
 }
 
-/// `flowix-cli list <notebook> --json` ── 输出 JSON 形式。
+/// `mdx-cli list <notebook> --json` ── 输出 JSON 形式。
 pub fn cmd_list_json(notebook_key: &str) -> Result<(), CliError> {
     let entries = notes_list_entries(notebook_key)?;
     fmt::print_notes_json(&entries);
@@ -146,7 +146,7 @@ pub(crate) fn notes_list_entries(
         .map_err(Into::into)
 }
 
-/// `flowix-cli list <notebook>` ── 列出某 notebook 下的笔记。
+/// `mdx-cli list <notebook>` ── 列出某 notebook 下的笔记。
 pub fn cmd_list(notebook_key: &str) -> Result<(), CliError> {
     let entries = notes_list_entries(notebook_key)?;
     fmt::print_notes(&entries);
@@ -211,14 +211,14 @@ pub(crate) fn resolve_id_with_notebook(
     Ok((mf, resolved.id, resolved.notebook))
 }
 
-/// `flowix-cli show <id>` ── 读一条笔记到 stdout。
+/// `mdx-cli show <id>` ── 读一条笔记到 stdout。
 pub fn cmd_show(id_arg: &str) -> Result<(), CliError> {
     let shown = note_show_data(id_arg)?;
     fmt::print_note(&shown.entry, &shown.body);
     Ok(())
 }
 
-/// `flowix-cli show <id> --json` ── 输出 JSON 形式。
+/// `mdx-cli show <id> --json` ── 输出 JSON 形式。
 pub fn cmd_show_json(id_arg: &str) -> Result<(), CliError> {
     let shown = note_show_data(id_arg)?;
     println!(
@@ -254,7 +254,7 @@ pub(crate) fn note_show_data(id_arg: &str) -> Result<NoteShowData, CliError> {
     })
 }
 
-/// `flowix-cli create <notebook> --file <path>` ── 推荐从 UTF-8 文件读取 body。
+/// `mdx-cli create <notebook> --file <path>` ── 推荐从 UTF-8 文件读取 body。
 /// `--stdin` 用于显式放行标准输入；Windows 上不再隐式读取 stdin。
 ///
 /// 面向 AI agent 的接口 ── body 从明确的输入源读取, 不依赖 $EDITOR。
@@ -415,7 +415,7 @@ fn strip_utf8_bom(s: String) -> String {
     }
 }
 
-/// `flowix-cli delete <id>` ── 删除一条笔记 (.md + memo index entry)。
+/// `mdx-cli delete <id>` ── 删除一条笔记 (.md + memo index entry)。
 pub fn cmd_delete(id_arg: &str, json: bool) -> Result<(), CliError> {
     let (mut mf, full_id) = resolve_id(id_arg)?;
     let file_path = mf.find_memo_file_path(&full_id);
@@ -455,7 +455,7 @@ pub(crate) fn delete_note(
     })
 }
 
-/// `flowix-cli search <query> [--notebook <name|id>] [--tag <path>]` ── 跨 notebook 全文搜索。
+/// `mdx-cli search <query> [--notebook <name|id>] [--tag <path>]` ── 跨 notebook 全文搜索。
 pub fn cmd_search(
     query: &str,
     notebook_filter: Option<&str>,
@@ -524,7 +524,7 @@ pub(crate) fn search_results_to_value(
     }
 }
 
-/// `flowix-cli edit <id> --old <text> --new <text>` ── 精确字符串替换增量编辑。
+/// `mdx-cli edit <id> --old <text> --new <text>` ── 精确字符串替换增量编辑。
 ///
 /// B 风格 (Anthropic Claude API / Cursor 风格), 跟 desktop 端 AI 工具
 /// [`providers/tools/filesystem.rs::edit`] 完全同模型:
@@ -688,7 +688,7 @@ fn edit_note_impl(
     })
 }
 
-/// `flowix-cli write <id> --file <path>` ── 推荐从 UTF-8 文件读取 body 并覆盖。
+/// `mdx-cli write <id> --file <path>` ── 推荐从 UTF-8 文件读取 body 并覆盖。
 /// `--stdin` 用于显式放行标准输入；Windows 上不再隐式读取 stdin。
 ///
 /// `edit` 的非交互等价物 ── 适合脚本化批量改写、管道入内容、CI 注入等场景。
@@ -749,10 +749,10 @@ pub(crate) fn write_note(
     })
 }
 
-/// `flowix-cli completion <shell>` ── 输出 shell 补全脚本到 stdout。
+/// `mdx-cli completion <shell>` ── 输出 shell 补全脚本到 stdout。
 pub fn cmd_completion(shell: &str) -> Result<(), CliError> {
     let mut cmd = crate::cli::cli_command();
-    let bin_name = "flowix";
+    let bin_name = "mdx";
     let mut stdout = std::io::stdout();
     match shell {
         "bash" => {
@@ -787,14 +787,14 @@ mod tests {
         f: impl FnOnce() -> T,
     ) -> T {
         let _guard = ENV_LOCK.lock().unwrap();
-        let old_home = std::env::var_os("FLOWIX_HOME");
+        let old_home = std::env::var_os("MDX_HOME");
         let old_data = std::env::var_os("FLOWIX_DATA");
-        std::env::set_var("FLOWIX_HOME", home);
+        std::env::set_var("MDX_HOME", home);
         std::env::set_var("FLOWIX_DATA", data);
         let result = f();
         match old_home {
-            Some(value) => std::env::set_var("FLOWIX_HOME", value),
-            None => std::env::remove_var("FLOWIX_HOME"),
+            Some(value) => std::env::set_var("MDX_HOME", value),
+            None => std::env::remove_var("MDX_HOME"),
         }
         match old_data {
             Some(value) => std::env::set_var("FLOWIX_DATA", value),
@@ -1013,7 +1013,7 @@ mod tests {
             let created = create_note(
                 &mut mf,
                 &nb,
-                "# flowix-cli-edit-write-test\nline A: original alpha\n",
+                "# mdx-cli-edit-write-test\nline A: original alpha\n",
             )
             .unwrap();
             let id = created.id.clone();

@@ -239,7 +239,7 @@ export function buildAgentRuntimeConfig({
   workspaceSnapshot,
 }: BuildAgentRuntimeConfigInput): AgentRuntimeConfig {
   // cwd is always the selected notebook path.  `defaultFiles.folders` are
-  // notebook-local add-dir roots from `.flowix/agent.json`; they are sent as
+  // notebook-local add-dir roots from `.mdx/agent.json`; they are sent as
   // workspacePaths and are kept separate from cwd.  Once a run starts, the
   // persisted workspace snapshot remains authoritative for later turns.
   const frozenPaths = (workspaceSnapshot?.workspacePaths ?? [])

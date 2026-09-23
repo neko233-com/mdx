@@ -28,7 +28,7 @@ const TestNoteReference = TiptapNode.create({
   },
   renderMarkdown(node) {
     const attrs = node.attrs ?? {};
-    return `[${String(attrs.title ?? "")}](flowix://memo/${String(attrs.memoId ?? "")})`;
+    return `[${String(attrs.title ?? "")}](mdx://memo/${String(attrs.memoId ?? "")})`;
   },
 });
 import {
@@ -152,7 +152,7 @@ describe("ComposerFolderController", () => {
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
 
     const markdown = editor.getMarkdown();
-    expect(markdown).toContain("flowix://folder/%2FUsers%2Frop%2FDesktop%2Fvibe%2Fflowix-main");
+    expect(markdown).toContain("mdx://folder/%2FUsers%2Frop%2FDesktop%2Fvibe%2Fflowix-main");
     expect(composerFolderMarkdownToPrompt(markdown)).toBe("请操作 @flowix-main ");
     expect(document.querySelector(".agent-thread-card__folder-token")?.textContent)
       .toBe("@flowix-main");
@@ -190,7 +190,7 @@ describe("ComposerFolderController", () => {
       .not.toContain("/Users/rop/Desktop/Notes/开发任务管理/多维表格实现.md");
 
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    expect(editor.getMarkdown()).toContain("flowix://memo/p0berhgt");
+    expect(editor.getMarkdown()).toContain("mdx://memo/p0berhgt");
     expect(editor.getJSON().content?.[0]?.content?.some((item) => item.type === "noteReference"))
       .toBe(true);
 

@@ -10,6 +10,7 @@ import {
 } from '@tiptap/core';
 import { invoke } from '@platform/tauri/core';
 import { assetMarkdownUrl, assetUrl, decodeStorageKey } from '@features/editor/extensions/attachment-link/utils';
+import { relativeImageHref, resolveRelativeImageHref } from '@features/editor/extensions/attachment-link/relative-image-path';
 import {
     parseFlowixMediaStyleComment,
     parseFlowixMediaStyleSuffix,
@@ -460,6 +461,34 @@ class ImageView implements ProseMirrorNodeView {
 
 // 鈹€鈹€鈹€ ImageAttachment Node 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
+function parseImageMarkdown(token: MarkdownToken, helpers: MarkdownParseHelpers, documentPath?: string) {
+    if (!token.href) return { type: 'text', text: token.raw || '' };
+    const relativeStorageKey = resolveRelativeImageHref(token.href, documentPath);
+    return helpers.createNode('image', {
+        src: token.href,
+        alt: token.text || null,
+        title: token.title || null,
+        storageMode: isAttachmentImageHref(token.href) || relativeStorageKey ? 'attachment' : null,
+        storageKey: relativeStorageKey ?? decodeStorageKey(token.href),
+        widthPercent: token.widthPercent ?? null,
+        align: token.align ?? 'center',
+    });
+}
+
+function renderImageMarkdown(node: JSONContent, documentPath?: string) {
+    const { alt, title, fileName, storageMode, storageKey, src, widthPercent, align } = node.attrs || {};
+    const imageSrc = storageMode === 'attachment' && storageKey
+        ? relativeImageHref(String(storageKey), documentPath) ?? assetMarkdownUrl(storageKey)
+        : src || '';
+    const altText = alt || title || fileName || '';
+    const normalizedWidthPercent = normalizeWidthPercent(widthPercent);
+    const normalizedAlign = normalizeImageAlignment(align);
+    const style: Record<string, unknown> = {};
+    if (normalizedWidthPercent) style.widthPercent = normalizedWidthPercent;
+    if (normalizedAlign !== 'center') style.align = normalizedAlign;
+    return `${renderFlowixMediaStyleComment(style)}![${altText}](${imageSrc})`;
+}
+
 export const ImageAttachment = Node.create({
     name: 'image',
     group: 'block',
@@ -631,43 +660,19 @@ export const ImageAttachment = Node.create({
     },
 
     parseMarkdown(token: MarkdownToken, helpers: MarkdownParseHelpers) {
-        if (!token.href) {
-            return { type: 'text', text: token.raw || '' };
-        }
-        if (!isAttachmentImageHref(token.href)) {
-            return helpers.createNode('image', {
-                src: token.href,
-                alt: token.text || null,
-                title: token.title || null,
-                storageMode: null,
-                storageKey: null,
-                widthPercent: token.widthPercent ?? null,
-                align: token.align ?? 'center',
-            });
-        }
-        return helpers.createNode('image', {
-            src: token.href,
-            alt: token.text || null,
-            title: token.title || null,
-            storageMode: 'attachment',
-            storageKey: decodeStorageKey(token.href),
-            widthPercent: token.widthPercent ?? null,
-            align: token.align ?? 'center',
-        });
+        return parseImageMarkdown(token, helpers);
     },
 
     renderMarkdown(node: JSONContent) {
-        const { alt, title, fileName, storageMode, storageKey, src, widthPercent, align } = node.attrs || {};
-        const imageSrc = storageMode === 'attachment' && storageKey
-            ? assetMarkdownUrl(storageKey)
-            : src || '';
-        const altText = alt || title || fileName || '';
-        const normalizedWidthPercent = normalizeWidthPercent(widthPercent);
-        const normalizedAlign = normalizeImageAlignment(align);
-        const style: Record<string, unknown> = {};
-        if (normalizedWidthPercent) style.widthPercent = normalizedWidthPercent;
-        if (normalizedAlign !== 'center') style.align = normalizedAlign;
-        const suffix = renderFlowixMediaStyleComment(style);
-        return `${suffix}![${altText}](${imageSrc})`;
+        return renderImageMarkdown(node);
     },
 });
+
+export function imageAttachmentForDocument(documentPath?: string) {
+    if (!documentPath) return ImageAttachment;
+    return ImageAttachment.extend({
+        parseMarkdown: (token: MarkdownToken, helpers: MarkdownParseHelpers) =>
+            parseImageMarkdown(token, helpers, documentPath),
+        renderMarkdown: (node: JSONContent) => renderImageMarkdown(node, documentPath),
+    });
+}

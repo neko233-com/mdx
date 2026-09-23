@@ -1,51 +1,6 @@
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useState,
-  type ReactNode,
-} from 'react';
-import {
-  useMemoListHoverPreview,
-  type NoteNavigationDrawerPhase,
-} from '@features/memo/public/shell-api';
-import { createLogger } from '@/lib/logger';
-
-const logger = createLogger('main-middle-column-controller');
-
-function importAgentConversationList() {
-  return import('@features/agent/public/shell-api').then((module) => ({
-    default: module.AgentConversationList,
-  }));
-}
-
-let agentConversationListModulePromise: ReturnType<typeof importAgentConversationList> | null = null;
-
-function loadAgentConversationList() {
-  agentConversationListModulePromise ??= importAgentConversationList();
-  return agentConversationListModulePromise;
-}
-
-const AgentConversationList = lazy(loadAgentConversationList);
-
-function AgentConversationListReadySignal({
-  onReady,
-  isActive,
-}: {
-  onReady(): void;
-  isActive: boolean;
-}) {
-  useLayoutEffect(() => onReady(), [onReady]);
-  return <AgentConversationList isActive={isActive} />;
-}
+import { useMemoListHoverPreview, type NoteNavigationDrawerPhase } from '@features/memo/public/shell-api';
 
 export interface MainMiddleColumnController {
-  agentConversationListReady: boolean;
-  shouldRenderAgentConversationList: boolean;
-  showMemoListSurface: boolean;
-  showAgentConversationSurface: boolean;
   memoListPreviewVisible: boolean;
   memoListPreviewPhase: 'closed' | 'opening' | 'open' | 'closing';
   handleMemoListPreviewTriggerEnter(): void;
@@ -54,57 +9,18 @@ export interface MainMiddleColumnController {
   handleMemoListPreviewLeave(): void;
   handleMemoListPreviewCompanionEnter(): void;
   handleMemoListPreviewCompanionLeave(): void;
-  agentConversationListNode: ReactNode;
 }
 
 export function useMainMiddleColumnController({
-  isAgentConversationView,
   isMemoListHidden,
   noteNavigationPhase,
 }: {
-  isAgentConversationView: boolean;
   isMemoListHidden: boolean;
   noteNavigationPhase: NoteNavigationDrawerPhase;
 }): MainMiddleColumnController {
-  const [agentConversationListMounted, setAgentConversationListMounted] = useState(
-    () => isAgentConversationView,
-  );
-  const [agentConversationListReady, setAgentConversationListReady] = useState(false);
-  const handleAgentConversationListReady = useCallback(() => {
-    setAgentConversationListReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (isAgentConversationView) setAgentConversationListMounted(true);
-  }, [isAgentConversationView]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadAgentConversationList().catch((error) => {
-        logger.warn('prefetch conversation list failed', { error });
-      });
-    }, 800);
-    return () => window.clearTimeout(timer);
-  }, []);
-
   const preview = useMemoListHoverPreview(isMemoListHidden, noteNavigationPhase);
-  const memoListPreviewVisible = isMemoListHidden && preview.phase !== 'closed';
-  // The conversation list remains mounted to preserve its paged snapshot, but
-  // its transient portal-backed menus must be closed whenever neither the
-  // sidebar nor its hover preview is currently visible.
-  const agentConversationListActive = isAgentConversationView
-    && (!isMemoListHidden || memoListPreviewVisible);
-  const shouldRenderAgentConversationList = agentConversationListMounted || isAgentConversationView;
-
   return {
-    agentConversationListReady,
-    shouldRenderAgentConversationList,
-    // The selected surface must follow the store immediately.  Readiness is
-    // only a loading concern for the lazy conversation chunk; it must not keep
-    // the previous notes surface visible after the user has switched views.
-    showMemoListSurface: !isAgentConversationView,
-    showAgentConversationSurface: isAgentConversationView,
-    memoListPreviewVisible,
+    memoListPreviewVisible: isMemoListHidden && preview.phase !== 'closed',
     memoListPreviewPhase: preview.phase,
     handleMemoListPreviewTriggerEnter: preview.handleTriggerEnter,
     handleMemoListPreviewTriggerLeave: preview.handleTriggerLeave,
@@ -112,13 +28,5 @@ export function useMainMiddleColumnController({
     handleMemoListPreviewLeave: preview.handlePreviewLeave,
     handleMemoListPreviewCompanionEnter: preview.handleCompanionSurfaceEnter,
     handleMemoListPreviewCompanionLeave: preview.handleCompanionSurfaceLeave,
-    agentConversationListNode: (
-      <Suspense fallback={null}>
-        <AgentConversationListReadySignal
-          onReady={handleAgentConversationListReady}
-          isActive={agentConversationListActive}
-        />
-      </Suspense>
-    ),
   };
 }

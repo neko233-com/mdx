@@ -57,7 +57,7 @@ for (const target of targets) {
 mkdirSync(binaries, { recursive: true })
 for (const target of targets) {
   const explicitTarget = macos || targetArg !== undefined
-  const args = ['build', '--manifest-path', resolve(app, 'Cargo.toml'), '--bin', 'flowix-cli']
+  const args = ['build', '--manifest-path', resolve(app, 'Cargo.toml'), '--bin', 'mdx-cli']
   if (explicitTarget) args.push('--target', target)
   if (!debug) args.push('--release')
   run(executable('cargo'), args)
@@ -65,17 +65,17 @@ for (const target of targets) {
   const profile = debug ? 'debug' : 'release'
   const extension = target.includes('windows') ? '.exe' : ''
   const source = explicitTarget
-    ? resolve(cargoTarget, target, profile, `flowix-cli${extension}`)
-    : resolve(cargoTarget, profile, `flowix-cli${extension}`)
+    ? resolve(cargoTarget, target, profile, `mdx-cli${extension}`)
+    : resolve(cargoTarget, profile, `mdx-cli${extension}`)
   if (!existsSync(source)) throw new Error(`CLI build output is missing: ${source}`)
-  const staged = resolve(binaries, `flowix-cli-${target}${extension}`)
+  const staged = resolve(binaries, `mdx-cli-${target}${extension}`)
   rmSync(staged, { force: true })
   copyFileSync(source, staged)
   if (!target.includes('windows')) chmodSync(staged, 0o755)
   process.stdout.write(`staged ${staged}\n`)
 
   if (!explicitTarget) {
-    const development = resolve(binaries, `flowix-cli${extension}`)
+    const development = resolve(binaries, `mdx-cli${extension}`)
     rmSync(development, { force: true })
     copyFileSync(staged, development)
     if (!target.includes('windows')) chmodSync(development, 0o755)

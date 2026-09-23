@@ -49,7 +49,7 @@ export function AgentsSection() {
   // 状态在组件生命周期内维持 ── 切走/回来会回到默认; 需要跨会话保留可下沉到
   // user-settings-store。
   const [expandedKey, setExpandedKey] = useState<CollapsibleAgentKey | null>('codex');
-  // External CLI 路径配置 (~/.flowix/agent-external-config.json) ──
+  // External CLI 路径配置 (~/.mdx/agent-external-config.json) ──
   // 唯一参照, 偏好设置可改 path / 重新探测。改 path 后同步刷 runtime status。
   const [externalConfig, setExternalConfig] =
     useState<Record<string, AgentExternalEntry> | null>(null);

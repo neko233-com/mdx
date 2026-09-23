@@ -799,8 +799,11 @@ export const useBrowserColumnStore = create<BrowserColumnState>()(
     }),
     {
       name: STORAGE_KEYS.BROWSER_COLUMN,
-      version: 3,
-      migrate: (persisted) => persisted as PersistedBrowserColumnState,
+      version: 4,
+      migrate: (persisted, version) => {
+        const previous = persisted as PersistedBrowserColumnState;
+        return version < 4 ? { ...previous, visible: false } : previous;
+      },
       storage: browserColumnStorage,
       partialize: (state): PersistedBrowserColumnState => ({
         visible: state.visible,

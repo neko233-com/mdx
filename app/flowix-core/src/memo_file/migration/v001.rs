@@ -3,7 +3,7 @@ use std::path::Path;
 
 use super::MemoFile;
 
-/// Consolidate notebook-owned Flowix files under `.flowix/` and ensure every
+/// Consolidate notebook-owned Flowix files under `.mdx/` and ensure every
 /// registered notebook has its portable identity manifest.
 pub(super) fn run(memo_file: &MemoFile) -> io::Result<()> {
     for notebook in memo_file.read_notebook_configs()? {

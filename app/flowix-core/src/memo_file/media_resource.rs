@@ -2,8 +2,8 @@
 //!
 //! Media files remain on disk, while their user properties and resource
 //! identity are stored in the notebook-local database at
-//! `<notebook>/.flowix/notebook.db`. It is deliberately separate from the
-//! global notebook registry database (`~/.flowix/index.db`).
+//! `<notebook>/.mdx/notebook.db`. It is deliberately separate from the
+//! global notebook registry database (`~/.mdx/index.db`).
 
 use std::collections::HashSet;
 use std::fs;
@@ -161,7 +161,7 @@ impl MemoFile {
                 format!("notebook directory missing: {}", root.display()),
             ));
         }
-        let flowix_dir = root.join(".flowix");
+        let flowix_dir = root.join(".mdx");
         fs::create_dir_all(&flowix_dir)?;
         Ok(flowix_dir.join("notebook.db"))
     }
@@ -587,7 +587,7 @@ impl MemoFile {
             .follow_links(false)
             .into_iter()
             .filter_entry(|entry| {
-                entry.file_name() != ".flowix"
+                entry.file_name() != ".mdx"
                     && entry.file_name() != "attachments"
                     && entry.file_name() != "attachments-cache"
             })
@@ -749,9 +749,9 @@ mod tests {
         assert_eq!(resource.relative_path, "photo.png");
         assert_eq!(
             memo_file.notebook_index_db_path("nb_media_test").unwrap(),
-            root.join(".flowix/notebook.db")
+            root.join(".mdx/notebook.db")
         );
-        assert!(root.join(".flowix/notebook.db").is_file());
+        assert!(root.join(".mdx/notebook.db").is_file());
     }
 
     #[test]
@@ -791,7 +791,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(resource.properties, serde_json::json!({}));
-        assert!(root.join(".flowix/notebook.db").is_file());
+        assert!(root.join(".mdx/notebook.db").is_file());
         assert!(memo_file
             .read_media_resource("nb_media_test", "photo.png")
             .unwrap()

@@ -40,7 +40,7 @@ export const STORAGE_KEYS = {
 } as const;
 
 /* ============================================================
- * User Settings (镜像后端 ~/.flowix/preference.json 结构)
+ * User Settings (镜像后端 ~/.mdx/preference.json 结构)
  * 字段与后端 PreferenceFile / *Config 一一对应, 改 nested 后:
  *   - settings.personalize.customInstruction
  *   - settings.format.fontFamily
@@ -123,7 +123,7 @@ export interface UserSettings {
   /**
    * 快捷键用户覆盖层 — actionId → chord 字符串 (e.g. 'Mod+Shift+K')。
    * 只存与 ActionDefinition.defaultBinding 不同的部分, 缺省走默认。
-   * 持久化到后端 ~/.flowix/preference.json 的 `shortcuts` 字段 (camelCase),
+   * 持久化到后端 ~/.mdx/preference.json 的 `shortcuts` 字段 (camelCase),
    * 后端 schema 见 backend/src/user_config.rs::PreferenceFile。
    */
   shortcuts: ShortcutOverrides;
@@ -217,7 +217,7 @@ export const LINE_HEIGHT_STEP = 0.05;
 export const DOCUMENT_WIDTH_MIN = 500;
 export const DOCUMENT_WIDTH_MAX = 2000;
 export const DOCUMENT_WIDTH_STEP = 50;
-export const DOCUMENT_WIDTH_DEFAULT = 1600;
+export const DOCUMENT_WIDTH_DEFAULT = 860;
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
   personalize: {
@@ -241,7 +241,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   // loadInitial 阶段会被 detectRegion() 覆盖为真实值; 默认 'mainland'
   // 让大陆特性 (MiniMax / GLM 等) 在 SSR / IPC 还没回来时也可见。
   region: 'mainland',
-  memoListView: 'detailed',
+  memoListView: 'folders',
   showHiddenNotebookFiles: false,
   // 启动时无任何用户覆盖, 所有 action 走 ActionDefinition.defaultBinding。
   shortcuts: {},

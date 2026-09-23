@@ -1,5 +1,5 @@
 import { Extension } from '@tiptap/core';
-import { ImageAttachment } from '@features/editor/extensions/attachment-link/nodes/view-image';
+import { imageAttachmentForDocument } from '@features/editor/extensions/attachment-link/nodes/view-image';
 import { VideoAttachment } from '@features/editor/extensions/attachment-link/nodes/view-video';
 import { FileAttachment } from '@features/editor/extensions/attachment-link/nodes/view-file';
 import { createAttachmentCommands } from '@features/editor/extensions/attachment-link/upload/commands';
@@ -57,7 +57,7 @@ export const AttachmentLink = Extension.create<AttachmentUploadOptions>({
     },
 
     addExtensions() {
-        return [ImageAttachment, VideoAttachment, FileAttachment];
+        return [imageAttachmentForDocument(this.options.documentPath), VideoAttachment, FileAttachment];
     },
 
     addCommands() {

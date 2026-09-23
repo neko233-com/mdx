@@ -2,7 +2,7 @@
 //!
 //! 解析流程:
 //! 1. `FLOWIX_DATA` 环境变量优先, 否则走 `get_app_data_path()`
-//! 2. `FLOWIX_HOME` 环境变量优先, 否则走 `get_user_config_dir($HOME)`
+//! 2. `MDX_HOME` 环境变量优先, 否则走 `get_user_config_dir($HOME)`
 //!
 //! 两个 env 覆盖主要用于: 脚本 / CI / 集成测试切换数据目录。
 //!
@@ -14,11 +14,11 @@ use crate::errors::CliError;
 
 /// 用户配置目录名 (~/.<NAME>/ 下放 index.db / boot/preference.json /
 /// agent-config.toml / boot/system.json 等)。
-pub const USER_CONFIG_DIR_NAME: &str = ".flowix";
+pub const USER_CONFIG_DIR_NAME: &str = ".mdx";
 
 /// 桌面应用数据目录名 (在 `dirs::data_dir()` 之下, macOS:
 /// `~/Library/Application Support/<NAME>/`)。
-pub const APP_DATA_DIR_NAME: &str = "flowix";
+pub const APP_DATA_DIR_NAME: &str = "mdx";
 
 /// 解析后的三组路径, 给 store.rs 用来构造 `MemoFile`。
 pub struct Resolved {
@@ -26,7 +26,7 @@ pub struct Resolved {
     /// 或 `$XDG_DATA_HOME/flowix` (Linux)
     #[allow(dead_code)]
     pub app_data: PathBuf,
-    /// `~/.flowix/`. 笔记本注册表就存在这里 (`<config_dir>/index.db`).
+    /// `~/.mdx/`. 笔记本注册表就存在这里 (`<config_dir>/index.db`).
     #[allow(dead_code)]
     pub config_dir: PathBuf,
 }
@@ -40,7 +40,7 @@ pub fn resolve() -> Result<Resolved, CliError> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| get_app_data_path());
 
-    let config_dir = std::env::var("FLOWIX_HOME")
+    let config_dir = std::env::var("MDX_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| get_user_config_dir(&home));
 

@@ -1,12 +1,12 @@
 /*
  * First-paint theme boot.
  *
- * React reads ~/.flowix/boot/preference.json through async Tauri IPC, which is
+ * React reads ~/.mdx/boot/preference.json through async Tauri IPC, which is
  * too late for the first frame of a new WebView. This script runs before CSS
  * paint and uses, in order:
  *   1. one-shot ?bootTheme= injected by the desktop window command;
  *   2. localStorage cache written by applyTheme();
- *   3. the default Rock theme.
+   *   3. the default light theme.
  *
  * Keep VALID_RESOLVED_THEMES in sync with app/flowix-web/features/theme/palette.ts,
  * excluding "system" because this script only writes resolved data-theme values.
@@ -16,13 +16,13 @@
     var VALID_RESOLVED_THEMES = ['dark', 'light', 'rock', 'mist', 'ember'];
     var params = new URLSearchParams(window.location.search || '');
     var bootTheme = params.get('bootTheme');
-    var cached = bootTheme || localStorage.getItem('flowix-theme');
+    var cached = bootTheme || localStorage.getItem('mdx-theme');
     var resolved;
 
     if (VALID_RESOLVED_THEMES.indexOf(cached) !== -1) {
       resolved = cached;
     } else {
-      resolved = 'rock';
+      resolved = 'light';
     }
 
     var root = document.documentElement;

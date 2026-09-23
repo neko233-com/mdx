@@ -1,7 +1,7 @@
 //! Model Context Protocol stdio frontend for external Agents.
 //!
 //! The server intentionally exposes exactly one tool, `memo`. Its input is a
-//! restricted Flowix CLI command plus optional stdin content. Commands are parsed into
+//! restricted MDX CLI command plus optional stdin content. Commands are parsed into
 //! argv and dispatched directly to the typed store layer; no system shell is spawned.
 
 use crate::{cli, errors::CliError, fmt, operation, output, plugin, store};
@@ -17,7 +17,7 @@ const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[
     LATEST_PROTOCOL_VERSION,
 ];
 
-pub const TOOL_DESCRIPTION: &str = "Search, read, create, edit, and delete Flowix memos using structured actions. Also supports declared artifacts. Prefer `action`; legacy `command`/`stdin` remains temporarily compatible. Delete is destructive.";
+pub const TOOL_DESCRIPTION: &str = "Search, read, create, edit, and delete MDX memos using structured actions. Also supports declared artifacts. Prefer `action`; legacy `command`/`stdin` remains temporarily compatible. Delete is destructive.";
 
 /// Run the MCP line-delimited JSON-RPC loop until stdin reaches EOF.
 pub fn run_mcp<R: BufRead, W: Write>(reader: R, mut writer: W) -> Result<(), CliError> {
@@ -72,11 +72,11 @@ fn initialize_result(params: &Value) -> Value {
         "protocolVersion": protocol_version,
         "capabilities": {"tools": {"listChanged": false}},
         "serverInfo": {
-            "name": "flowix-memo",
-            "title": "Flowix Memo",
+            "name": "mdx-memo",
+            "title": "MDX Memo",
             "version": env!("CARGO_PKG_VERSION")
         },
-        "instructions": "Use the memo tool to search, read, create, and edit Flowix Markdown memos, and to create declared plugin artifacts such as mind maps."
+        "instructions": "Use the memo tool to search, read, create, and edit MDX Markdown memos, and to create declared plugin artifacts such as mind maps."
     })
 }
 
@@ -87,7 +87,7 @@ fn tool_definition() -> Value {
     .expect("memo tool schema must be valid JSON");
     json!({
         "name": TOOL_NAME,
-        "title": "Flowix Memo",
+        "title": "MDX Memo",
         "description": TOOL_DESCRIPTION,
         "inputSchema": schema,
         "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false}
@@ -295,7 +295,7 @@ fn execute_command(command: &str, stdin: Option<&str>) -> Result<Value, CliError
     if args.is_empty() {
         return Err(CliError::Usage("memo.command cannot be empty".into()));
     }
-    if args[0] == "flowix" || args[0] == "flowix-cli" {
+    if args[0] == "mdx" || args[0] == "mdx-cli" {
         return Err(CliError::Usage(
             "omit the leading `flowix`; pass only the subcommand".into(),
         ));
@@ -482,7 +482,7 @@ fn tool_result(data: Value, is_error: bool) -> Value {
     let text = if is_error {
         data.pointer("/error/message")
             .and_then(Value::as_str)
-            .unwrap_or("Flowix operation failed")
+            .unwrap_or("MDX operation failed")
             .to_string()
     } else {
         let action = data
@@ -494,7 +494,7 @@ fn tool_result(data: Value, is_error: bool) -> Value {
             .and_then(Value::as_str)
             .map(|id| format!(" ({id})"))
             .unwrap_or_default();
-        format!("Flowix {action}{id}")
+        format!("MDX {action}{id}")
     };
     json!({
         "content": [{"type": "text", "text": text}],

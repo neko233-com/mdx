@@ -54,7 +54,7 @@ export async function openNoteByTarget(resolved: ResolvedOpenTarget): Promise<vo
 }
 
 /**
- * 入口: 深链 `flowix://...` ── 直接调后端 IPC 解析 + 打开。
+ * 入口: 深链 `mdx://...` ── 直接调后端 IPC 解析 + 打开。
  * 主窗口 listener 收到 `flowix:open-target` 事件时也是同样的逻辑。
  */
 export async function openNoteByDeepLink(url: string): Promise<void> {
@@ -76,7 +76,7 @@ export async function openNoteByPhysicalPath(rawPath: string): Promise<void> {
 }
 
 /**
- * 入口: 直接按 memoId 打开 ── 走 `flowix://memo/<id>` 深链语法。
+ * 入口: 直接按 memoId 打开 ── 走 `mdx://memo/<id>` 深链语法。
  *
  * NoteReference 卡片以 `memoId` (memo 稳定 id) 作为第一公民;
  * 双击时优先用 memoId 反查, 跨 notebook / 笔记改名 / 笔记被搬都不断链,
@@ -107,7 +107,7 @@ export async function openNoteByMemoId(memoId: string): Promise<boolean> {
  */
 export async function resolveMemoById(memoId: string): Promise<ResolvedOpenTarget | null> {
   if (!memoId) return null;
-  return memosClient.openMemoByTarget(`flowix://memo/${memoId}`, { emitEvent: false });
+  return memosClient.openMemoByTarget(`mdx://memo/${memoId}`, { emitEvent: false });
 }
 
 /**

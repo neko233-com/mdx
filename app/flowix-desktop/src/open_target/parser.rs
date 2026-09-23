@@ -2,8 +2,8 @@
 //! **�?���? 无副作用**: 不查磁盘, 不�?配置�?重�?跑零成本, 单测全栈覆盖�?//!
 //! ## URL scheme 璁捐
 //!
-//! - `flowix://memo/<memo-id>`              —主�?场景
-//! - `flowix://open?path=<encoded-abs>`     —物理�?�� (内部�?id)
+//! - `mdx://memo/<memo-id>`              —主�?场景
+//! - `mdx://open?path=<encoded-abs>`     —物理�?�� (内部�?id)
 //! - `file://<abs>`                          —物理�?���?URL 形式 (兼�? macOS Finder 复制)
 //! - 裸绝对路�?(�?`/` 开�?               —物理�?��直传
 //!
@@ -27,11 +27,11 @@ pub enum OpenTarget {
         path: String,
         memo_id: Option<String>,
     },
-    /// 深链 `flowix://...` —memo_id �?��局�?��主键�?
+    /// 深链 `mdx://...` —memo_id �?��局�?��主键�?
     DeepLink {
         url: String,
         memo_id: Option<String>,
-        /// `flowix://open?path=` 时携�?
+        /// `mdx://open?path=` 时携�?
         physical_path: Option<String>,
     },
 }
@@ -81,15 +81,15 @@ fn percent_decode_strict(s: &str) -> Option<String> {
 }
 
 fn split_scheme<'a>(raw: &'a str) -> Option<(&'a str, &'a str)> {
-    // `flowix://memo/<id>` —�?scheme + 之后部分�?    //   - scheme 部分 (`flowix`) 大小写不敏感 (OS 投递时大小写不固定)
+    // `mdx://memo/<id>` —�?scheme + 之后部分�?    //   - scheme 部分 (`flowix`) 大小写不敏感 (OS 投递时大小写不固定)
     //   - rest **保留**原大小写 ── memo id �?memo index 里走 `[0-9a-z]`,
     //     任何大写字�?都是无效 id, 直接�?`is_valid_memo_id` 里拒�?
-    //     不�?�?lowercase 否则 `flowix://memo/ABCDEF` 会�?�?��为合法�?
+    //     不�?�?lowercase 否则 `mdx://memo/ABCDEF` 会�?�?��为合法�?
     let lower = raw.to_ascii_lowercase();
-    if let Some(rest) = lower.strip_prefix("flowix://") {
+    if let Some(rest) = lower.strip_prefix("mdx://") {
         // 鍚屾牱鍋忕Щ鍦ㄥ師 `raw` 涓婂彇 rest, 淇濇寔鍘熷ぇ灏忓啓
         let original_rest = &raw[raw.len() - rest.len()..];
-        Some(("flowix", original_rest))
+        Some(("mdx", original_rest))
     } else {
         None
     }
@@ -132,7 +132,7 @@ pub fn parse_open_target(raw: &str) -> Result<OpenTarget, OpenTargetError> {
         return Err(OpenTargetError::Empty);
     }
 
-    // 1. `flowix://` 娣遍摼
+    // 1. `mdx://` 娣遍摼
     if let Some((_, rest)) = split_scheme(trimmed) {
         return parse_deep_link(&rest, trimmed);
     }
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn parses_deep_link_memo_with_id() {
-        let t = parse_open_target("flowix://memo/abc12345").unwrap();
+        let t = parse_open_target("mdx://memo/abc12345").unwrap();
         match t {
             OpenTarget::DeepLink {
                 memo_id,
@@ -220,22 +220,22 @@ mod tests {
     #[test]
     fn rejects_invalid_memo_id_length() {
         // 5 位和 7 位都拒绝；旧 6 位和�?8 位都兼�?�?
-        let err = parse_open_target("flowix://memo/abc12").unwrap_err();
+        let err = parse_open_target("mdx://memo/abc12").unwrap_err();
         assert!(matches!(err, OpenTargetError::InvalidMemoId(_)));
-        let err = parse_open_target("flowix://memo/abc1234").unwrap_err();
+        let err = parse_open_target("mdx://memo/abc1234").unwrap_err();
         assert!(matches!(err, OpenTargetError::InvalidMemoId(_)));
-        let err = parse_open_target("flowix://memo/abc123456").unwrap_err();
+        let err = parse_open_target("mdx://memo/abc123456").unwrap_err();
         assert!(matches!(err, OpenTargetError::InvalidMemoId(_)));
-        assert!(parse_open_target("flowix://memo/abc123").is_ok());
-        assert!(parse_open_target("flowix://memo/abc12345").is_ok());
+        assert!(parse_open_target("mdx://memo/abc123").is_ok());
+        assert!(parse_open_target("mdx://memo/abc12345").is_ok());
     }
 
     #[test]
     fn rejects_invalid_memo_id_chars() {
         // �?���?/ `_` / `-` 都不�?
-        let err = parse_open_target("flowix://memo/ABCDEF").unwrap_err();
+        let err = parse_open_target("mdx://memo/ABCDEF").unwrap_err();
         assert!(matches!(err, OpenTargetError::InvalidMemoId(_)));
-        let err = parse_open_target("flowix://memo/ab_cde").unwrap_err();
+        let err = parse_open_target("mdx://memo/ab_cde").unwrap_err();
         assert!(matches!(err, OpenTargetError::InvalidMemoId(_)));
     }
 
@@ -244,7 +244,7 @@ mod tests {
         // v3: 物理 filename 不再�?`#<id>` 后缀, parser 阶�? memo_id = None,
         // resolver �?memo index filename �?id 反查�?
         let t = parse_open_target(
-            "flowix://open?path=%2FUsers%2Frop%2FDocuments%2Fflowix%2Fnotebook%2Fhello.md",
+            "mdx://open?path=%2FUsers%2Frop%2FDocuments%2Fflowix%2Fnotebook%2Fhello.md",
         )
         .unwrap();
         match t {
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn unknown_route_returns_error() {
-        let err = parse_open_target("flowix://other/abc").unwrap_err();
+        let err = parse_open_target("mdx://other/abc").unwrap_err();
         assert!(matches!(err, OpenTargetError::UnknownRoute(_)));
     }
 

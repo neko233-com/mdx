@@ -31,7 +31,6 @@ import {
   windows,
   boot,
   type StartupStatus,
-  type DshDownloadProgress,
 } from '@platform/tauri/client';
 import { WindowsTitlebarControls } from '@shared/window-titlebar-controls';
 import { canonicalPath, getDocumentInstanceKey } from '@/lib/path';
@@ -42,7 +41,6 @@ import { useMainPanelController } from '@features/shell/hooks/use-main-panel-con
 import { ListColumn } from '@features/shell/components/list-column';
 import { useI18n } from '@/lib/i18n';
 import { toast } from '@/lib/toast';
-import type { DshRuntimeInstallerState } from '@features/preferences/public/system-api';
 import type { AppUpdaterState } from '@features/shell/hooks/use-app-updater';
 import {
   WorkColumnContentHost,
@@ -124,13 +122,7 @@ export interface MainLayoutBusinessController {
 }
 
 export interface MainLayoutSystemController {
-  dshDownload: DshDownloadProgress | null;
-  dshInstallPromptOpen: boolean;
   updater: AppUpdaterState;
-  dshInstaller: DshRuntimeInstallerState;
-  closeDshInstallPrompt(): void;
-  markDshIntroDisplayed(): void;
-  completeDshInstallPrompt(): void;
 }
 
 export function MainLayout({
@@ -152,15 +144,7 @@ export function MainLayout({
     openPlugin: handleOpenPlugin,
     selectNotebook: handleSelectNotebook,
   } = business;
-  const {
-    dshDownload,
-    dshInstallPromptOpen,
-    updater,
-    dshInstaller,
-    closeDshInstallPrompt: handleDshPromptClose,
-    markDshIntroDisplayed: handleDshIntroDisplayed,
-    completeDshInstallPrompt: handleDshInstalled,
-  } = system;
+  const { updater } = system;
   // 切片订阅：每个 useStore 只取真正用到的字段，setter 走 useShallow 聚合。
   // 替代原来的 `useMemoStore()` / `useDocumentStore()` / `useSettingsStore()`
   // 全量订阅 —— 任何 set 都会让 MainLayout 整树重渲，跨菜单栏 / 状态栏 /
@@ -171,7 +155,6 @@ export function MainLayout({
     notebooks,
     selectedMemo,
     selectedNotebook,
-    middleColumnView,
     activeFilter,
     activePluginId,
     activeSort,
@@ -181,7 +164,6 @@ export function MainLayout({
     updateMemoMeta,
     setMemoColors,
   } = useShellMemoViewModel();
-  const isAgentConversationView = middleColumnView === 'conversations';
   const {
     currentDocumentPath,
     currentDocumentSource,
@@ -308,10 +290,6 @@ export function MainLayout({
     setNoteNavigationVisible,
   });
   const {
-    agentConversationListReady,
-    shouldRenderAgentConversationList,
-    showMemoListSurface,
-    showAgentConversationSurface,
     memoListPreviewVisible,
     memoListPreviewPhase,
     handleMemoListPreviewTriggerEnter,
@@ -320,9 +298,7 @@ export function MainLayout({
     handleMemoListPreviewLeave,
     handleMemoListPreviewCompanionEnter,
     handleMemoListPreviewCompanionLeave,
-    agentConversationListNode,
   } = useMainMiddleColumnController({
-    isAgentConversationView,
     isMemoListHidden,
     noteNavigationPhase,
   });
@@ -594,7 +570,6 @@ export function MainLayout({
   return (
     <div
       className="flowix-main-layout relative flex h-screen w-screen overflow-hidden"
-      data-agent-conversation-view={isAgentConversationView || undefined}
       data-agent-conversation-detail={isAgentConversationDetail || undefined}
       style={{ backgroundColor: 'var(--frame-bg)' }}
     >
@@ -635,43 +610,13 @@ export function MainLayout({
             onPreviewLeave={handleMemoListPreviewLeave}
             onPointerDown={() => focusWorkspaceHost('main-third')}
           >
-            <div
-              className={`absolute inset-0 ${
-                showMemoListSurface
-                  ? 'visible'
-                  : 'invisible pointer-events-none'
-              }`}
-              aria-hidden={!showMemoListSurface}
-            >
+            <div className="absolute inset-0">
               <MemoList
                 navigationDrawerEnabled
                 navigationDrawerOpen={noteNavigationPhase !== 'closed'}
                 onToggleNavigationDrawer={handleToggleNoteNavigation}
-                isActive={!isAgentConversationView}
-                dataLoadingEnabled={!isAgentConversationView}
               />
             </div>
-            {shouldRenderAgentConversationList && (
-              <div
-                className={`absolute inset-0 ${
-                  showAgentConversationSurface
-                    ? 'visible z-10'
-                    : 'invisible pointer-events-none'
-                }`}
-                aria-hidden={!showAgentConversationSurface}
-              >
-                {agentConversationListNode}
-              </div>
-            )}
-            {isAgentConversationView && !agentConversationListReady && (
-              <div
-                className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-[color-mix(in_oklch,var(--card)_78%,transparent)] text-sm text-[var(--muted-foreground)] backdrop-blur-[1px]"
-                role="status"
-                aria-live="polite"
-              >
-                {t('status.agent.loadingConversations')}
-              </div>
-            )}
           </ListColumn>
           {/* List <-> Memo detail divider */}
           {!isMemoListHidden && (
@@ -769,7 +714,6 @@ export function MainLayout({
             onCreateNotebook={handleCreateNotebook}
             onOpenTodos={handleOpenTodos}
             onToggleNoteNavigation={handleToggleNoteNavigation}
-            dshDownload={dshDownload}
             updater={updater}
           />
         </div>
@@ -788,14 +732,7 @@ export function MainLayout({
 
       <NotePropertiesHost />
 
-      <MainPromptHost
-        updater={updater}
-        dshInstallPromptOpen={dshInstallPromptOpen}
-        dshInstaller={dshInstaller}
-        onCloseDshInstallPrompt={handleDshPromptClose}
-        onDshIntroDisplayed={handleDshIntroDisplayed}
-        onDshInstalled={handleDshInstalled}
-      />
+      <MainPromptHost updater={updater} />
 
       {startupStatus.phase !== 'ready' && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[var(--frame-bg)]">

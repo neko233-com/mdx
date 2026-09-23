@@ -1,6 +1,6 @@
-// `flowix://memo/<id>` 行内卡片节点。
+// `mdx://memo/<id>` 行内卡片节点。
 //
-// Markdown 形态: `[title](flowix://memo/vex4v9)`
+// Markdown 形态: `[title](mdx://memo/vex4v9)`
 // 兼容读取旧形态:
 // `<note id="vex4v9" notebook="nb_173..." path="/Users/.../foo.md">notebookName/title</note>`
 //
@@ -13,7 +13,7 @@
 // id-as-truth: 卡片显示文本 `notebookName/title` 是给人看的, 真正用来定位笔记的
 // 是 attrs.memoId。memoId 是 noteReference 的"第一公民":
 //   - 缺失 (parse/paste 时未拿到) → mount 立即落 stale 视觉 (无需等用户双击).
-//   - 双击优先用 memoId 反查 (flowix://memo/<id> 深链), 跨改名 / 跨笔记本移动不断链.
+//   - 双击优先用 memoId 反查 (mdx://memo/<id> 深链), 跨改名 / 跨笔记本移动不断链.
 //   - memoId 反查失败且 originalPath 也失效 → 落 stale 视觉 + 写回 doc attrs.
 
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
@@ -489,7 +489,7 @@ class NoteReferenceView implements ProseMirrorNodeView {
     const memoId = attrs.memoId;
     if (!memoId) return;
 
-    // 优先用 memoId 反查 (flowix://memo/<id> 深链), 后端走 memo index 扫
+    // 优先用 memoId 反查 (mdx://memo/<id> 深链), 后端走 memo index 扫
     // 所有 notebook 找匹配 id 的 .md; 笔记改名 / 被搬都不会断链,
     // 只要 memo 还在磁盘上就能打开.
     //
@@ -614,7 +614,7 @@ class NoteReferenceView implements ProseMirrorNodeView {
         // 与磁盘最新值比对, 只在变化时写回 doc.
         //
         // title 故意不在这里写回:
-        //   - 链接 markdown `[标题](flowix://memo/<id>)` 里的 `[标题]` 就是 attrs.title
+        //   - 链接 markdown `[标题](mdx://memo/<id>)` 里的 `[标题]` 就是 attrs.title
         //     的真值来源, 用户在 markdown 里写下时即定; 渲染期间不该被后端 memoTitle
         //     反向覆盖 — 否则刷新路径会跑一次 `applyAttrs({title}) → setNodeMarkup →
         //     update() → createCard() → wrapper.replaceWith()`, NodeView 的 DOM 整棵
@@ -741,7 +741,7 @@ export const NoteReference = Node.create({
   },
 
   // ─── Markdown round-trip ──────────────────────────────────────────────────
-  // 新格式 `[title](flowix://memo/<id>)` 和旧格式 `<note ...>` 都转回
+  // 新格式 `[title](mdx://memo/<id>)` 和旧格式 `<note ...>` 都转回
   // noteReference 节点, 这样落盘格式可以迁移为标准 Markdown 链接,
   // 渲染仍保持当前卡片 NodeView。
 
@@ -750,7 +750,7 @@ export const NoteReference = Node.create({
     level: 'inline' as const,
     start(src: string) {
       const noteIndex = src.indexOf('<note ');
-      const linkHrefIndex = src.indexOf('(flowix://memo/');
+      const linkHrefIndex = src.indexOf('(mdx://memo/');
       const wikiIndex = src.indexOf('[[');
       const indexes = [noteIndex, linkHrefIndex < 0 ? -1 : Math.max(0, src.lastIndexOf('[', linkHrefIndex)), wikiIndex]
         .filter(index => index >= 0);
@@ -833,7 +833,7 @@ export const NoteReference = Node.create({
     }
 
     const title = stripMdSuffix(a.title || '');
-    return `[${escapeMarkdownLinkText(title)}](flowix://memo/${a.memoId})`;
+    return `[${escapeMarkdownLinkText(title)}](mdx://memo/${a.memoId})`;
   },
 
   // ─── NodeView ─────────────────────────────────────────────────────────────

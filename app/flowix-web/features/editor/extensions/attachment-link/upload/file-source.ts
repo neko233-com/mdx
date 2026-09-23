@@ -15,6 +15,7 @@ export type StoredAsset = {
 
 export type AttachmentUploadOptions = {
     memoId?: string;
+    documentPath?: string;
     storage: { mode: 'attachment' };
     picker: { accept: string | undefined; multiple: boolean };
     ingest: {

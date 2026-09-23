@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Flowix",
-  "mainBinaryName": "Flowix",
-  "version": "1.4.7",
-  "identifier": "com.flowix.app",
+  "productName": "MDX",
+  "mainBinaryName": "MDX",
+  "version": "0.1.0",
+  "identifier": "com.neko233.mdx",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -28,7 +28,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost https://cdn.jsdelivr.net data: blob:; media-src 'self' asset: http://asset.localhost https://asset.localhost data: blob:; font-src 'self' asset: http://asset.localhost https://asset.localhost data:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost http://asset.localhost https://asset.localhost https:; frame-src 'self' http: https:; worker-src 'self' blob:",
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost http: https: data: blob:; media-src 'self' asset: http://asset.localhost https://asset.localhost data: blob:; font-src 'self' asset: http://asset.localhost https://asset.localhost data:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost http://asset.localhost https://asset.localhost https:; frame-src 'self' http: https:; worker-src 'self' blob:",
       "assetProtocol": {
         "enable": true,
         "scope": [
@@ -40,9 +40,10 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXkgRUEyNzZBMzYyMDQyNEI1MApSV1JRUzBJZ05tb242a1lBZDlLYnZJYkVXNm84VFIvTWZ2ODhLS29kM2lFaGVWSzBwejF2TEQyWgo=",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk0M0IwRTExOThBMzA2M0MKUldROEJxT1lFUTQ3bEgvMkFuQWNOK1l2bWNpV3Z4cUN6M1JuNEcwTWlQR0VndG9BZlRXZ1Z2S1EK",
       "endpoints": [
-        "https://download.flowix.cc/updater/{{target}}/latest.json"
+        "https://github.com/neko233-com/mdx/releases/latest/download/latest.json",
+        "https://ghproxy.net/https://github.com/neko233-com/mdx/releases/latest/download/latest-mirror.json"
       ],
       "dangerousInsecureTransportProtocol": false,
       "windows": {
@@ -52,12 +53,13 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": [
       "nsis"
     ],
     "windows": {
       "nsis": {
-        "installerHooks": "nsis/flowix-cli-path.nsh",
+        "installerHooks": "nsis/mdx-cli-path.nsh",
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico"
       }
@@ -75,7 +77,7 @@
       }
     ],
     "macOS": {
-      "bundleName": "Flowix",
+      "bundleName": "MDX",
       "infoPlist": "Info.plist"
     },
     "icon": [
@@ -86,7 +88,7 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/flowix-cli"
+      "binaries/mdx-cli"
     ]
   }
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { ChatTeardropTextIcon, NoteIcon, type Icon } from '@phosphor-icons/react';
+import { NoteIcon, type Icon } from '@phosphor-icons/react';
 import { Tooltip } from '@shared/ui/tooltip';
 import { useI18n, type I18nKey } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -32,11 +32,6 @@ const TABS: ReadonlyArray<{
     value: 'notes',
     labelKey: 'memo.navigation.allNotes',
     icon: NoteIcon,
-  },
-  {
-    value: 'conversations',
-    labelKey: 'memo.navigation.conversations',
-    icon: ChatTeardropTextIcon,
   },
 ];
 

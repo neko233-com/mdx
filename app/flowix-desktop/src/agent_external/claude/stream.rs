@@ -206,7 +206,7 @@ where
             continue;
         }
         source_sequence = source_sequence.saturating_add(1);
-        // dev-only: 鎶婂瓙杩涚▼ stdout 鍘熷琛岄暅鍍忓埌 ~/.flowix/debug/, 1:1 杩樺師
+        // dev-only: 鎶婂瓙杩涚▼ stdout 鍘熷琛岄暅鍍忓埌 ~/.mdx/debug/, 1:1 杩樺師
         // vendor CLI 回包供排障。release 构建�?no-op, 不落盘�?
         runtime_log::dump_debug_stdout_line(AGENT_TYPE, &thread_id, &run_id, line);
         runs.touch(&thread_id, Some(&run_id)).await;

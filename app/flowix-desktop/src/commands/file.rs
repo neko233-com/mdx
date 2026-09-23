@@ -156,7 +156,7 @@ fn resource_kind_for_path(path: &Path) -> Option<DocTreeResourceKind> {
 }
 
 /// Hide legacy media-property YAML files from the notebook tree. New media
-/// properties are stored in `.flowix/notebook.db`; this keeps old files from
+/// properties are stored in `.mdx/notebook.db`; this keeps old files from
 /// becoming visible after upgrading.
 fn is_media_properties_sidecar(path: &Path) -> bool {
     let is_yaml = path
@@ -256,9 +256,9 @@ fn read_dir_single_level(
             }
             let name = entry.file_name().to_string_lossy().to_string();
 
-            // .flowix is application-owned notebook data. It stays hidden
+            // .mdx is application-owned notebook data. It stays hidden
             // even when the user opts into hidden directories.
-            if name == ".flowix" {
+            if name == ".mdx" {
                 continue;
             }
 
@@ -835,7 +835,7 @@ mod tests {
         fs::write(directory.path().join("photo.png.yaml"), "title: Reference").unwrap();
         fs::write(directory.path().join("AGENTS.md"), "agent rules").unwrap();
         fs::create_dir(directory.path().join("folder")).unwrap();
-        fs::create_dir(directory.path().join(".flowix")).unwrap();
+        fs::create_dir(directory.path().join(".mdx")).unwrap();
         fs::write(directory.path().join(".hidden.md"), "hidden").unwrap();
         let items = read_dir_single_level(directory.path(), None, false);
         assert_eq!(items.len(), 2);
@@ -845,7 +845,7 @@ mod tests {
         assert_eq!(items[1].name, "note.md");
 
         let hidden_items = read_dir_single_level(directory.path(), None, true);
-        assert!(hidden_items.iter().all(|item| item.name != ".flowix"));
+        assert!(hidden_items.iter().all(|item| item.name != ".mdx"));
     }
 
     #[test]

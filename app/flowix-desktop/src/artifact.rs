@@ -95,7 +95,7 @@ fn is_safe_relative_path(path: &Path) -> bool {
 }
 
 fn is_allowed_artifact_path(relative: &Path, plugin_id: &str) -> bool {
-    let new_prefix = Path::new(".flowix").join("plugin").join(plugin_id);
+    let new_prefix = Path::new(".mdx").join("plugin").join(plugin_id);
     let legacy_prefix = Path::new(".plugin-output").join(plugin_id);
     relative.starts_with(&new_prefix) || relative.starts_with(&legacy_prefix)
 }
@@ -117,9 +117,9 @@ fn artifact_candidates(
     let mut relatives = vec![relative.to_string()];
     let legacy_prefix = format!(".plugin-output/{plugin_id}/");
     if let Some(suffix) = relative.strip_prefix(&legacy_prefix) {
-        relatives.push(format!(".flowix/plugin/{plugin_id}/{suffix}"));
+        relatives.push(format!(".mdx/plugin/{plugin_id}/{suffix}"));
     }
-    let new_prefix = format!(".flowix/plugin/{plugin_id}/");
+    let new_prefix = format!(".mdx/plugin/{plugin_id}/");
     if let Some(suffix) = relative.strip_prefix(&new_prefix) {
         relatives.push(format!(".plugin-output/{plugin_id}/{suffix}"));
     }
@@ -303,11 +303,11 @@ mod tests {
     fn accepts_only_plugin_output_paths() {
         let notebook = Path::new("/tmp/notebook");
         assert!(
-            artifact_candidates(notebook, "mindmap", ".flowix/plugin/mindmap/output.md").is_ok()
+            artifact_candidates(notebook, "mindmap", ".mdx/plugin/mindmap/output.md").is_ok()
         );
         assert!(artifact_candidates(notebook, "mindmap", "other/output.md").is_err());
         assert!(
-            artifact_candidates(notebook, "mindmap", ".flowix/plugin/mindmap/../secret.md")
+            artifact_candidates(notebook, "mindmap", ".mdx/plugin/mindmap/../secret.md")
                 .is_err()
         );
     }

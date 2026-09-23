@@ -16,9 +16,10 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXkgRUEyNzZBMzYyMDQyNEI1MApSV1JRUzBJZ05tb242a1lBZDlLYnZJYkVXNm84VFIvTWZ2ODhLS29kM2lFaGVWSzBwejF2TEQyWgo=",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk0M0IwRTExOThBMzA2M0MKUldROEJxT1lFUTQ3bEgvMkFuQWNOK1l2bWNpV3Z4cUN6M1JuNEcwTWlQR0VndG9BZlRXZ1Z2S1EK",
       "endpoints": [
-        "https://download.flowix.cc/updater/{{target}}/latest.json"
+        "https://github.com/neko233-com/mdx/releases/latest/download/latest.json",
+        "https://ghproxy.net/https://github.com/neko233-com/mdx/releases/latest/download/latest-mirror.json"
       ],
       "dangerousInsecureTransportProtocol": false
     }

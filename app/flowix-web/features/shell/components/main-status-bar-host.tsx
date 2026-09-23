@@ -1,4 +1,3 @@
-import type { DshDownloadProgress } from '@platform/tauri/client';
 import { windows } from '@platform/tauri/client';
 import type { Notebook } from '@features/memo/public/shell-api';
 import type { AppUpdaterState } from '@features/shell/public/system-api';
@@ -11,7 +10,6 @@ export interface MainStatusBarHostProps {
   onCreateNotebook(): void;
   onOpenTodos(): void;
   onToggleNoteNavigation(): void;
-  dshDownload: DshDownloadProgress | null;
   updater: AppUpdaterState;
 }
 
@@ -20,7 +18,6 @@ export function MainStatusBarHost(props: MainStatusBarHostProps) {
     <StatusBar
       {...props}
       onOpenMcpPreferences={() => windows.openPreferences('mcp')}
-      onOpenDshPreferences={() => windows.openPreferences('dsh')}
     />
   );
 }

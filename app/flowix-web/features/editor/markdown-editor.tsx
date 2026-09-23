@@ -49,6 +49,7 @@ import { OverlayScrollbar } from '@shared/ui/overlay-scrollbar';
 
 interface MarkdownEditorProps {
   memoId?: string;
+  documentPath?: string;
   transitionId?: number | null;
   content: string;
   editable?: boolean;
@@ -543,6 +544,7 @@ function focusEmptyParagraphAfterMedia(
 
 export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorProps>(function MarkdownEditor({
   memoId,
+  documentPath,
   transitionId = null,
   content,
   editable = true,
@@ -934,7 +936,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
         MarkdownEscape,
         HTMLStrongFallback,
         LegacyAdjacentStrongMarkdown,
-        AttachmentLink.configure({ memoId }),
+        AttachmentLink.configure({ memoId, documentPath }),
         MarkdownLink,
         LinkSelectionHighlight,
         CodeBlockShiki.configure({ traceId: transitionId }),

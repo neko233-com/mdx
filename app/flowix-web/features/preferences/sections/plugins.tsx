@@ -76,7 +76,7 @@ export function PluginsSection() {
     <div className="space-y-6">
       <SectionHeader
         title="插件"
-        description="插件安装在 ~/.flowix/plugin/，安装后对全部笔记本可用。"
+        description="插件安装在 ~/.mdx/plugin/，安装后对全部笔记本可用。"
       />
       <div className="flex gap-2">
         <Button variant="outline" size="sm" disabled={busy} onClick={() => void install()}>

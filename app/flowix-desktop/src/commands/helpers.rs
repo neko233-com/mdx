@@ -210,7 +210,7 @@ pub(crate) fn can_access_scoped_file_with_state(
         && path_is_inside(file_path, root)
 }
 
-/// The notebook's .flowix directory is application-owned data, never a
+/// The notebook's .mdx directory is application-owned data, never a
 /// user-facing file. Keep this check below the generic scope helpers so hidden
 /// directory preferences cannot make the database and internal artifacts
 /// mutable.
@@ -224,7 +224,7 @@ pub(crate) fn is_internal_notebook_path_with_state(path: &Path, state: &AppState
         .read_notebook_configs()
         .unwrap_or_default()
         .iter()
-        .any(|config| path_is_inside_reserved_directory(path, Path::new(&config.path), ".flowix"))
+        .any(|config| path_is_inside_reserved_directory(path, Path::new(&config.path), ".mdx"))
 }
 
 /// 侧栏"资料"文件夹作用域 ── agent access 配置里登记的 folder entry。

@@ -27,7 +27,7 @@ const DEFAULT_SECRET_DB_NAME: &str = "default.db";
 const SECRET_ACCOUNT_NAME: &str = "default";
 const CLOUD_SECRET_PROVIDER: &str = "flowix_cloud_refresh";
 
-/// ~/.flowix/boot/preference.json —用户偏好设置
+/// ~/.mdx/boot/preference.json —用户偏好设置
 /// 瀛楁鍏ㄩ儴 #[serde(default)], 鏂囦欢鎹熷潖鎴栫己澶辨椂鍥為€€鍒伴粯璁ゅ€笺€?
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -193,7 +193,7 @@ pub struct PreferenceFile {
     pub watcher: crate::watcher::WhitelistConfig,
 }
 
-/// Legacy AI model configuration at `~/.flowix/agent-config.toml`.
+/// Legacy AI model configuration at `~/.mdx/agent-config.toml`.
 /// It is retained only as a one-time migration source for DeepSeek Harness;
 /// active Harness settings live in its dedicated YAML document.
 /// `PartialEq` / `Eq` 派生用于 `AgentManager` 的缓存命�?���?(`agent.rs`
@@ -600,7 +600,7 @@ impl UserConfigStore {
     }
 
     pub fn new(home_dir: PathBuf) -> Self {
-        // 鍑嵁 db 钀藉湪 config_dir/default.db (鐢熶骇鐜 ~/.flowix/default.db),
+        // 鍑嵁 db 钀藉湪 config_dir/default.db (鐢熶骇鐜 ~/.mdx/default.db),
         // �?index.db 同目�?── �?0o700 �?�� + 0o600 文件权限保护�?
         let db_path = home_dir
             .join(USER_CONFIG_DIR_NAME)
@@ -1071,7 +1071,7 @@ pub(crate) fn atomic_write_yaml(path: &Path, content: &str) -> std::io::Result<(
 
 /// Migrate the pre-official Flowix Harness layout into the official
 /// `~/.dsh/` home without overwriting anything already created there. The
-/// old `~/.flowix/dsh/` directory is moved as one unit when possible; the
+/// old `~/.mdx/dsh/` directory is moved as one unit when possible; the
 /// older flat files are handled individually. Nothing is deleted.
 fn migrate_dsh_layout(config_dir: &Path) {
     let old_dsh_dir = config_dir.join("dsh");

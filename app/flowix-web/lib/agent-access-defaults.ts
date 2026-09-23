@@ -99,7 +99,7 @@ export function resolveAuthorizedDefaultFiles(
   return { workspace, folders, notebooks: [...files.notebooks] };
 }
 
-/** Resolve add-dirs from notebook/.flowix/agent.json, intersected with the
+/** Resolve add-dirs from notebook/.mdx/agent.json, intersected with the
  * device-owned authorization registry. */
 export function resolveNotebookAgentFiles(
   config: AgentAccessConfig | undefined | null,

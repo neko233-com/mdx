@@ -34,18 +34,7 @@ import {
   type Notebook,
 } from '@features/memo/public/global-search-api';
 import type { MemoItem } from '@/types/memo-item';
-import {
-  selectAndOpenAgentConversation,
-  selectNotebook,
-} from '@features/workspace/public/search-navigation-api';
-import {
-  AgentIcon,
-  getConversationRunSummary,
-  prepareAgentConversationSelection,
-  useRunningAgentConversations,
-  type AgentConversationInstance,
-} from '@features/agent/public/global-search-api';
-import { getAgentType } from '@/lib/agent-types';
+import { selectNotebook } from '@features/workspace/public/search-navigation-api';
 import {
   memos,
   tags,
@@ -317,7 +306,6 @@ export function GlobalSearchCommand({ open, onOpenChange }: GlobalSearchCommandP
           </div>
         )}
         <CommandList>
-          <RunningAgentConversationsGroup onClose={() => onOpenChange(false)} />
           {showResults ? (
             <SearchResultsGroup
               hits={hits}
@@ -340,64 +328,6 @@ export function GlobalSearchCommand({ open, onOpenChange }: GlobalSearchCommandP
 // ============================================================
 // 搜索结果分组
 // ============================================================
-
-interface RunningAgentConversationsGroupProps {
-  onClose: () => void;
-}
-
-function RunningAgentConversationsGroup({ onClose }: RunningAgentConversationsGroupProps) {
-  const { t } = useI18n();
-  const {
-    runningInstances,
-    runIndex: conversationRunIndex,
-  } = useRunningAgentConversations();
-
-  if (runningInstances.length === 0) return null;
-
-  const openRunningInstance = async (instance: AgentConversationInstance) => {
-    prepareAgentConversationSelection(instance);
-    await selectAndOpenAgentConversation(instance.instanceId);
-    onClose();
-  };
-
-  return (
-    <CommandGroup heading="Agent Sessions">
-      {runningInstances.map((instance) => {
-        const agent = getAgentType(instance.agentType);
-        const runSummary = getConversationRunSummary(
-          conversationRunIndex,
-          instance.threadId,
-        );
-        const runId = runSummary.runId ?? instance.instanceId;
-        return (
-          <CommandItem
-            key={runId}
-            value={`agent-running-${runId}`}
-            onSelect={() => void openRunningInstance(instance)}
-          >
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[var(--border)] p-0.5 agent-runtime-list__icon--running">
-              <AgentIcon
-                typeKey={agent.key}
-                alt=""
-                className="h-full w-full object-contain"
-              />
-            </span>
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate">{instance.title?.trim() || t('common.untitled')}</span>
-              <span className="truncate text-xs text-[var(--muted-foreground)]">
-                {agent.name}
-                {runSummary.currentTool ? ` - ${runSummary.currentTool}` : ''}
-              </span>
-            </div>
-            <CommandShortcut className="shrink-0 text-[var(--primary)]">
-              {t('status.agent.running')}
-            </CommandShortcut>
-          </CommandItem>
-        );
-      })}
-    </CommandGroup>
-  );
-}
 
 interface SearchResultsGroupProps {
   hits: MemoSearchHit[];

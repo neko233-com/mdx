@@ -1,6 +1,6 @@
 //! Notebook-scoped metadata IPC.
 //!
-//! Tag navigation state is stored in each notebook's `.flowix/system.json`.
+//! Tag navigation state is stored in each notebook's `.mdx/system.json`.
 //! The legacy global system store is read only to migrate a notebook the first
 //! time it is accessed.
 

@@ -123,8 +123,8 @@ impl CloudClient {
             .header("Idempotency-Key", idempotency_key)
             .json(&json!({
                 "productId": product_id,
-                "successUrl": "flowix://billing/success",
-                "cancelUrl": "flowix://billing/cancel",
+                "successUrl": "mdx://billing/success",
+                "cancelUrl": "mdx://billing/cancel",
             }))
             .send()
             .await?;

@@ -29,11 +29,11 @@ impl NotebookInternalMigrationReport {
 }
 
 impl MemoFile {
-    /// Move legacy notebook-local data to `.flowix/`.
+    /// Move legacy notebook-local data to `.mdx/`.
     ///
     /// This method is safe to call on every notebook open/switch. The marker
     /// is written only after all known source directories are empty and no
-    /// conflict/error remains; unknown `.flowix/artifacts` entries therefore
+    /// conflict/error remains; unknown `.mdx/artifacts` entries therefore
     /// remain visible for a later retry and are never silently deleted.
     pub fn migrate_notebook_internal_data(
         &self,
@@ -57,7 +57,7 @@ impl MemoFile {
 
         let _guard = self.current_index_io.lock().expect("index_io poisoned");
         let mut report = NotebookInternalMigrationReport::default();
-        let flowix = base.join(".flowix");
+        let flowix = base.join(".mdx");
 
         if is_symlink(&flowix) {
             report.warning(format!(
@@ -367,11 +367,11 @@ mod tests {
         assert_eq!(report.moved_files, 2);
         assert!(report.completed);
         assert_eq!(
-            fs::read(notebook.join(".flowix/versions/memo123/v_1.md")).unwrap(),
+            fs::read(notebook.join(".mdx/versions/memo123/v_1.md")).unwrap(),
             b"version bytes"
         );
         assert_eq!(
-            fs::read(notebook.join(".flowix/plugin/mindmap/map.md")).unwrap(),
+            fs::read(notebook.join(".mdx/plugin/mindmap/map.md")).unwrap(),
             b"plugin bytes"
         );
         assert!(!notebook.join(".metadata/versions").exists());
@@ -392,7 +392,7 @@ mod tests {
         let (mf, temp) = fixture();
         let notebook = temp.path().join("notebook");
         let old = notebook.join(".plugin-output/webpage/index.html");
-        let new = notebook.join(".flowix/plugin/webpage/index.html");
+        let new = notebook.join(".mdx/plugin/webpage/index.html");
         fs::create_dir_all(old.parent().unwrap()).unwrap();
         fs::create_dir_all(new.parent().unwrap()).unwrap();
         fs::write(&old, "old").unwrap();
@@ -411,7 +411,7 @@ mod tests {
     fn known_legacy_artifact_manifest_is_migrated() {
         let (mf, temp) = fixture();
         let notebook = temp.path().join("notebook");
-        let artifact = notebook.join(".flowix/artifacts/abc");
+        let artifact = notebook.join(".mdx/artifacts/abc");
         fs::create_dir_all(&artifact).unwrap();
         fs::write(artifact.join("manifest.json"), r#"{"pluginId":"mindmap"}"#).unwrap();
         fs::write(artifact.join("output.md"), "# Root").unwrap();
@@ -419,9 +419,9 @@ mod tests {
         let report = mf.migrate_notebook_internal_data("nb_test").unwrap();
         assert_eq!(report.moved_files, 2);
         assert!(report.completed);
-        assert!(notebook.join(".flowix/plugin/mindmap/output.md").is_file());
+        assert!(notebook.join(".mdx/plugin/mindmap/output.md").is_file());
         assert!(notebook
-            .join(".flowix/plugin/mindmap/manifest.json")
+            .join(".mdx/plugin/mindmap/manifest.json")
             .is_file());
     }
 
@@ -433,7 +433,7 @@ mod tests {
             .unwrap();
         assert!(temp
             .path()
-            .join("notebook/.flowix/versions")
+            .join("notebook/.mdx/versions")
             .join(&memo.id)
             .join("manifest.json")
             .is_file());

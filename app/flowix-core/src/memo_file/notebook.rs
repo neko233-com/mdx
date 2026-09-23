@@ -1,7 +1,7 @@
 //! Notebook registry storage.
 //!
 //! The authoritative notebook registry lives in `index.db` under the user
-//! config directory (`~/.flowix/index.db` in production). It is created with
+//! config directory (`~/.mdx/index.db` in production). It is created with
 //! schema on first call to `open_index_db` and read/written via SQLite.
 
 use std::collections::HashSet;
@@ -25,7 +25,7 @@ impl MemoFile {
     pub fn read_notebook_manifest(
         path: &std::path::Path,
     ) -> std::io::Result<Option<NotebookManifest>> {
-        let manifest_path = path.join(".flowix").join("notebook.json");
+        let manifest_path = path.join(".mdx").join("notebook.json");
         let bytes = match fs::read(&manifest_path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -56,7 +56,7 @@ impl MemoFile {
             }
             return Ok(existing);
         }
-        fs::create_dir_all(root.join(".flowix"))?;
+        fs::create_dir_all(root.join(".mdx"))?;
         let manifest = NotebookManifest {
             format_version: Self::NOTEBOOK_MANIFEST_VERSION,
             notebook_id: config.id.clone(),
@@ -64,17 +64,17 @@ impl MemoFile {
         };
         let body = serde_json::to_vec_pretty(&manifest)
             .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
-        atomic_write_bytes(&root.join(".flowix/notebook.json"), &body)?;
+        atomic_write_bytes(&root.join(".mdx/notebook.json"), &body)?;
         Ok(manifest)
     }
 
     /// Active notebook index path. Once a notebook-local database exists this
-    /// points at `<notebook>/.flowix/notebook.db`; before first use it falls
+    /// points at `<notebook>/.mdx/notebook.db`; before first use it falls
     /// back to the legacy global path for compatibility with old callers.
     pub fn get_index_db_path(&self) -> PathBuf {
         if let Some(notebook_id) = self.current_notebook_id_value() {
             if let Some(config) = self.get_notebook_config_by_id(&notebook_id) {
-                let local = PathBuf::from(config.path).join(".flowix/notebook.db");
+                let local = PathBuf::from(config.path).join(".mdx/notebook.db");
                 if local.is_file() {
                     return local;
                 }
@@ -89,11 +89,11 @@ impl MemoFile {
         self.config_dir.join("index.db")
     }
 
-    /// Default notebook directory: `~/Documents/flowix`.
+    /// Default notebook directory: `~/Documents/mdx`.
     pub fn get_default_notebook_path(&self) -> PathBuf {
         dirs::document_dir()
             .unwrap_or_else(|| PathBuf::from("/tmp"))
-            .join("flowix")
+            .join("mdx")
     }
 
     /// Ensure the current notebook's storage directories exist.

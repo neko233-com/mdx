@@ -9,6 +9,9 @@ dist/
 .build/
 dsh-appserver/bin/
 app/target/
+/target/
+app/flowix-desktop/icons/android/
+app/flowix-desktop/icons/ios/
 app/flowix-desktop/target/
 app/flowix-desktop/binaries/
 

@@ -21,9 +21,9 @@ fn seed_notebook(config_dir: &std::path::Path, notebook_dir: &std::path::Path) {
 }
 
 fn spawn_mcp(config_dir: &std::path::Path) -> (Child, ChildStdin, BufReader<ChildStdout>) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_flowix-cli"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mdx-cli"))
         .arg("mcp")
-        .env("FLOWIX_HOME", config_dir)
+        .env("MDX_HOME", config_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -111,7 +111,7 @@ fn mcp_process_initializes_and_exposes_one_tool() {
     );
     assert_eq!(initialized["jsonrpc"], "2.0");
     assert_eq!(initialized["result"]["protocolVersion"], "2025-06-18");
-    assert_eq!(initialized["result"]["serverInfo"]["name"], "flowix-memo");
+    assert_eq!(initialized["result"]["serverInfo"]["name"], "mdx-memo");
 
     let listed = request(&mut stdin, &mut stdout, 2, "tools/list", json!({}));
     let tools = listed["result"]["tools"].as_array().unwrap();

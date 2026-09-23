@@ -1,4 +1,4 @@
-//! 偏好 / AI 配置 IPC —— `~/.flowix/boot/preference.json` + DeepSeek Harness
+//! 偏好 / AI 配置 IPC —— `~/.mdx/boot/preference.json` + DeepSeek Harness
 //! 的 llm-pi-ai settings。文件读写由 `crate::config::UserConfigStore` 管理
 //! (原子写, 0o600)。写入成功后 emit `user-config-changed` 事件,
 //! 让各窗口 React 树重新 load。
@@ -14,7 +14,7 @@ use crate::app::state::AppState;
 /// (主窗�?/ 偏好窗口 / �?��的�?窗口) 收到后从磁盘重新 load�?/// 解决: 两个 Tauri 窗口各跑�?�� React �?+ �?�� zustand store, 一�?/// 改动另一边看不到的问题�?
 pub(super) const USER_CONFIG_CHANGED_EVENT: &str = "user-config-changed";
 
-/// 用户偏好 (preference.json) —�?~/.flowix/boot/preference.json
+/// 用户偏好 (preference.json) —�?~/.mdx/boot/preference.json
 #[tauri::command]
 pub fn get_preference(state: State<AppState>) -> PreferenceFile {
     state.user_config.get_preference()

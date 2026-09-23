@@ -5,9 +5,9 @@ export interface ComposerSkillTokenValue {
   displayName?: string;
 }
 
-const SKILL_HREF_PREFIX = "flowix://skill/codex/";
-const SKILL_TOKEN_RE = /^\[([^\]\n]*)\]\(flowix:\/\/skill\/codex\/([^\s)]+)\)/i;
-const SKILL_TOKEN_GLOBAL_RE = /\[([^\]\n]*)\]\(flowix:\/\/skill\/codex\/([^\s)]+)\)/gi;
+const SKILL_HREF_PREFIX = "mdx://skill/codex/";
+const SKILL_TOKEN_RE = /^\[([^\]\n]*)\]\((?:mdx|flowix):\/\/skill\/codex\/([^\s)]+)\)/i;
+const SKILL_TOKEN_GLOBAL_RE = /\[([^\]\n]*)\]\((?:mdx|flowix):\/\/skill\/codex\/([^\s)]+)\)/gi;
 
 function safeDecode(value: string): string {
   try {
@@ -72,7 +72,7 @@ export const ComposerSkillToken = Node.create({
     name: "composerSkillToken",
     level: "inline" as const,
     start(src: string) {
-      const index = src.indexOf(`(${SKILL_HREF_PREFIX}`);
+      const index = src.search(/\((?:mdx|flowix):\/\/skill\/codex\//i);
       return index >= 0 ? Math.max(0, src.lastIndexOf("[", index)) : -1;
     },
     tokenize(src: string) {

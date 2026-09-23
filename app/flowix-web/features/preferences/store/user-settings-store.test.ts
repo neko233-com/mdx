@@ -21,10 +21,33 @@ describe('user-settings-store · region loadInitial', () => {
   });
 
   it('persists the notebook folder view', async () => {
+    expect(DEFAULT_USER_SETTINGS.memoListView).toBe('folders');
     await useUserSettingsStore.getState().updateSettings({ memoListView: 'folders' });
     const after = useUserSettingsStore.getState().settings;
     expect(after.memoListView).toBe('folders');
     expect(after.memoListView).toBe('folders');
+  });
+
+  it('migrates an old detailed-list default once and preserves later choices', async () => {
+    localStorage.removeItem('mdx:tree-layout-v1');
+    mockedPreferences.get.mockResolvedValueOnce({
+      ...DEFAULT_USER_SETTINGS,
+      memoListView: 'detailed',
+      language: 'zh-CN',
+    });
+    await useUserSettingsStore.getState().loadInitial();
+    expect(useUserSettingsStore.getState().settings.memoListView).toBe('folders');
+    expect(mockedPreferences.set).toHaveBeenCalledWith(expect.objectContaining({ memoListView: 'folders' }));
+
+    await useUserSettingsStore.getState().updateSettings({ memoListView: 'detailed' });
+    expect(useUserSettingsStore.getState().settings.memoListView).toBe('detailed');
+    mockedPreferences.get.mockResolvedValueOnce({
+      ...DEFAULT_USER_SETTINGS,
+      memoListView: 'detailed',
+      language: 'zh-CN',
+    });
+    await useUserSettingsStore.getState().loadInitial();
+    expect(useUserSettingsStore.getState().settings.memoListView).toBe('detailed');
   });
 
   it('keeps persisted mainland region when loading settings', async () => {

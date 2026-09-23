@@ -141,7 +141,7 @@ pub struct NotebookConfig {
     pub updated_at: i64,
 }
 
-/// Portable notebook identity stored in `<notebook>/.flowix/notebook.json`.
+/// Portable notebook identity stored in `<notebook>/.mdx/notebook.json`.
 /// It contains no derived memo data; Markdown remains the note source of truth.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

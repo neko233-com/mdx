@@ -2,11 +2,11 @@ use std::path::PathBuf;
 
 /// 用户配置�?���?(~/.<NAME>/ 下放 index.db / boot/preference.json /
 /// agent-config.toml / boot/system.json 绛?銆?
-pub const USER_CONFIG_DIR_NAME: &str = ".flowix";
+pub const USER_CONFIG_DIR_NAME: &str = ".mdx";
 
 /// 桌面应用数据�?���?(�?`dirs::data_dir()` 之下, macOS:
 /// `~/Library/Application Support/<NAME>/`)銆?
-pub const APP_DATA_DIR_NAME: &str = "flowix";
+pub const APP_DATA_DIR_NAME: &str = "mdx";
 
 pub fn get_app_data_path() -> PathBuf {
     dirs::data_dir()

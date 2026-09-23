@@ -5,9 +5,9 @@ export interface ComposerFolderTokenValue {
   displayName?: string;
 }
 
-const FOLDER_HREF_PREFIX = "flowix://folder/";
-const FOLDER_TOKEN_RE = /^\[([^\]\n]*)\]\(flowix:\/\/folder\/([^\s)]+)\)/i;
-const FOLDER_TOKEN_GLOBAL_RE = /\[([^\]\n]*)\]\(flowix:\/\/folder\/([^\s)]+)\)/gi;
+const FOLDER_HREF_PREFIX = "mdx://folder/";
+const FOLDER_TOKEN_RE = /^\[([^\]\n]*)\]\((?:mdx|flowix):\/\/folder\/([^\s)]+)\)/i;
+const FOLDER_TOKEN_GLOBAL_RE = /\[([^\]\n]*)\]\((?:mdx|flowix):\/\/folder\/([^\s)]+)\)/gi;
 
 function safeDecode(value: string): string {
   try {
@@ -67,7 +67,7 @@ export const ComposerFolderToken = Node.create({
     name: "composerFolderToken",
     level: "inline" as const,
     start(src: string) {
-      const index = src.indexOf(`(${FOLDER_HREF_PREFIX}`);
+      const index = src.search(/\((?:mdx|flowix):\/\/folder\//i);
       return index >= 0 ? Math.max(0, src.lastIndexOf("[", index)) : -1;
     },
     tokenize(src: string) {

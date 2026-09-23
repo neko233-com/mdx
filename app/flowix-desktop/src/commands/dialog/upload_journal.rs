@@ -44,7 +44,7 @@ pub(super) fn fingerprint(file: &mut File) -> io::Result<(String, u64)> {
 }
 
 fn journal_directory(root: &Path) -> io::Result<PathBuf> {
-    let directory = root.join(".flowix/attachment-imports");
+    let directory = root.join(".mdx/attachment-imports");
     if !path_is_inside(&directory, root) {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,

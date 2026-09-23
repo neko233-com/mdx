@@ -147,3 +147,45 @@
 
 	--shiki-theme: github-light;
 }
+
+/* MDX's default palette follows Typora's GitHub theme while retaining
+ * Flowix's layout, spacing, and interactions. */
+:root,
+[data-theme="light"] {
+	--primary: #4183c4;
+	--primary-foreground: #ffffff;
+	--brand: #4183c4;
+	--background: #fafafa;
+	--frame-bg: #fafafa;
+	--foreground: #333333;
+	--card: #ffffff;
+	--list-bg: #fafafa;
+	--popover: #ffffff;
+	--popover-foreground: #333333;
+	--input-bg: #ffffff;
+	--secondary: #f8f8f8;
+	--secondary-foreground: #555555;
+	--muted: #f3f4f4;
+	--hover-bg: #f0f2f4;
+	--muted-foreground: #777777;
+	--accent: #edf4fa;
+	--border: #e7eaed;
+	--border-popup: #dfe2e5;
+	--input: #dfe2e5;
+	--divider: #dfe2e5;
+	--ring: #4183c4;
+	--agent-bg: #fafafa;
+	--agent-status-surface: #f3f4f4;
+	--agent-foreground: #555555;
+	--bg-titlebar: #fafafa;
+	--document-bg: #ffffff;
+	--document-foreground: #333333;
+	--document-link: #4183c4;
+	--document-highlight-bg: #fff3cc;
+	--document-tag-bg: #f3f4f4;
+	--document-tag-foreground: #333333;
+	--editor-block-bg: #f8f8f8;
+	--inverse-background: #333333;
+	--inverse-foreground: #ffffff;
+	color-scheme: light;
+}

@@ -21,12 +21,14 @@ export interface AppUpdaterState {
 
 interface UseAppUpdaterOptions {
   autoCheck?: boolean;
+  autoInstall?: boolean;
   enabled?: boolean;
   delayMs?: number;
 }
 
 export function useAppUpdater({
   autoCheck = false,
+  autoInstall = false,
   enabled = true,
   delayMs = 3_600,
 }: UseAppUpdaterOptions = {}): AppUpdaterState {
@@ -35,6 +37,7 @@ export function useAppUpdater({
   const [progress, setProgress] = useState<AppUpdateDownloadProgress | null>(null);
   const [error, setError] = useState<unknown>(null);
   const updateRef = useRef<AppUpdate | null>(null);
+  const attemptedAutoInstall = useRef<string | null>(null);
   updateRef.current = update;
 
   const checkNow = useCallback(async () => {
@@ -89,6 +92,15 @@ export function useAppUpdater({
     }, delayMs);
     return () => window.clearTimeout(timer);
   }, [autoCheck, enabled, delayMs, checkNow]);
+
+  useEffect(() => {
+    if (!autoInstall || !enabled || status !== 'available' || !update) return;
+    if (attemptedAutoInstall.current === update.version) return;
+    attemptedAutoInstall.current = update.version;
+    void installNow().catch(() => {
+      // Keep the update available for a manual retry in Preferences.
+    });
+  }, [autoInstall, enabled, status, update, installNow]);
 
   return { status, update, progress, error, checkNow, installNow, cancelNow };
 }

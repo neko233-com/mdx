@@ -5,7 +5,7 @@
 //! locale 或 timezone，也不构造稳定机器指纹。
 //! - 启动登记使用 fire-and-forget 异步任务，不阻塞主线程。
 //! - 启动后等待 `REGISTRATION_DELAY_SECS`，避开启动早期资源竞争。
-//! - 本地状态写入 `~/.flowix/boot/boot.json`。
+//! - 本地状态写入 `~/.mdx/boot/boot.json`。
 //! - 每次启动按 `device_id` 登记：首次写入，后续只刷新
 //!   `last_seen_at`、`app_version`、`os` 和 `arch`。
 use std::io::Write;
@@ -17,7 +17,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// `~/.flowix/boot/` �?��内的文件�? �?`system.json` 平级�?
+/// `~/.mdx/boot/` �?��内的文件�? �?`system.json` 平级�?
 const BOOT_FILE_NAME: &str = "boot.json";
 /// 当前文件结构版本。�?到不匹配就当无效处理 (落到 `fresh()`)�?
 /// v2: 嵌�?结构 ── 顶层 `{schemaVersion, userInfo}`, `userInfo` 内放�?���?
@@ -36,7 +36,7 @@ const DEFAULT_REGISTRATION_ENDPOINT: &str =
 /// 后续若抽�?`supabase.rs` �?��模块, 这边直接复用即可�?
 const DEFAULT_SUPABASE_ANON_KEY: &str = "sb_publishable_l6AmH0K0Uq8_roThQHSnnQ_2xxxl0o1";
 
-/// `~/.flowix/boot/boot.json` 顶层结构�?///
+/// `~/.mdx/boot/boot.json` 顶层结构�?///
 /// 多项并存 ── 后续若有更�?�?��期元数据 (例�? `featureFlags`、`firstRunHints`�?/// 某�?�?���?cache), �?sibling 即可, 不互相�?盖�?设�?登�?的所有字段收�?/// �?`userInfo` 子�?象里�?
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

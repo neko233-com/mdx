@@ -1,218 +1,77 @@
-name: Release
-
-# Tag-driven release pipeline. Triggers on:
-#   - push of a tag matching v* (e.g. v1.0.3)
-#   - manual workflow_dispatch (for ad-hoc dry runs)
-#
-# Flowix artifacts are built and kept in a GitHub draft here. This workflow
-# does not update the R2 updater endpoints; the explicit local
-# `npm run release:updater` flow remains the only production updater
-# publication path.
-#
-# Required secrets (set in repo Settings → Secrets and variables):
-#   GITHUB_TOKEN                      - provided automatically by Actions
-# Required for notarized macOS release artifacts:
-#   APPLE_SIGNING_IDENTITY, APPLE_TEAM_ID
-#   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, KEYCHAIN_PASSWORD
-#   APPLE_API_KEY, APPLE_API_ISSUER, APPLE_API_PRIVATE_KEY
-# Required for signed Windows release artifacts:
-#   WINDOWS_CERTIFICATE, WINDOWS_CERTIFICATE_PASSWORD, WINDOWS_CERT_THUMBPRINT, WINDOWS_TIMESTAMP_URL
-# Required for signed Flowix updater artifacts (macOS + Windows):
-#   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+name: Release MDX
 
 on:
-  workflow_dispatch:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
+  workflow_dispatch:
 
-# prevent duplicate runs while a release is in flight
+permissions:
+  contents: write
+
 concurrency:
-  group: release-${{ github.ref }}
+  group: mdx-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: build (${{ matrix.platform }})
+  desktop:
     strategy:
       fail-fast: false
+      max-parallel: 1 # each build merges its platform into latest.json
       matrix:
         include:
-          - platform: macos-latest
-            target: aarch64-apple-darwin
-          - platform: macos-latest
-            target: x86_64-apple-darwin
-          - platform: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-          - platform: windows-latest
+          - runner: windows-latest
             target: x86_64-pc-windows-msvc
-
-    runs-on: ${{ matrix.platform }}
+            config: app/flowix-desktop/tauri.windows.conf.json
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            config: app/flowix-desktop/tauri.macos.conf.json
+          - runner: macos-15
+            target: x86_64-apple-darwin
+            config: app/flowix-desktop/tauri.macos.conf.json
+    runs-on: ${{ matrix.runner }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: app/target -> release
-
-      - name: Linux system deps
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev \
-            librsvg2-dev patchelf libssl-dev
-
-      - name: Use pinned npm
-        run: npm install --global npm@10.8.2 --no-audit --no-fund
-
-      - name: Check package manager policy
-        run: |
-          test "$(npm --version)" = "10.8.2"
-          npm run check:package-manager
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Import Apple Developer ID certificate
-        if: contains(matrix.target, 'apple-darwin')
-        shell: bash
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          set -euo pipefail
-          certificate="$RUNNER_TEMP/flowix-developer-id.p12"
-          keychain="$RUNNER_TEMP/flowix-signing.keychain-db"
-          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
-          security import "$certificate" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain"
-          security list-keychains -d user -s "$keychain" login.keychain-db
-          security default-keychain -d user -s "$keychain"
-          security find-identity -v -p codesigning "$keychain" | grep -F "$APPLE_SIGNING_IDENTITY"
-          rm -f "$certificate"
-
-      - name: Prepare Apple notarization API key
-        if: contains(matrix.target, 'apple-darwin')
-        shell: bash
-        env:
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
-          printf '%s' "$APPLE_API_PRIVATE_KEY" > "$key_path"
-          chmod 600 "$key_path"
-          echo "APPLE_API_KEY=$APPLE_API_KEY" >> "$GITHUB_ENV"
-          echo "APPLE_API_ISSUER=$APPLE_API_ISSUER" >> "$GITHUB_ENV"
-          echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
-
-      - name: Build Flowix CLI sidecar
-        shell: bash
-        run: |
-          npm run cli:build:prod -- --target=${{ matrix.target }}
-
-      - name: Import Windows signing certificate for Tauri
-        if: matrix.target == 'x86_64-pc-windows-msvc'
-        shell: pwsh
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-          WINDOWS_CERT_THUMBPRINT: ${{ secrets.WINDOWS_CERT_THUMBPRINT }}
-        run: |
-          $pfx = Join-Path $env:RUNNER_TEMP 'flowix-signing.pfx'
-          try {
-            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
-            $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
-            $certificate = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
-            $actual = $certificate.Thumbprint.Replace(' ', '').ToUpperInvariant()
-            $expected = $env:WINDOWS_CERT_THUMBPRINT.Replace(' ', '').ToUpperInvariant()
-            if ($actual -ne $expected) {
-              throw "Imported certificate thumbprint mismatch: expected $expected, got $actual"
-            }
-          } finally {
-            Remove-Item -LiteralPath $pfx -Force -ErrorAction SilentlyContinue
-          }
-
-      - name: Prepare production Tauri config
-        id: production-config
-        shell: bash
-        env:
-          WINDOWS_CERT_THUMBPRINT: ${{ secrets.WINDOWS_CERT_THUMBPRINT }}
-          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          case "${{ matrix.target }}" in
-            *apple-darwin) platform=darwin ;;
-            *windows-msvc) platform=win32 ;;
-            *) platform=linux ;;
-          esac
-          config="$(node scripts/prepare-tauri-production-config.mjs --platform "$platform")"
-          echo "path=$config" >> "$GITHUB_OUTPUT"
-
-      - name: Build + sign + publish
-        uses: tauri-apps/tauri-action@v0
+          workspaces: app -> target
+      - run: npm ci --no-audit --no-fund
+      - name: Build MDX CLI sidecar
+        run: npm run cli:build:prod -- --target=${{ matrix.target }}
+      - name: Build desktop app and signed updater
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-          # macOS Developer ID signing; notarization credentials are exported
-          # through GITHUB_ENV by the API-key preparation step.
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-          # Windows code-signing.
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-          WINDOWS_CERT_THUMBPRINT: ${{ secrets.WINDOWS_CERT_THUMBPRINT }}
-          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
+          APPLE_SIGNING_IDENTITY: "-"
         with:
           tagName: v__VERSION__
-          releaseName: "Flowix v__VERSION__"
-          releaseBody: |
-            See the [CHANGELOG] for the full set of changes.
-
-            [CHANGELOG]: ../../CHANGELOG.md
+          releaseName: MDX v__VERSION__
           releaseDraft: true
           prerelease: false
-          args: --config ${{ steps.production-config.outputs.path }} --target ${{ matrix.target }}
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: --config app/flowix-desktop/tauri.conf.json --config ${{ matrix.config }} --target ${{ matrix.target }}
 
-      - name: Verify notarized macOS DMG
-        if: contains(matrix.target, 'apple-darwin')
-        shell: bash
+  publish:
+    needs: desktop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish GitHub and mirror manifests
         env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          dmg=""
-          for root in app/target .build/cargo-target; do
-            [[ -d "$root" ]] || continue
-            dmg="$(find "$root" -type f -path '*/bundle/dmg/*.dmg' -print -quit)"
-            [[ -z "$dmg" ]] || break
-          done
-          test -n "$dmg"
-          bash scripts/verify-macos-release.sh --notarized "$dmg" "${{ matrix.target }}"
+          tag="v$(node -p 'require("./package.json").version')"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir "$RUNNER_TEMP"
+          node scripts/create-mirror-manifest.mjs "$RUNNER_TEMP/latest.json" "$RUNNER_TEMP/latest-mirror.json"
+          gh release upload "$tag" "$RUNNER_TEMP/latest-mirror.json" --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false

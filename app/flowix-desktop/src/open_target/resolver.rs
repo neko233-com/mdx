@@ -272,7 +272,7 @@ mod tests {
 
         let resolved = resolve_open_target(
             OpenTarget::DeepLink {
-                url: format!("flowix://memo/{id_two}"),
+                url: format!("mdx://memo/{id_two}"),
                 memo_id: Some(id_two.clone()),
                 physical_path: None,
             },

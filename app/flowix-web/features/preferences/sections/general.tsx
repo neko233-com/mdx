@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAppUpdater } from '@features/shell/hooks/use-app-updater';
+import { useUserSettings } from '@features/preferences/hooks/use-user-settings';
 import {
   Select,
   SelectTrigger,
@@ -24,7 +25,7 @@ interface GeneralSectionProps {
   language: AppLanguage;
   updateSettings: (updates: {
     language?: AppLanguage;
-    productUpdates?: Partial<{ lastCheckedAt: number }>;
+    productUpdates?: Partial<{ enabled: boolean; lastCheckedAt: number }>;
   }) => Promise<void>;
 }
 
@@ -32,6 +33,7 @@ export function GeneralSection({ language, updateSettings }: GeneralSectionProps
   const { t } = useI18n();
   const [productInfo, setProductInfo] = useState<ProductInfo | null>(null);
   const updater = useAppUpdater();
+  const automaticUpdatesEnabled = useUserSettings((settings) => settings.productUpdates.enabled);
   const currentLanguageLabel =
     LANGUAGE_OPTIONS.find((option) => option.value === language)?.label ?? language;
 
@@ -131,6 +133,19 @@ export function GeneralSection({ language, updateSettings }: GeneralSectionProps
             ? t('preferences.general.productUpdates.checking')
             : t('preferences.general.productUpdates.check')}
         </Button>
+      </FieldRow>
+
+      <FieldRow title={t('preferences.general.productUpdates.auto')}>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={automaticUpdatesEnabled}
+          aria-label={t('preferences.general.productUpdates.auto')}
+          onClick={() => void updateSettings({ productUpdates: { enabled: !automaticUpdatesEnabled } })}
+          className={`relative h-6 w-11 rounded-full transition-colors ${automaticUpdatesEnabled ? 'bg-[var(--primary)]' : 'bg-[var(--muted)]'}`}
+        >
+          <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${automaticUpdatesEnabled ? 'translate-x-5' : ''}`} />
+        </button>
       </FieldRow>
 
       {updater.update && (

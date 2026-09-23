@@ -18,7 +18,7 @@ import { loadNativeMenuIcons } from '@platform/tauri/native-menu-icons';
 
 /**
  * Shows add-dir entries for the selected notebook.  The notebook itself is
- * the workspace/cwd; this list only edits notebook-local `.flowix/agent.json`
+ * the workspace/cwd; this list only edits notebook-local `.mdx/agent.json`
  * and never selects a primary folder.
  */
 interface NotebookAccessFilesListProps {
@@ -54,7 +54,7 @@ export function NotebookAccessFilesList({
   const addFolderFromPicker = useAgentAccessStore((s) => s.addFolderFromPicker);
   const setDefaultFiles = useAgentAccessStore((s) => s.setDefaultFiles);
 
-  // Only the selected notebook's `.flowix/agent.json` add-dirs are shown;
+  // Only the selected notebook's `.mdx/agent.json` add-dirs are shown;
   // global entries merely authorize paths and are never displayed as defaults.
   const defaultFiles = resolveNotebookAgentFiles(config, notebookConfigs, notebookId);
   // Keep stale local paths visible (as missing) so users can remove them. The

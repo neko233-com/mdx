@@ -53,7 +53,7 @@ describe('NativeEditMenuBridge', () => {
   });
 
   it('dispatches the editor select-all action with native menu context', () => {
-    mocks.listeners.get('flowix://editor-select-all')?.();
+    mocks.listeners.get('mdx://editor-select-all')?.();
 
     expect(mocks.actionRun).toHaveBeenCalledWith({
       scope: 'editor',
@@ -69,7 +69,7 @@ describe('NativeEditMenuBridge', () => {
     const select = vi.spyOn(field, 'select');
     field.focus();
 
-    mocks.listeners.get('flowix://editor-select-all')?.();
+    mocks.listeners.get('mdx://editor-select-all')?.();
 
     expect(select).toHaveBeenCalledOnce();
     expect(mocks.actionRun).not.toHaveBeenCalled();
@@ -79,13 +79,13 @@ describe('NativeEditMenuBridge', () => {
   it('is a safe no-op when the action is unavailable', () => {
     mocks.getAction.mockReturnValue(undefined);
 
-    expect(() => mocks.listeners.get('flowix://editor-select-all')?.()).not.toThrow();
+    expect(() => mocks.listeners.get('mdx://editor-select-all')?.()).not.toThrow();
     expect(mocks.actionRun).not.toHaveBeenCalled();
   });
 
   it.each([
-    ['flowix://editor-undo', 'editor.undo'],
-    ['flowix://editor-redo', 'editor.redo'],
+    ['mdx://editor-undo', 'editor.undo'],
+    ['mdx://editor-redo', 'editor.redo'],
   ])('dispatches %s to the focused editor action', (event, actionId) => {
     mocks.listeners.get(event)?.();
 
@@ -98,8 +98,8 @@ describe('NativeEditMenuBridge', () => {
   });
 
   it.each([
-    ['flowix://editor-undo', 'undo'],
-    ['flowix://editor-redo', 'redo'],
+    ['mdx://editor-undo', 'undo'],
+    ['mdx://editor-redo', 'redo'],
   ])('keeps native %s behavior for focused text fields', (event, command) => {
     const field = document.createElement('textarea');
     document.body.appendChild(field);
@@ -120,7 +120,7 @@ describe('NativeEditMenuBridge', () => {
     document.body.appendChild(title);
     title.focus();
 
-    mocks.listeners.get('flowix://editor-undo')?.();
+    mocks.listeners.get('mdx://editor-undo')?.();
 
     expect(mocks.execCommand).toHaveBeenCalledWith('undo');
     expect(mocks.actionRun).not.toHaveBeenCalled();
@@ -136,7 +136,7 @@ describe('NativeEditMenuBridge', () => {
     document.body.appendChild(editor);
     editor.focus();
 
-    mocks.listeners.get('flowix://editor-undo')?.();
+    mocks.listeners.get('mdx://editor-undo')?.();
 
     expect(mocks.getAction).toHaveBeenCalledWith('editor.undo');
     expect(mocks.actionRun).toHaveBeenCalledWith({

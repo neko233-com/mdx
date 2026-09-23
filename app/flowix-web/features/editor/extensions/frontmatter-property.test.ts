@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from '@tiptap/markdown';
@@ -16,8 +16,11 @@ import {
 } from '@features/document/properties/frontmatter-model';
 import { generatePropertyKey } from '@features/document/properties/property-key';
 import { resolvePropertyType } from '@features/document/properties/property-type';
+import { useSettingsStore } from '@/lib/store/settings-store';
 
 describe('frontmatter property helpers', () => {
+  beforeEach(() => useSettingsStore.getState().setPropertiesVisible(true));
+  afterEach(() => useSettingsStore.getState().setPropertiesVisible(false));
   it('resolves fixed, preset, and inferred property types from one source', () => {
     expect(resolvePropertyType('name', ['Demo'])).toEqual({
       kind: 'Text',

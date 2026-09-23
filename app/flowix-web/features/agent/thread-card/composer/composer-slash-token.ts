@@ -13,8 +13,8 @@ export interface ComposerSlashTokenValue {
   agentType?: AgentTypeKey;
 }
 
-const SLASH_TOKEN_RE = /^\[\/([a-z0-9_-]+)\]\(flowix:\/\/slash\/(?:(deepseek-harness|codex)\/)?([a-z0-9_-]+)\)/i;
-const SLASH_TOKEN_GLOBAL_RE = /\[\/([a-z0-9_-]+)\]\(flowix:\/\/slash\/(?:(deepseek-harness|codex)\/)?([a-z0-9_-]+)\)/gi;
+const SLASH_TOKEN_RE = /^\[\/([a-z0-9_-]+)\]\((?:mdx|flowix):\/\/slash\/(?:(deepseek-harness|codex)\/)?([a-z0-9_-]+)\)/i;
+const SLASH_TOKEN_GLOBAL_RE = /\[\/([a-z0-9_-]+)\]\((?:mdx|flowix):\/\/slash\/(?:(deepseek-harness|codex)\/)?([a-z0-9_-]+)\)/gi;
 const LEGACY_DSH_COMMANDS = new Set([
   "compact",
   "skill",
@@ -76,7 +76,7 @@ export const ComposerSlashToken = Node.create<ComposerSlashTokenOptions>({
     name: "composerSlashToken",
     level: "inline" as const,
     start(src: string) {
-      const index = src.indexOf("flowix://slash/");
+      const index = src.search(/(?:mdx|flowix):\/\/slash\//i);
       return index >= 0 ? index : -1;
     },
     tokenize(src: string) {
@@ -84,7 +84,7 @@ export const ComposerSlashToken = Node.create<ComposerSlashTokenOptions>({
       return match ? {
         type: "composerSlashToken",
         raw: match[0],
-        href: `flowix://slash/${match[2] ? `${match[2]}/` : ""}${match[3]}`,
+        href: `mdx://slash/${match[2] ? `${match[2]}/` : ""}${match[3]}`,
         text: `/${match[1]}`,
       } : undefined;
     },
@@ -92,7 +92,7 @@ export const ComposerSlashToken = Node.create<ComposerSlashTokenOptions>({
 
   parseMarkdown(token: MarkdownToken) {
     const href = String(token.href ?? "");
-    const path = href.replace(/^flowix:\/\/slash\//i, "");
+    const path = href.replace(/^(?:mdx|flowix):\/\/slash\//i, "");
     const parts = path.split("/");
     const agentType = parts[0] === "deepseek-harness" || parts[0] === "codex"
       ? parts[0]
@@ -105,7 +105,7 @@ export const ComposerSlashToken = Node.create<ComposerSlashTokenOptions>({
   renderMarkdown(node: JSONContent) {
     const command = String(node.attrs?.command ?? "");
     const agentType = String(node.attrs?.agentType ?? "");
-    return `[/${command}](flowix://slash/${agentType ? `${agentType}/` : ""}${command})`;
+    return `[/${command}](mdx://slash/${agentType ? `${agentType}/` : ""}${command})`;
   },
 
   addNodeView() {

@@ -4,11 +4,11 @@
 //!
 //! - [`user`] 鈥?user-level settings: legacy AI migration data, preferences
 //!   (json), theme, agent persona. Legacy data is persisted at
-//!   `~/.flowix/agent-config.toml`; active DSH settings use its own YAML file.
+//!   `~/.mdx/agent-config.toml`; active DSH settings use its own YAML file.
 //!   Owns the `atomic_write_json`
 //!   helper used by sibling stores.
 //! - [`access`] 鈥?agent-access registry: which folders + notebooks the AI
-//!   agent is allowed to see. Persisted at `~/.flowix/agent-access.json`.
+//!   agent is allowed to see. Persisted at `~/.mdx/agent-access.json`.
 //!   Distinct from the notebook registry so users can grant/revoke AI access
 //!   without touching the notebook registry itself.
 //! - [`path_scope`] 鈥?tiny pure helper: is `path` inside `root`? Used by

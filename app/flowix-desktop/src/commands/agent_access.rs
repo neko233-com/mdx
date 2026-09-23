@@ -1,4 +1,4 @@
-//! Agent 访问�?�� IPC —读写 `~/.flowix/agent-access.json`�?//!
+//! Agent 访问�?�� IPC —读写 `~/.mdx/agent-access.json`�?//!
 //! �?`commands::settings` 同形: 写操作成功后 emit `agent-access-changed`
 //! 事件, 其它窗口�?React 树收到后从�?盘重�?load�?前�? `set_agent_access`
 //! 走乐观更�?(改本地后�?await), 失败�?store �?`loadInitial` 回滚 ──
@@ -56,11 +56,11 @@ fn default_true() -> bool {
 }
 
 fn notebook_agent_path(root: &Path) -> PathBuf {
-    root.join(".flowix").join("agent.json")
+    root.join(".mdx").join("agent.json")
 }
 
 fn read_notebook_agent_config(root: &Path) -> Result<Option<NotebookAgentConfig>, String> {
-    let flowix = root.join(".flowix");
+    let flowix = root.join(".mdx");
     if fs::symlink_metadata(&flowix)
         .map(|metadata| metadata.file_type().is_symlink())
         .unwrap_or(false)
@@ -153,7 +153,7 @@ fn check_notebook_revision(expected: u64, current: u64) -> Result<(), String> {
 }
 
 fn write_notebook_agent_config(root: &Path, config: &NotebookAgentConfig) -> Result<(), String> {
-    let flowix = root.join(".flowix");
+    let flowix = root.join(".mdx");
     if fs::symlink_metadata(&flowix)
         .map(|metadata| metadata.file_type().is_symlink())
         .unwrap_or(false)
@@ -396,7 +396,7 @@ pub async fn add_agent_access_folder_from_picker(
     let mut config = state.agent_access.get_config();
     if let Some(existing) = reusable_tracked_folder(&config, &trimmed)? {
         // Folder entries form a global metadata/bookmark pool while
-        // notebook `.flowix/agent.json` owns per-notebook attachments.
+        // notebook `.mdx/agent.json` owns per-notebook attachments.
         // Returning the existing folder lets a removed folder be attached
         // again and lets multiple notebooks reference the same directory.
         return Ok(Some(existing));
@@ -458,7 +458,7 @@ mod notebook_agent_tests {
         assert_eq!(config.revision, 1);
         assert_eq!(config.add_dirs.len(), 1);
         assert_eq!(config.add_dirs[0].path, add_dir.to_string_lossy());
-        assert!(notebook.join(".flowix/agent.json").is_file());
+        assert!(notebook.join(".mdx/agent.json").is_file());
     }
 
     #[test]
@@ -557,7 +557,7 @@ mod notebook_agent_tests {
         let target = temp.path().join("target");
         fs::create_dir_all(&notebook).unwrap();
         fs::create_dir_all(&target).unwrap();
-        std::os::unix::fs::symlink(&target, notebook.join(".flowix")).unwrap();
+        std::os::unix::fs::symlink(&target, notebook.join(".mdx")).unwrap();
         let error =
             write_notebook_agent_config(&notebook, &NotebookAgentConfig::default()).unwrap_err();
         assert!(error.contains("symbolic link"));

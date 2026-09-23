@@ -2,7 +2,7 @@
 //!
 //! Plugins are intentionally hosted by Flowix in the first phase. A plugin
 //! can describe its UI and output format, but it cannot execute arbitrary
-//! code. This keeps `~/.flowix/plugin/` safe to scan while leaving room for a
+//! code. This keeps `~/.mdx/plugin/` safe to scan while leaving room for a
 //! sandboxed runtime later.
 
 use serde::{Deserialize, Serialize};
@@ -916,7 +916,7 @@ fn migrated_output_path(plugin_id: &str, relative: &str) -> Option<String> {
     let prefix = legacy_output_prefix(plugin_id);
     relative
         .strip_prefix(&prefix)
-        .map(|suffix| format!(".flowix/plugin/{plugin_id}/{suffix}"))
+        .map(|suffix| format!(".mdx/plugin/{plugin_id}/{suffix}"))
 }
 
 /// Repair pointer notes after a legacy artifact has moved. This is separate
@@ -1162,7 +1162,7 @@ mod tests {
         let definition = validate_manifest(&manifest).expect("validate manifest");
         assert_eq!(
             definition.output_directory,
-            std::path::Path::new(".flowix/plugin/mindmap")
+            std::path::Path::new(".mdx/plugin/mindmap")
         );
         assert_eq!(definition.extension, ".md");
         assert_eq!(definition.runtime.map(PluginRuntime::key), None);

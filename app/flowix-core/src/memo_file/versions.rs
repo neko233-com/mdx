@@ -64,7 +64,7 @@ impl MemoFile {
             .flatten()
             .map(|location| {
                 PathBuf::from(location.notebook.path)
-                    .join(".flowix")
+                    .join(".mdx")
                     .join("versions")
             })
             .unwrap_or_else(|| self.versions_root())
@@ -135,7 +135,7 @@ impl MemoFile {
             ));
         }
         for root in [
-            notebook_root.join(".flowix").join("versions"),
+            notebook_root.join(".mdx").join("versions"),
             notebook_root.join(".metadata").join("versions"),
         ] {
             let dir = root.join(memo_id);
@@ -163,7 +163,7 @@ impl MemoFile {
         let source_root = PathBuf::from(&notebook.path);
         let mut report = super::types::MemoVersionCleanupReport::default();
         for versions_root in [
-            source_root.join(".flowix").join("versions"),
+            source_root.join(".mdx").join("versions"),
             source_root.join(".metadata").join("versions"),
         ] {
             let entries = match fs::read_dir(&versions_root) {
@@ -202,7 +202,7 @@ impl MemoFile {
                     continue;
                 };
                 let destination = PathBuf::from(location.notebook.path)
-                    .join(".flowix")
+                    .join(".mdx")
                     .join("versions")
                     .join(&memo_id);
                 let is_legacy_root = versions_root.ends_with(Path::new(".metadata/versions"));

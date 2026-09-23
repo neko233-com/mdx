@@ -430,7 +430,7 @@ pub fn validate_manifest(manifest: &PluginManifest) -> Result<PluginDefinition, 
     Ok(PluginDefinition {
         parser,
         runtime: PluginRuntime::parse(manifest.execution.runtime.as_deref())?,
-        output_directory: PathBuf::from(".flowix").join("plugin").join(&manifest.id),
+        output_directory: PathBuf::from(".mdx").join("plugin").join(&manifest.id),
         extension: format!(".{extension}"),
         note_type: note_type.into(),
     })

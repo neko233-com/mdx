@@ -234,7 +234,7 @@ export interface DeepSeekHarnessPluginCatalog {
   profile: DeepSeekHarnessPlugin[];
 }
 
-// Agent access roots (backend ~/.flowix/agent-access.json).
+// Agent access roots (backend ~/.mdx/agent-access.json).
 // Source of truth is `agent_access::AgentAccessStore`; it mirrors notebooks and user-added folders.
 // 鏁翠唤 set 鏇夸唬閫愭潯 patch, 閬垮厤鍓嶇瀵瑰崟鏉?entry 绠?diff; 鍐欐椂璧颁箰瑙傛洿鏂?
 // (鏈湴鍏堟敼, 澶辫触 `loadInitial` 鍥炴粴)銆?
@@ -274,7 +274,7 @@ export interface NotebookTagSystemMetadata {
   pinnedByParent: Record<string, string[]>;
 }
 
-// System metadata (backend ~/.flowix/boot/system.json).
+// System metadata (backend ~/.mdx/boot/system.json).
 export const system = {
   getTagMetadata: (notebookId: string) =>
     invoke<NotebookTagSystemMetadata>('get_tag_system_metadata', { notebookId }),

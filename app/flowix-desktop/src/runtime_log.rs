@@ -63,7 +63,7 @@ pub fn record_event(level: &str, event: &str, message: impl AsRef<str>) {
 
 /// 记录 Agent (LLM chat / tool 调用) 的一次结构化事件�?///
 /// �?`record_event` 的区�?
-/// - �?`~/.flowix/logs/agent.log`, 与通用 `app.log` / `error.log` 物理隔�?,
+/// - �?`~/.mdx/logs/agent.log`, 与通用 `app.log` / `error.log` 物理隔�?,
 ///   便于「只�?Agent 错�?」时直接 `cat agent.log | grep '"level":"error"'`�?/// - JSON 形状多带 `thread_id` / `tool` / `kind` 字�? ── agent 错�?天然
 ///   �?thread 绑定, 不带 thread_id 在并行情�?��无法定位�?���??话出�?///   �??。`kind` 给前�?/ 排障脚本一�?��定的判别维度 (例�?
 ///   `kind=llm_stream` / `kind=tool_error` / `kind=stuck` / `kind=max_cycles` /
@@ -119,7 +119,7 @@ pub fn record_agent_event(
     append_json_line(path, &line);
 }
 
-/// 测试专用: 把结构化事件写到指定�?��, 不污染用�?`~/.flowix/logs/agent.log`�?/// 复用 `record_agent_event` 同样�?JSON 行形�?── 单元测试�?��言字�?集�?
+/// 测试专用: 把结构化事件写到指定�?��, 不污染用�?`~/.mdx/logs/agent.log`�?/// 复用 `record_agent_event` 同样�?JSON 行形�?── 单元测试�?��言字�?集�?
 #[cfg(test)]
 pub fn record_agent_event_to(dir: &PathBuf, level: &str, kind: &str, event: &str, message: &str) {
     let path = dir.join("agent.log");
@@ -148,10 +148,10 @@ fn append_json_line(path: PathBuf, line: &Value) {
 }
 
 // ---------------------------------------------------------------------------
-// dev-only external agent stdout dump (`~/.flowix/debug/`)
+// dev-only external agent stdout dump (`~/.mdx/debug/`)
 // ---------------------------------------------------------------------------
 
-/// dev �??才启用的 external agent stdout 原�?�?dump �?��: `~/.flowix/debug/`�?/// �?`log_dir()` (`~/.flowix/logs/`) 物理隔�? ── debug 装的�?��进程 stdout
+/// dev �??才启用的 external agent stdout 原�?�?dump �?��: `~/.mdx/debug/`�?/// �?`log_dir()` (`~/.mdx/logs/`) 物理隔�? ── debug 装的�?��进程 stdout
 /// 原文全量, 体量大且�?���?��户笔记内�? �?dev 构建写入, release 不触碰�?
 pub fn debug_dir() -> PathBuf {
     user_config_dir().join("debug")
@@ -161,7 +161,7 @@ pub fn debug_dir() -> PathBuf {
 /// agent.log (单�? claude 运�?�?��千�?, �?��锁避免拖慢常规日志�?
 static DEBUG_WRITE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
-/// �?dev 构建: �?external agent (claude / codex) 子进�?stdout 的一行原�?/// JSONL 追加 dump �?`~/.flowix/debug/<agent>-<run_id>.jsonl`�?///
+/// �?dev 构建: �?external agent (claude / codex) 子进�?stdout 的一行原�?/// JSONL 追加 dump �?`~/.mdx/debug/<agent>-<run_id>.jsonl`�?///
 /// �?`record_agent_event` (�?`agent.log` 结构化事件摘�? 的区�? 这里写的�?/// 子进�?stdout 原文全量 (�?`thinking_tokens` 增量 / `tool_use` / `tool_result`
 /// 原�?�?, 供排障时 1:1 还原 vendor CLI 真实回包�?///
 /// **�?dev**: `cfg!(debug_assertions)` 门控, release 构建立即返回 ── 不建�?���?/// 不开文件, 生产�??绝不把用户笔记内�?/ agent 流数�?��盘。IO 失败静默吞掉,
@@ -174,7 +174,7 @@ pub fn dump_debug_stdout_line(agent_type: &str, _thread_id: &str, run_id: &str, 
     dump_debug_stdout_line_to(&debug_dir(), agent_type, run_id, line);
 }
 
-/// `dump_debug_stdout_line` 的核心写入逻辑, 接受任意�?�� ── 供单测在不污�?/// 用户 `~/.flowix/debug/` 的前提下�?��行为。不�?dev 门控 (test 都是 debug
+/// `dump_debug_stdout_line` 的核心写入逻辑, 接受任意�?�� ── 供单测在不污�?/// 用户 `~/.mdx/debug/` 的前提下�?��行为。不�?dev 门控 (test 都是 debug
 /// profile, 门控恒真)�?
 fn dump_debug_stdout_line_to(dir: &PathBuf, agent_type: &str, run_id: &str, line: &str) {
     if fs::create_dir_all(dir).is_err() {

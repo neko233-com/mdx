@@ -1514,7 +1514,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
   }
 
   // 消息链接点击委托 ── AgentThreadCard 是只读 NodeView, 不使用编辑器正文的
-  // link hover tooltip。这里本地接管点击, 保留 flowix:// 深链和普通外链打开能力。
+  // link hover tooltip。这里本地接管点击, 保留 mdx:// 深链和普通外链打开能力。
   private handleBodyClick(event: MouseEvent): void {
     const target = event.target as HTMLElement | null;
     if (!target) return;
@@ -1551,7 +1551,7 @@ export class AgentThreadCardView implements ProseMirrorNodeView {
     }
     const href = normalizePlainLinkHref(rawHref);
     if (!href) return;
-    if (href.startsWith("flowix://")) {
+    if (href.startsWith("mdx://")) {
       void openNoteByDeepLink(href);
       return;
     }

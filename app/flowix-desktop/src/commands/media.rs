@@ -1,7 +1,7 @@
 //! Media resource IPC.
 //!
 //! Media bytes stay in the notebook. User properties and resource identity are
-//! stored in the notebook-local `.flowix/notebook.db`.
+//! stored in the notebook-local `.mdx/notebook.db`.
 
 use std::path::{Path, PathBuf};
 

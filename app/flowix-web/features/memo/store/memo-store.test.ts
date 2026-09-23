@@ -128,12 +128,12 @@ describe('memo store list loading', () => {
     expect(useMemoStore.getState().memoListHasMore).toBe(false);
   });
 
-  it('persists sidebar navigation and normalizes middle-column-only filters', () => {
+  it('normalizes legacy conversation filters to the notes surface', () => {
     useMemoStore.getState().setActiveFilter('agents');
 
     let persisted = JSON.parse(localStorage.getItem('test-memo-store') ?? '{}');
-    expect(persisted.state.activeFilter).toBe('agents');
-    expect(useMemoStore.getState().middleColumnView).toBe('conversations');
+    expect(persisted.state.activeFilter).toBe('all');
+    expect(useMemoStore.getState().middleColumnView).toBe('notes');
     expect(persisted.state.selectedMemoId).toBe('current');
     expect(persisted.state.selectedMemo).toBeUndefined();
 

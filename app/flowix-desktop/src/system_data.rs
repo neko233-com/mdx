@@ -5,9 +5,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-/// Legacy app-owned system metadata stored at `~/.flowix/boot/system.json`.
+/// Legacy app-owned system metadata stored at `~/.mdx/boot/system.json`.
 /// New notebook-scoped state is written through `read_notebook`/
-/// `write_notebook` to `<notebook>/.flowix/system.json`.
+/// `write_notebook` to `<notebook>/.mdx/system.json`.
 pub struct SystemData {
     path: PathBuf,
     data: RwLock<SystemFile>,
@@ -124,11 +124,11 @@ impl SystemData {
         Ok(())
     }
 
-    /// Read notebook-scoped metadata from `<notebook>/.flowix/system.json`.
+    /// Read notebook-scoped metadata from `<notebook>/.mdx/system.json`.
     /// A missing file is returned as `None`; callers may migrate legacy global
     /// state before creating it.
     pub fn read_notebook(root: &Path) -> std::io::Result<Option<SystemFile>> {
-        let flowix = root.join(".flowix");
+        let flowix = root.join(".mdx");
         if fs::symlink_metadata(&flowix)
             .map(|metadata| metadata.file_type().is_symlink())
             .unwrap_or(false)
@@ -150,7 +150,7 @@ impl SystemData {
 
     /// Atomically write notebook-scoped metadata to `<notebook>/.flowix`.
     pub fn write_notebook(root: &Path, data: &SystemFile) -> std::io::Result<()> {
-        let flowix = root.join(".flowix");
+        let flowix = root.join(".mdx");
         if fs::symlink_metadata(&flowix)
             .map(|metadata| metadata.file_type().is_symlink())
             .unwrap_or(false)
@@ -308,7 +308,7 @@ mod tests {
         let target = temp.path().join("target");
         fs::create_dir_all(&root).unwrap();
         fs::create_dir_all(&target).unwrap();
-        std::os::unix::fs::symlink(&target, root.join(".flowix")).unwrap();
+        std::os::unix::fs::symlink(&target, root.join(".mdx")).unwrap();
         assert!(SystemData::write_notebook(&root, &SystemFile::default()).is_err());
     }
 }

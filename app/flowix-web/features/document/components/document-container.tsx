@@ -550,6 +550,7 @@ export function DocumentContainer({
         {!state.isLoading && !usesCodeEditor && state.fullContent && (
           <LazyDocumentEditor
             memoId={memoId ?? undefined}
+            documentPath={filePath}
             transitionId={transitionId}
             ref={editorHandleRef}
             key={documentInstanceKey}

@@ -1,7 +1,7 @@
 [package]
 name = "flowix-desktop"
 version.workspace = true
-description = "Flowix - AI Note Taking App"
+description = "MDX local Markdown editor"
 authors = ["you"]
 edition.workspace = true
 default-run = "flowix-desktop"

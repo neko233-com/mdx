@@ -27,16 +27,17 @@ describe('MemoListViewTabs', () => {
     host.remove();
   });
 
-  it('commits a pointer tab intent before the later click phase', async () => {
+  it('shows only the notes entry and commits a pointer intent before click', async () => {
     const onChange = vi.fn();
     await act(async () => {
       root.render(<MemoListViewTabs activeTab="notes" onChange={onChange} />);
     });
 
     const button = host.querySelector<HTMLButtonElement>(
-      '[data-memo-list-view-tab="conversations"]',
+      '[data-memo-list-view-tab="notes"]',
     );
     expect(button).not.toBeNull();
+    expect(host.querySelector('[data-memo-list-view-tab="conversations"]')).toBeNull();
 
     await act(async () => {
       button!.dispatchEvent(new MouseEvent('pointerdown', {
@@ -51,7 +52,7 @@ describe('MemoListViewTabs', () => {
     });
 
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange).toHaveBeenCalledWith('conversations');
+    expect(onChange).toHaveBeenCalledWith('notes');
   });
 
   it('keeps keyboard activation on the click path', async () => {
@@ -61,7 +62,7 @@ describe('MemoListViewTabs', () => {
     });
 
     const button = host.querySelector<HTMLButtonElement>(
-      '[data-memo-list-view-tab="conversations"]',
+      '[data-memo-list-view-tab="notes"]',
     );
     await act(async () => {
       button!.dispatchEvent(new MouseEvent('click', {
@@ -71,6 +72,6 @@ describe('MemoListViewTabs', () => {
     });
 
     expect(onChange).toHaveBeenCalledOnce();
-    expect(onChange).toHaveBeenCalledWith('conversations');
+    expect(onChange).toHaveBeenCalledWith('notes');
   });
 });

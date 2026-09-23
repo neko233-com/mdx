@@ -31,7 +31,7 @@ describe('plugin run store', () => {
       agentType: 'codex',
       artifact: {
         pluginId: 'mindmap',
-        path: '/notes/.flowix/plugin/mindmap/output.md',
+        path: '/notes/.mdx/plugin/mindmap/output.md',
         name: 'Roadmap',
         createdAt: '2026-09-05T00:00:00Z',
         format: 'markdown',

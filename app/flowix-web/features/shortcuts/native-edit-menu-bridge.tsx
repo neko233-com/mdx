@@ -5,9 +5,9 @@ import { getAction } from '@/lib/shortcuts/registry';
 import { getPlatform } from '@/lib/shortcuts/platform';
 import { subscribe } from '@platform/tauri/event-bus';
 
-const SELECT_ALL_EVENT = 'flowix://editor-select-all';
-const UNDO_EVENT = 'flowix://editor-undo';
-const REDO_EVENT = 'flowix://editor-redo';
+const SELECT_ALL_EVENT = 'mdx://editor-select-all';
+const UNDO_EVENT = 'mdx://editor-undo';
+const REDO_EVENT = 'mdx://editor-redo';
 
 function selectFocusedNativeField(): boolean {
   const focused = document.activeElement;

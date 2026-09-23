@@ -503,7 +503,7 @@ export function AgentConversationDetail({
         );
         const href = normalizePlainLinkHref(rawHref);
         if (!href) return;
-        if (href.startsWith('flowix://')) {
+        if (href.startsWith('mdx://')) {
           await openNoteByDeepLink(href);
           return;
         }

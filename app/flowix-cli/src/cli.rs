@@ -6,7 +6,7 @@ use clap::{Arg, ArgAction, Command};
 
 use crate::errors::CliError;
 
-pub(crate) const DISPLAY_BIN: &str = "flowix";
+pub(crate) const DISPLAY_BIN: &str = "mdx";
 
 /// 解析后的 CLI 命令。
 #[derive(Debug)]
@@ -83,7 +83,7 @@ pub enum Cli {
         shell: String,
     },
     /// Model Context Protocol over stdio。向外部 Agent 暴露唯一工具
-    /// `memo`，工具参数采用受限的 Flowix CLI 语法。
+    /// `memo`，工具参数采用受限的 MDX CLI 语法。
     Mcp,
 }
 
@@ -216,8 +216,8 @@ pub(crate) fn parse(args: &[String]) -> Result<Option<Cli>, CliError> {
 pub(crate) fn cli_command() -> Command {
     Command::new(DISPLAY_BIN)
         .version(env!("CARGO_PKG_VERSION"))
-        .about("Manage local Flowix notebooks, Markdown notes, and artifacts")
-        .after_help("For Markdown content, --file is recommended (especially on Windows PowerShell 5.1). Files must be UTF-8. On Windows, stdin is opt-in with --stdin because PowerShell may corrupt non-ASCII text. Examples:\n  flowix create <notebook> --file body.md --json\n  flowix write <id> --file body.md --json\n  flowix create <notebook> --stdin --json\n  flowix list\n  flowix search TODO --tag project/flowix --limit 20\n  flowix mcp")
+        .about("Manage local MDX notebooks, Markdown notes, and artifacts")
+        .after_help("For Markdown content, --file is recommended (especially on Windows PowerShell 5.1). Files must be UTF-8. On Windows, stdin is opt-in with --stdin because PowerShell may corrupt non-ASCII text. Examples:\n  mdx create <notebook> --file body.md --json\n  mdx write <id> --file body.md --json\n  mdx create <notebook> --stdin --json\n  mdx list\n  mdx search TODO --tag project/mdx --limit 20\n  mdx mcp")
         .arg(
             Arg::new("json")
                 .long("json")
@@ -337,7 +337,7 @@ pub(crate) fn cli_command() -> Command {
                 ),
         )
         .subcommand(Command::new("completion").about("Generate shell completion").arg(required_arg("shell")))
-        .subcommand(Command::new("mcp").about("Run the Flowix MCP server over stdio"))
+        .subcommand(Command::new("mcp").about("Run the MDX MCP server over stdio"))
 }
 
 fn required_arg(name: &'static str) -> Arg {

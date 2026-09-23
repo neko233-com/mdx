@@ -20,14 +20,14 @@ pub const MINDMAP_VERSION: &str = "0.2.0";
 pub const MINDMAP_NOTE_TYPE: &str = "mindmap";
 pub const MINDMAP_RENDERER: &str = "markmap";
 pub const MINDMAP_PARSER: &str = "mindmap-markdown";
-pub const MINDMAP_OUTPUT_DIRECTORY: &str = ".flowix/plugin/mindmap";
+pub const MINDMAP_OUTPUT_DIRECTORY: &str = ".mdx/plugin/mindmap";
 
 pub const WEBPAGE_PLUGIN_ID: &str = "webpage";
 pub const WEBPAGE_VERSION: &str = "0.1.0";
 pub const WEBPAGE_NOTE_TYPE: &str = "webpage";
 pub const WEBPAGE_RENDERER: &str = "webpage";
 pub const WEBPAGE_PARSER: &str = "html";
-pub const WEBPAGE_OUTPUT_DIRECTORY: &str = ".flowix/plugin/webpage";
+pub const WEBPAGE_OUTPUT_DIRECTORY: &str = ".mdx/plugin/webpage";
 
 pub const MINDMAP_MANIFEST: &str = r#"{
   "schemaVersion": 2,
@@ -46,7 +46,7 @@ pub const MINDMAP_MANIFEST: &str = r#"{
   "discovery": { "noteType": "mindmap" },
   "output": {
     "format": "markdown",
-    "directory": ".flowix/plugin/mindmap",
+    "directory": ".mdx/plugin/mindmap",
     "extension": ".md",
     "renderer": "markmap",
     "parser": "mindmap-markdown"
@@ -70,7 +70,7 @@ pub const WEBPAGE_MANIFEST: &str = r#"{
   "discovery": { "noteType": "webpage" },
   "output": {
     "format": "html",
-    "directory": ".flowix/plugin/webpage",
+    "directory": ".mdx/plugin/webpage",
     "extension": ".html",
     "renderer": "webpage",
     "parser": "html"
@@ -263,7 +263,7 @@ fn load_installed_definition(path: &Path) -> Result<ArtifactDefinition, String> 
     let parser = validated.parser.key().to_string();
     let extension = validated.extension.trim_start_matches('.').to_string();
     let note_type = validated.note_type;
-    let output_directory = format!(".flowix/plugin/{}", manifest.id);
+    let output_directory = format!(".mdx/plugin/{}", manifest.id);
     Ok(ArtifactDefinition {
         description: PluginToolDescription {
             id: manifest.id,

@@ -41,7 +41,7 @@ export function buildMcpConfigSnippets(command: string, genericTitle: string): M
     {
       id: 'generic',
       title: genericTitle,
-      content: JSON.stringify({ mcpServers: { flowix: sharedServer } }, null, 2),
+      content: JSON.stringify({ mcpServers: { mdx: sharedServer } }, null, 2),
     },
   ];
 }
@@ -88,7 +88,7 @@ export function McpSection() {
     void refreshIfStale();
   }, [refreshIfStale]);
 
-  const command = status?.commandPath || 'flowix';
+  const command = status?.commandPath || 'mdx';
   const snippets = useMemo(
     () => buildMcpConfigSnippets(command, t('preferences.mcp.generic')),
     [command, t],

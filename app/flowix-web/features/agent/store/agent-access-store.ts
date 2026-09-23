@@ -1,6 +1,6 @@
 /**
  * Agent 可访问目录 store ── zustand 镜像后端
- * `~/.flowix/agent-access.json` 的整份 config。 与 `user-settings-store`
+ * `~/.mdx/agent-access.json` 的整份 config。 与 `user-settings-store`
  * 不同, 本 store 没有 persist (后端是真源), 走 IPC + 跨窗口事件同步。
  *
  * 写操作 (`addFolder`) 走乐观更新: 本地先
@@ -19,11 +19,11 @@ import type {
 } from "@/lib/types/agent-access";
 import type { AgentTypeKey, FilesConfig } from "@/types/agent";
 
-// This store mirrors `~/.flowix/agent-access.json`.
+// This store mirrors `~/.mdx/agent-access.json`.
 // It owns defaults for newly created agent-thread-card instances and keeps the
 // global entries list (folder metadata pool: name / missing / bookmark).
 // Real conversation runs derive cwd from the current notebook and add-dir
-// roots from that notebook's `.flowix/agent.json` (see
+// roots from that notebook's `.mdx/agent.json` (see
 // agent-runtime-spec::buildAgentRuntimeConfig), not from instance.files.
 
 export type AgentAccessErrorCode =
@@ -62,7 +62,7 @@ export interface AgentAccessState {
     agentType: AgentTypeKey,
     patch: AgentAccessDefaultRuntime,
   ) => Promise<void>;
-  /** Persist notebook add-dir roots to `.flowix/agent.json`. */
+  /** Persist notebook add-dir roots to `.mdx/agent.json`. */
   setDefaultFiles: (
     notebookId: string | null | undefined,
     files: FilesConfig,
@@ -96,7 +96,7 @@ export const useAgentAccessStore = create<AgentAccessState>((set, get) => ({
     const entry = makeLocalFolderEntry(path, name);
     const prev = get().config;
     // Global entries are metadata/authorization only; notebook add-dir
-    // membership is persisted separately in `.flowix/agent.json`.
+    // membership is persisted separately in `.mdx/agent.json`.
     const optimistic = {
       ...prev,
       entries: [...prev.entries, entry],

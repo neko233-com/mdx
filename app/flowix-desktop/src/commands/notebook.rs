@@ -2,7 +2,7 @@
 //! `set_current_notebook` �?`switch_notebook_and_rebuild` helper, 触发
 //! watcher rebind + 磁盘对账 + 后台索引 rebuild�?//!
 //! �?/ �?/ �?/ 清空 四个写操作都会同步更�?`agent_access` store
-//! (`~/.flowix/agent-access.json`), 任何 entry 真改了之�?emit
+//! (`~/.mdx/agent-access.json`), 任何 entry 真改了之�?emit
 //! `agent-access-changed` 事件, 其它窗口 React 树收到后从�?盘重�?load�?
 use crate::events as dispatcher;
 use serde::Serialize;
@@ -149,7 +149,7 @@ fn default_notebook_path_without_create(name: &str) -> Result<PathBuf, String> {
     let documents = dirs::document_dir()
         .or_else(|| dirs::home_dir().map(|home| home.join("Documents")))
         .ok_or_else(|| "DOCUMENTS_DIR_UNAVAILABLE".to_string())?;
-    Ok(documents.join("flowix").join(safe_name))
+    Ok(documents.join("mdx").join(safe_name))
 }
 
 fn default_notebook_path(name: &str) -> Result<PathBuf, String> {
@@ -353,14 +353,6 @@ fn run_notebook_import(app: AppHandle, notebook_id: String) {
             report.removed
         );
 
-        tracing::info!("[create_notebook] seed onboarding start id={}", notebook_id);
-        match memo_file.seed_onboarding_docs_for_notebook_id(&notebook_id) {
-            Ok(true) => tracing::info!("[create_notebook] seeded onboarding documents"),
-            Ok(false) => tracing::debug!(
-                "[create_notebook] onboarding documents skipped (notebook already has documents)"
-            ),
-            Err(error) => return Err(format!("seed onboarding documents failed: {error}")),
-        }
         Ok::<(), String>(())
     })();
 

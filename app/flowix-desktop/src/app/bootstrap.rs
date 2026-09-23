@@ -49,7 +49,7 @@ pub fn run() {
         ),
     );
 
-    // �?��时在 `~/.local/bin/flowix-cli` 建一�?symlink。�?情�?
+    // �?��时在 `~/.local/bin/mdx-cli` 建一�?symlink。�?情�?
     // `cli_link` 模块: 幂等 (每�?�?��都跑, 已存在就不动), 失败�?warn
     // This is idempotent and failures do not block GUI startup.
     cli_link::ensure_cli_symlink();
@@ -78,12 +78,12 @@ pub fn run() {
         }),
     );
 
-    // 笔�?�?��册表真源�?~/.flowix/index.db (SQLite); `MemoFile::open_index_db`
+    // 笔�?�?��册表真源�?~/.mdx/index.db (SQLite); `MemoFile::open_index_db`
     // 首�?�??时建表�?这里不需要任何�?盘迁�?── �?`notebook.json` �?��已废�?
     let memo_file = flowix_core::memo_file::MemoFile::new(user_config_dir.clone());
 
     // Legacy system metadata remains available as a migration source; new
-    // notebook tag state is persisted under each notebook's `.flowix/`.
+    // notebook tag state is persisted under each notebook's `.mdx/`.
     let system_data_path = user_config_dir.join("boot").join("system.json");
     let system_data = match SystemData::new(system_data_path.clone()) {
         Ok(store) => store,
@@ -96,7 +96,7 @@ pub fn run() {
         }
     };
 
-    // External CLI 璺緞閰嶇疆 (~/.flowix/agent-external-config.json) 鈹€鈹€
+    // External CLI 璺緞閰嶇疆 (~/.mdx/agent-external-config.json) 鈹€鈹€
     // 作为 codex/claude/gemini/hermes/openclaw 执�?�?��的唯一参照�?
     let agent_external_config_path = user_config_dir.join("agent-external-config.json");
     let agent_external_config = match AgentExternalConfig::new(agent_external_config_path.clone()) {
@@ -390,7 +390,7 @@ pub fn run() {
             );
 
             // release 构建不包�??分支�?用户随时�?�� F12 / Ctrl+Shift+I 切换�?
-            // 鈹€鈹€ spawn flowix-cli sidecar 鈹€鈹€
+            // 鈹€鈹€ spawn mdx-cli sidecar 鈹€鈹€
             // 必须�?setup �?��, 此时 AppState 已经 manage, IPC 调用方可�?
             // 拿到 (虽然还没�?handle ── 失败时返 "not yet spawned" �?�?
             Ok(())
@@ -467,7 +467,7 @@ pub fn run() {
             commands::agent_access::set_agent_access,
             commands::agent_access::get_notebook_agent_configs,
             commands::agent_access::set_notebook_agent_config,
-            // System metadata (JSON, ~/.flowix/boot/system.json)
+            // System metadata (JSON, ~/.mdx/boot/system.json)
             commands::kv::get_tag_system_metadata,
             commands::kv::set_tag_system_layout,
             commands::kv::set_tag_system_hidden,
@@ -910,7 +910,7 @@ fn start_post_startup_services(
 }
 
 fn handle_second_instance(app: &tauri::AppHandle, args: Vec<String>) {
-    // 二�?�?��: 区分 markdown 文件�?���?flowix:// 深链�?    // 两个通道�?��同时触发 (用户�?`xdg-open foo.md flowix://memo/abc123` �?��)�?
+    // 二�?�?��: 区分 markdown 文件�?���?mdx:// 深链�?    // 两个通道�?��同时触发 (用户�?`xdg-open foo.md mdx://memo/abc123` �?��)�?
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         if let Err(error) = app.state::<AppState>().startup.wait_until_ready() {
@@ -933,7 +933,7 @@ fn register_deep_links(app: &mut tauri::App) {
     use tauri_plugin_deep_link::DeepLinkExt;
 
     // 开发期每�?�?��都注册一次幂等；正式打包�?installer 会接管，运�?时注册仍�?��漏�?
-    let _ = app.deep_link().register("flowix");
+    let _ = app.deep_link().register("mdx");
 
     // macOS / Windows: OS 把深链投�?running app, 通过 deep-link 插件回调派发�?
     let app_handle = app.handle().clone();

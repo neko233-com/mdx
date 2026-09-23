@@ -42,7 +42,7 @@ export const useSettingsStore = create<SettingsStore>()(
       memoListVisible: true,
       noteNavigationVisible: false,
       toolbarCollapsed: false,
-      propertiesVisible: true,
+      propertiesVisible: false,
       setReasoningCollapsed: (collapsed) => set({ reasoningCollapsed: collapsed }),
       toggleReasoningCollapsed: () =>
         set((state) => ({ reasoningCollapsed: !state.reasoningCollapsed })),
@@ -63,6 +63,12 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: STORAGE_KEYS.SETTINGS,
+      version: 1,
+      migrate: (persisted, version) => {
+        const previous = persisted as Pick<SettingsStore,
+          'reasoningCollapsed' | 'appview' | 'memoListVisible' | 'noteNavigationVisible' | 'toolbarCollapsed' | 'propertiesVisible'>;
+        return version < 1 ? { ...previous, propertiesVisible: false } : previous;
+      },
       partialize: (state) => ({
         reasoningCollapsed: state.reasoningCollapsed,
         appview: state.appview,

@@ -1,12 +1,12 @@
 ﻿{
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Flowix Dev",
-  "mainBinaryName": "Flowix Dev",
-  "identifier": "com.flowix.app.dev",
+  "productName": "MDX Dev",
+  "mainBinaryName": "MDX Dev",
+  "identifier": "com.neko233.mdx.dev",
   "app": {
     "windows": [
       {
-        "title": "Flowix Dev",
+        "title": "MDX Dev",
         "transparent": false,
         "decorations": false,
         "width": 1100,

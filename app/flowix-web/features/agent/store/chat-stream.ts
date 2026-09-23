@@ -57,7 +57,7 @@ export async function dispatchChatStream({
   conversationTitle,
 }: DispatchChatStreamArgs): Promise<void> {
   // Thread Card 首次运行前会冻结 workspaceSnapshot，后续 turn 只使用快照。
-  // 没有快照的调用读取 notebook-local `.flowix/agent.json` add-dirs。
+  // 没有快照的调用读取 notebook-local `.mdx/agent.json` add-dirs。
   const workspaceSnapshot =
     normalizeConversationWorkspaceState(instanceRuntimeConfig)?.desired ??
     normalizeWorkspaceSnapshot(instanceRuntimeConfig?.workspaceSnapshot);

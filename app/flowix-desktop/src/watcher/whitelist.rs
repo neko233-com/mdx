@@ -39,7 +39,7 @@ impl Default for WhitelistConfig {
     fn default() -> Self {
         Self {
             skip_dirs: vec![
-                ".flowix".into(),
+                ".mdx".into(),
                 ".metadata".into(),
                 ".git".into(),
                 ".DS_Store".into(),
@@ -96,7 +96,7 @@ impl WhitelistConfig {
         // expose internal versions or plugin artifacts as notes.
         if path
             .components()
-            .any(|component| component.as_os_str() == ".flowix")
+            .any(|component| component.as_os_str() == ".mdx")
         {
             return Err(DropReason::MetadataDirectory);
         }
@@ -228,7 +228,7 @@ mod tests {
         let mut w = WhitelistConfig::default();
         w.watch_hidden = true;
         assert_eq!(
-            w.allows(Path::new("/x/.flowix/versions/memo/v_1.md")),
+            w.allows(Path::new("/x/.mdx/versions/memo/v_1.md")),
             Err(DropReason::MetadataDirectory)
         );
     }

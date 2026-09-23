@@ -205,7 +205,7 @@ export interface RuntimeConfig {
    * 创建该 instance 时所属 notebook 的 id 快照 (如 `nb_<ts>` / `nb_default`)。
    *
    * 非运行时配置 ── 它不发给 LLM, 仅用于把卡片关联到所属 notebook 的
-   * `.flowix/agent.json` add-dir 配置。借 `runtimeConfig` 的
+   * `.mdx/agent.json` add-dir 配置。借 `runtimeConfig` 的
    * JSON 透传通道一起落 SQLite (后端 `runtime_config` 是裸 TEXT, 不解析内部),
    * 与 `_frozen` 同构 ── 无需 backend schema 升级。
    *

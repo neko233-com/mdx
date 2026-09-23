@@ -1,4 +1,4 @@
-import { EjectIcon, StarFourIcon } from '@phosphor-icons/react';
+import { EjectIcon } from '@phosphor-icons/react';
 import {
   Cloud,
   FileCog,
@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import type { I18nKey } from '@/lib/i18n';
 import type { SettingsTab } from '@features/preferences/sections';
-import { AgentIcon } from '@features/agent/components/agent-icon';
 
 export type PreferencesTabItem = {
   id: SettingsTab;
@@ -43,8 +42,6 @@ export const PREFERENCE_TAB_GROUPS: readonly PreferencesTabGroup[] = [
   {
     labelKey: 'preferences.groups.ai',
     tabs: [
-      { id: 'dsh', labelKey: 'preferences.tabs.dsh', icon: <AgentIcon typeKey="deepseek-harness" alt="" className="w-4 h-4 object-contain" /> },
-      { id: 'aiAgent', labelKey: 'preferences.tabs.aiAgent', icon: <StarFourIcon className="w-4 h-4" weight="regular" /> },
       { id: 'mcp', labelKey: 'preferences.tabs.mcp', icon: <EjectIcon className="w-4 h-4" weight="regular" /> },
       { id: 'cli', labelKey: 'preferences.tabs.cli', icon: <SquareTerminal className="w-4 h-4" /> },
       { id: 'connections', labelKey: 'preferences.tabs.connections', icon: <Link2 className="w-4 h-4" /> },

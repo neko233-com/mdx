@@ -169,6 +169,16 @@ describe('browser column store', () => {
     });
   });
 
+  it('starts the Typora layout with the old split column hidden', async () => {
+    localStorage.setItem('flowix-browser-column-storage', JSON.stringify({
+      state: { visible: true, tabs: [tab('old')], activeTabId: 'old', splitRatio: 0.5 },
+      version: 3,
+    }));
+    await useBrowserColumnStore.persist.rehydrate();
+    expect(useBrowserColumnStore.getState()).toMatchObject({ visible: false, activeTabId: 'old' });
+    expect(useBrowserColumnStore.getState().tabs).toHaveLength(1);
+  });
+
   it('keeps web navigation runtime separate from the durable tab target', () => {
     const store = useBrowserColumnStore.getState();
     store.openTab({
@@ -259,7 +269,7 @@ describe('browser column store', () => {
     await useBrowserColumnStore.persist.rehydrate();
 
     expect(useBrowserColumnStore.getState()).toMatchObject({
-      visible: true,
+      visible: false,
       splitRatio: 0.6,
       activeTabId: 'legacy-web',
       tabs: [

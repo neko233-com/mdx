@@ -10,17 +10,17 @@ vi.mock('@features/editor/extensions/attachment-link/utils', () => ({
   isVideoUrl: (value: string) => value.endsWith('.mp4'),
 }));
 
-import { ImageAttachment } from './view-image';
+import { imageAttachmentForDocument } from './view-image';
 import { VideoAttachment } from './view-video';
 
 const editors: Editor[] = [];
 
-function createEditor(content: string): Editor {
+function createEditor(content: string, documentPath?: string): Editor {
   const host = document.createElement('div');
   document.body.append(host);
   const editor = new Editor({
     element: host,
-    extensions: [StarterKit, ImageAttachment, VideoAttachment, Markdown],
+    extensions: [StarterKit, imageAttachmentForDocument(documentPath), VideoAttachment, Markdown],
     content,
     contentType: 'markdown',
   });
@@ -37,6 +37,12 @@ afterEach(() => {
 });
 
 describe('media style metadata', () => {
+  it('resolves relative images for display and preserves portable Markdown', () => {
+    const editor = createEditor('![Photo](../attachments/photo.png)', '/notes/drafts/post.md');
+    expect(editor.state.doc.child(0).attrs.storageKey).toBe('/notes/attachments/photo.png');
+    expect(editor.getMarkdown()).toContain('![Photo](../attachments/photo.png)');
+  });
+
   it('restores and serializes versioned image and video styles', () => {
     const editor = createEditor([
       '<!-- flowix:media {"flowix":"media","version":1,"style":{"widthPercent":60,"align":"right"}} -->',

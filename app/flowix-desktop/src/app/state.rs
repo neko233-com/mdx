@@ -45,9 +45,9 @@ pub struct AppState {
     pub user_config: Arc<UserConfigStore>,
     pub cloud_sync: Arc<flowix_sync::SyncManager>,
     /// Legacy system metadata reader used to migrate notebook tag state into
-    /// each notebook's `.flowix/system.json`.
+    /// each notebook's `.mdx/system.json`.
     pub system_data: SystemData,
-    /// External CLI 路径配置 (`~/.flowix/agent-external-config.json`) ──
+    /// External CLI 路径配置 (`~/.mdx/agent-external-config.json`) ──
     /// codex/claude/hermes/opencode 执行路径的唯一参照, 启动探测写入,
     /// 运行时 `resolve_external_cli` 命中即用。
     pub agent_external_config: AgentExternalConfig,
@@ -70,7 +70,7 @@ pub struct AppState {
     pub agent_lifecycle: Arc<crate::agent_lifecycle::AgentLifecycleService>,
     pub thread_manager: Arc<ThreadManager>,
     /// Agent 可访问目录 (notebook + 用户额外 folder), 持久化在
-    /// `~/.flowix/agent-access.json`。驱动 external agent 的
+    /// `~/.mdx/agent-access.json`。驱动 external agent 的
     /// 工作区 / 资料目录过滤。
     pub agent_access: Arc<AgentAccessStore>,
     pub security_bookmarks: Arc<SecurityBookmarkStore>,
