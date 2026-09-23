@@ -31,8 +31,18 @@ use tauri::{Emitter, Listener, Manager};
 pub fn run() {
     install_panic_log_hook();
 
+    #[cfg(debug_assertions)]
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
+        .init();
+    // A bundled desktop process has no durable stderr. Launching from Explorer
+    // or Finder can inherit a pipe that closes immediately; tracing's default
+    // writer then panics and leaves startup blocked. Structured product events
+    // and panic reports still go to ~/.mdx/logs through runtime_log.
+    #[cfg(not(debug_assertions))]
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(std::io::sink)
         .init();
 
     let app_data_path = get_app_data_path();
