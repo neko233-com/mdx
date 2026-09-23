@@ -125,7 +125,7 @@ async function openOsMarkdownFiles(filePaths: string[]): Promise<void> {
     await openNoteByTarget(resolved);
     if (createdNotebookId) {
       void notebookRepository.startImport(createdNotebookId).catch((error) => {
-        console.warn('[OS file open] background notebook import failed:', error);
+        toast.error(String(error));
       });
     }
   }
@@ -237,7 +237,7 @@ function ExternalMarkdownOpenDialog() {
       launchFilesConsumed = true;
       void memos.getLaunchOpenFiles().then((paths) => {
         if (paths.length) queueOsMarkdownOpen(paths);
-      }).catch((error) => console.warn('[OS file open] launch file lookup failed:', error));
+      }).catch((error) => toast.error(String(error)));
     }
     return () => {
       unlisten();
