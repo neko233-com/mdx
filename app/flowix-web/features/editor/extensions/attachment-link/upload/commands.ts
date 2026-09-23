@@ -5,6 +5,8 @@ import { createAttachmentUpload, createAttachmentUploadFromPaths } from './stora
 import { runTrackedUpload } from './pending';
 import type { OpenFileDialogParams } from './file-source';
 import { isTauriApp } from './file-source';
+import { fileNameFromPath, mimeTypeFromName, type StoredAsset } from './file-source';
+import { reportUploadFailure } from './feedback';
 
 function pickBrowserFiles(params: OpenFileDialogParams | undefined, signal: AbortSignal): Promise<File[]> {
     return new Promise((resolve) => {
@@ -47,8 +49,31 @@ export function createAttachmentCommands(memoId?: string): Partial<RawCommands> 
                             accept: params?.accept ?? null,
                         });
                         if (!paths?.length || signal.aborted) return [];
+                        if (params?.uploadToPicGo) {
+                            const assets: StoredAsset[] = [];
+                            for (const path of paths) {
+                                if (signal.aborted) break;
+                                const name = fileNameFromPath(path);
+                                try {
+                                    const url = await invoke<string>('upload_image_to_picgo', { sourcePath: path });
+                                    assets.push({
+                                        kind: 'image',
+                                        url,
+                                        name,
+                                        fileName: name,
+                                        mimeType: mimeTypeFromName(name),
+                                        size: 0,
+                                        storageKey: null,
+                                    });
+                                } catch (error) {
+                                    if (!signal.aborted) reportUploadFailure(error);
+                                }
+                            }
+                            return assets;
+                        }
                         return (await createAttachmentUploadFromPaths(paths, memoId, signal)).assets;
                     }
+                    if (params?.uploadToPicGo) return [];
                     const files = await pickBrowserFiles(params, signal);
                     if (signal.aborted) return [];
                     return (await createAttachmentUpload(files, undefined, undefined, memoId, signal)).assets;

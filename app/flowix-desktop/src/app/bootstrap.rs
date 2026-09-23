@@ -410,6 +410,7 @@ pub fn run() {
             commands::product::get_product_info,
             commands::product::get_diagnostics,
             commands::product::open_log_dir,
+            commands::product::open_default_apps_settings,
             commands::product::reveal_in_file_manager,
             commands::plugin::plugin_list,
             commands::plugin::plugin_refresh,
@@ -566,6 +567,7 @@ pub fn run() {
             // dialog
             commands::dialog::select_directory,
             commands::dialog::select_files,
+            commands::dialog::upload_image_to_picgo,
             commands::dialog::save_file_dialog,
             commands::dialog::write_export_file,
             commands::export::export_pdf,

@@ -59,6 +59,22 @@ pub fn open_log_dir(app: AppHandle) -> Result<(), String> {
         .map_err(|err| err.to_string())
 }
 
+#[tauri::command]
+pub fn open_default_apps_settings() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer.exe")
+            .arg("ms-settings:defaultapps?registeredAppUser=MDX")
+            .spawn()
+            .map_err(|error| format!("Failed to open Default apps: {error}"))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("Default apps settings are only available on Windows".to_string())
+    }
+}
+
 /// Reveal a file in the platform file manager instead of opening it with its
 /// default application. This deliberately lives outside the opener plugin:
 /// macOS and Windows expose selection through platform-specific commands.

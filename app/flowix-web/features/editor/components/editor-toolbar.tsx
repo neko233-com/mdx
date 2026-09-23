@@ -2,7 +2,7 @@
 
 import { Editor } from '@tiptap/core';
 import { ChevronDown, MoreHorizontal } from 'lucide-react';
-import { TextHOneIcon, TextHTwoIcon, TextHThreeIcon, TextHFourIcon, TextTIcon, ListBulletsIcon, CheckSquareIcon, TextBIcon, TextUnderlineIcon, TextItalicIcon, TextStrikethroughIcon, HighlighterIcon, CodeIcon, PaperclipIcon, LinkSimpleIcon, CaretDownIcon, CaretUpIcon } from '@phosphor-icons/react';
+import { TextHOneIcon, TextHTwoIcon, TextHThreeIcon, TextHFourIcon, TextTIcon, ListBulletsIcon, CheckSquareIcon, TextBIcon, TextUnderlineIcon, TextItalicIcon, TextStrikethroughIcon, HighlighterIcon, CodeIcon, PaperclipIcon, ImageIcon, LinkSimpleIcon, CaretDownIcon, CaretUpIcon } from '@phosphor-icons/react';
 import { useEffect, useState, useRef } from 'react';
 import {
   DropdownMenu,
@@ -298,6 +298,13 @@ export function EditorToolbar({ editor, collapsed, onCollapsedChange }: EditorTo
               >
                 <PaperclipIcon size={16} weight="bold" />
                 <span>{t('editor.toolbar.addAttachment')}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="group h-7 items-center justify-start gap-3 rounded-lg px-2 py-0 text-left hover:bg-[var(--brand)] hover:text-[var(--primary-foreground)]"
+                onClick={() => editor.commands.openFileDialog({ accept: 'image/*', uploadToPicGo: true })}
+              >
+                <ImageIcon size={16} weight="bold" />
+                <span>{t('editor.toolbar.uploadToPicGo')}</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

@@ -162,6 +162,7 @@ export interface ProductInfo {
 export const product = {
   getInfo: () => invoke<ProductInfo>('get_product_info'),
   openLogDir: () => invoke<void>('open_log_dir'),
+  openDefaultAppsSettings: () => invoke<void>('open_default_apps_settings'),
   revealInFileManager: (filePath: string) => invoke<void>('reveal_in_file_manager', { filePath }),
 };
 

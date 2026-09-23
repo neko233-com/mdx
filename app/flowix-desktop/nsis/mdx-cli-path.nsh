@@ -120,6 +120,14 @@
     FileClose $0
   ${EndIf}
   !insertmacro MDX_ADD_CLI_TO_USER_PATH
+  ; Offer MDX in Windows Default apps without changing the user's existing
+  ; .md/.markdown choice. Windows requires the user to confirm that choice.
+  WriteRegStr HKCU "Software\MDX\Capabilities" "ApplicationName" "MDX"
+  WriteRegStr HKCU "Software\MDX\Capabilities" "ApplicationDescription" "Markdown editor and viewer"
+  WriteRegStr HKCU "Software\MDX\Capabilities" "ApplicationIcon" "$INSTDIR\MDX.exe,0"
+  WriteRegStr HKCU "Software\MDX\Capabilities\FileAssociations" ".md" "MDX.Markdown"
+  WriteRegStr HKCU "Software\MDX\Capabilities\FileAssociations" ".markdown" "MDX.Markdown"
+  WriteRegStr HKCU "Software\RegisteredApplications" "MDX" "Software\MDX\Capabilities"
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
@@ -128,4 +136,7 @@
   Delete "${MDX_CLI_SHIM}"
   Delete "${MDX_LEGACY_CLI_SHIM}"
   RMDir "${MDX_CLI_BIN_DIR}"
+  DeleteRegValue HKCU "Software\RegisteredApplications" "MDX"
+  DeleteRegKey HKCU "Software\MDX\Capabilities"
+  DeleteRegKey /ifempty HKCU "Software\MDX"
 !macroend

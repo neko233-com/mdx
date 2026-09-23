@@ -51,6 +51,14 @@ export function GeneralSection({ language, updateSettings }: GeneralSectionProps
     }
   };
 
+  const handleOpenDefaultApps = async () => {
+    try {
+      await product.openDefaultAppsSettings();
+    } catch {
+      toast.error(t('preferences.general.defaultMarkdown.failed'));
+    }
+  };
+
   const handleCheckProductUpdates = async () => {
     try {
       const update = await updater.checkNow();
@@ -119,6 +127,17 @@ export function GeneralSection({ language, updateSettings }: GeneralSectionProps
             : t('preferences.general.loading')}
         </span>
       </FieldRow>
+
+      {productInfo?.os === 'windows' && (
+        <FieldRow
+          title={t('preferences.general.defaultMarkdown.title')}
+          description={t('preferences.general.defaultMarkdown.description')}
+        >
+          <Button variant="outline" className="px-3" onClick={handleOpenDefaultApps}>
+            {t('preferences.general.defaultMarkdown.open')}
+          </Button>
+        </FieldRow>
+      )}
 
       <FieldRow
         title={t('preferences.general.productUpdates.title')}

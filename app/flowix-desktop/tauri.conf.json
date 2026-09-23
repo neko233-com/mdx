@@ -70,7 +70,7 @@
           "md",
           "markdown"
         ],
-        "name": "Markdown Document",
+        "name": "MDX.Markdown",
         "description": "Markdown Document",
         "mimeType": "text/markdown",
         "role": "Editor"

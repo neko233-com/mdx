@@ -6,7 +6,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::lock_utils::read_lock;
 
-use super::helpers::start_security_bookmark_access;
+use super::helpers::{can_access_document_path, start_security_bookmark_access};
 use crate::app::state::AppState;
 
 // ==================== 鍩熷唴 helper ====================
@@ -132,6 +132,87 @@ pub async fn select_files(
     .await
     .ok()
     .flatten()
+}
+
+fn picgo_uploaded_url(value: &serde_json::Value) -> Result<String, String> {
+    if value.get("success").is_some_and(|success| success == false) {
+        return Err("PICGO_UPLOAD_FAILED".to_string());
+    }
+    let url = value
+        .get("result")
+        .and_then(|result| result.as_array())
+        .and_then(|result| result.first())
+        .and_then(|url| url.as_str())
+        .or_else(|| {
+            value
+                .get("items")
+                .and_then(|items| items.as_array())
+                .and_then(|items| items.first())
+                .and_then(|item| item.get("imgUrl"))
+                .and_then(|url| url.as_str())
+        })
+        .ok_or_else(|| "PICGO_UPLOAD_FAILED".to_string())?;
+    let parsed = reqwest::Url::parse(url).map_err(|_| "PICGO_UPLOAD_FAILED".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host().is_none() {
+        return Err("PICGO_UPLOAD_FAILED".to_string());
+    }
+    Ok(url.to_string())
+}
+
+/// Explicit image-host upload. Local insertion still uses relative paths by
+/// default; this command is only called after the user picks "Upload to PicGo".
+#[tauri::command]
+pub async fn upload_image_to_picgo(
+    source_path: String,
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let path = dunce::canonicalize(&source_path).map_err(|_| "PICGO_INVALID_IMAGE".to_string())?;
+    let is_image = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" | "ico"
+            )
+        });
+    if !path.is_file() || !is_image || !can_access_document_path(&path, window.label(), &state) {
+        return Err("PICGO_INVALID_IMAGE".to_string());
+    }
+
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(90))
+        .build()
+        .map_err(|_| "PICGO_UNAVAILABLE".to_string())?;
+    let response = client
+        .post("http://127.0.0.1:36677/upload")
+        .json(&serde_json::json!({ "list": [path.to_string_lossy()] }))
+        .send()
+        .await
+        .map_err(|_| "PICGO_UNAVAILABLE".to_string())?;
+    if !response.status().is_success() {
+        return Err("PICGO_UPLOAD_FAILED".to_string());
+    }
+    let value = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|_| "PICGO_UPLOAD_FAILED".to_string())?;
+    picgo_uploaded_url(&value)
+}
+
+#[cfg(test)]
+mod picgo_tests {
+    use super::picgo_uploaded_url;
+
+    #[test]
+    fn accepts_picgo_upload_response_and_rejects_non_web_urls() {
+        let response = serde_json::json!({"success": true, "result": ["https://images.example/note.png"]});
+        assert_eq!(picgo_uploaded_url(&response).unwrap(), "https://images.example/note.png");
+        let unsafe_response = serde_json::json!({"success": true, "result": ["javascript:alert(1)"]});
+        assert!(picgo_uploaded_url(&unsafe_response).is_err());
+    }
 }
 
 #[tauri::command]

@@ -31,6 +31,7 @@ export type OpenFileDialogParams = {
     accept?: string;
     multiple?: boolean;
     replaceRange?: { from: number; to: number };
+    uploadToPicGo?: boolean;
 };
 
 export function getFileKind(file: File): 'image' | 'video' | 'file' {
