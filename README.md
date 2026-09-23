@@ -32,7 +32,7 @@ Mirror entry point:
 curl -fsSL https://ghproxy.net/https://raw.githubusercontent.com/neko233-com/mdx/main/scripts/install.sh | sh
 ```
 
-The installers try GitHub first and then [ghproxy.net](https://ghproxy.net/) if GitHub is unreachable. This is a third-party mirror; use the official release when possible. Set `MDX_DOWNLOAD_SOURCE=mirror` and optionally `MDX_MIRROR_BASE=https://your-mirror.example` for the macOS script. The PowerShell script accepts `-Source mirror -MirrorBase https://your-mirror.example` when run from a saved file. The desktop updater uses GitHub's release manifest first and a mirrored manifest second. Update artifacts are verified by Tauri's built-in public key before installation.
+The installers try GitHub first and then [ghproxy.net](https://ghproxy.net/) if GitHub is unreachable. This is a third-party mirror; use the official release when possible. Set `MDX_DOWNLOAD_SOURCE=mirror` and optionally `MDX_MIRROR_BASE=https://your-mirror.example` for the macOS script. The PowerShell script accepts `-Source mirror -MirrorBase https://your-mirror.example` when run from a saved file. The desktop updater checks the mirrored manifest first, so a GitHub connection timeout does not prevent users from checking for updates. GitHub is the secondary endpoint. Update artifacts are verified by Tauri's built-in public key before installation.
 
 Automatic update checking and installation are enabled by default. Turn them off in Preferences → General → Install updates automatically. The app registers `.md` and `.markdown` as supported document types. Windows and macOS let the user choose the default editor through system settings.
 
