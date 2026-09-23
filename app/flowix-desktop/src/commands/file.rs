@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use serde::Serialize;
-use tauri::{State, WebviewWindow};
+use tauri::{Manager, State, WebviewWindow};
 
 use crate::config::path_is_inside;
 use crate::lock_utils::read_lock;
@@ -345,47 +345,63 @@ fn read_dir_single_level(
 // ==================== IPC ====================
 
 #[tauri::command]
-pub fn get_file_tree(
+pub async fn get_file_tree(
     space_path: String,
     include_hidden_directories: Option<bool>,
-    state: State<AppState>,
+    app: tauri::AppHandle,
 ) -> Option<Vec<DocTreeItem>> {
-    let path = Path::new(&space_path);
-    start_security_bookmark_access(&state, path);
-    if !path.exists()
-        || is_internal_notebook_path(path, &state)
-        || !is_browsable_scope(path, &state)
-    {
-        return None;
-    }
-    let memo_metadata = memo_tree_metadata_for_directory(path, &state);
-    Some(read_dir_single_level(
-        path,
-        memo_metadata.as_ref(),
-        include_hidden_directories.unwrap_or(false),
-    ))
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let path = Path::new(&space_path);
+        start_security_bookmark_access(&state, path);
+        if !path.exists()
+            || is_internal_notebook_path(path, &state)
+            || !is_browsable_scope(path, &state)
+        {
+            return None;
+        }
+        let memo_metadata = memo_tree_metadata_for_directory(path, &state);
+        Some(read_dir_single_level(
+            path,
+            memo_metadata.as_ref(),
+            include_hidden_directories.unwrap_or(false),
+        ))
+    })
+    .await
+    .unwrap_or_else(|error| {
+        tracing::warn!("file tree task failed: {error}");
+        None
+    })
 }
 
 #[tauri::command]
-pub fn get_dir_children(
+pub async fn get_dir_children(
     dir_path: String,
     include_hidden_directories: Option<bool>,
-    state: State<AppState>,
+    app: tauri::AppHandle,
 ) -> Vec<DocTreeItem> {
-    let path = Path::new(&dir_path);
-    start_security_bookmark_access(&state, path);
-    if !path.exists()
-        || is_internal_notebook_path(path, &state)
-        || !is_browsable_scope(path, &state)
-    {
-        return vec![];
-    }
-    let memo_metadata = memo_tree_metadata_for_directory(path, &state);
-    read_dir_single_level(
-        path,
-        memo_metadata.as_ref(),
-        include_hidden_directories.unwrap_or(false),
-    )
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let path = Path::new(&dir_path);
+        start_security_bookmark_access(&state, path);
+        if !path.exists()
+            || is_internal_notebook_path(path, &state)
+            || !is_browsable_scope(path, &state)
+        {
+            return vec![];
+        }
+        let memo_metadata = memo_tree_metadata_for_directory(path, &state);
+        read_dir_single_level(
+            path,
+            memo_metadata.as_ref(),
+            include_hidden_directories.unwrap_or(false),
+        )
+    })
+    .await
+    .unwrap_or_else(|error| {
+        tracing::warn!("directory children task failed: {error}");
+        vec![]
+    })
 }
 
 /// 文件树可浏览作用域 ── 注册笔记本根 或 资料文件夹 (agent access
