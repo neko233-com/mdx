@@ -33,6 +33,8 @@ export interface ExternalMarkdownOpenRequest {
   filePaths: string[];
   /** Surface that initiated a file drop; system-open requests omit it. */
   destination?: 'main-third' | 'browser-column';
+  /** OS file associations open the original file in its parent folder. */
+  autoOpen?: boolean;
 }
 
 export const FLOWIX_EXTERNAL_MARKDOWN_OPEN_EVENT = 'flowix:external-markdown-open';

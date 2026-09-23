@@ -1028,8 +1028,8 @@ fn emit_open_target_if_resolved(app: &tauri::AppHandle, raw: &str) {
             dispatcher::emit_to(app, "flowix:open-target", resolved);
         } else if let Some(path) = markdown_paths.first() {
             // A Markdown file outside every registered notebook is still a
-            // valid Flowix open request. Let the UI ask which notebook should
-            // receive a copy instead of silently dropping the request.
+            // valid MDX open request. The UI opens it in place and registers
+            // its parent folder as a notebook.
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
@@ -1044,7 +1044,7 @@ fn emit_external_markdown_open(app: &tauri::AppHandle, paths: Vec<String>) {
     dispatcher::emit_to(
         app,
         "flowix:external-markdown-open",
-        serde_json::json!({ "filePaths": paths }),
+        serde_json::json!({ "filePaths": paths, "autoOpen": true }),
     );
 }
 

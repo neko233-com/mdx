@@ -68,6 +68,74 @@ interface MediaDeleteRequest {
   notebookPath: string;
 }
 
+let launchFilesConsumed = false;
+let osOpenQueue: Promise<void> = Promise.resolve();
+
+async function waitForLibraryReady(): Promise<void> {
+  if (useMemoStore.getState().startupPhase === 'ready') return;
+  await new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      unsubscribe();
+      reject(new Error('Markdown library did not become ready'));
+    }, 300_000);
+    const unsubscribe = useMemoStore.subscribe((state) => {
+      if (state.startupPhase !== 'ready' && state.startupPhase !== 'error') return;
+      window.clearTimeout(timeout);
+      unsubscribe();
+      if (state.startupPhase === 'ready') resolve();
+      else reject(new Error('Markdown library startup failed'));
+    });
+    const phase = useMemoStore.getState().startupPhase;
+    if (phase === 'ready' || phase === 'error') {
+      window.clearTimeout(timeout);
+      unsubscribe();
+      if (phase === 'ready') resolve();
+      else reject(new Error('Markdown library startup failed'));
+    }
+  });
+}
+
+function parentFolder(filePath: string): string | null {
+  const lastSeparator = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+  if (lastSeparator < 0) return null;
+  const folder = filePath.slice(0, lastSeparator + 1);
+  return /^[a-z]:[\\/]$/i.test(folder) ? folder : folder.replace(/[\\/]+$/, '') || folder;
+}
+
+async function openOsMarkdownFiles(filePaths: string[]): Promise<void> {
+  await waitForLibraryReady();
+  for (const filePath of filePaths) {
+    if (!/\.(md|markdown)$/i.test(filePath)) continue;
+    let resolved = await memos.openMemoByTarget(filePath, { emitEvent: false });
+    let createdNotebookId: string | null = null;
+    if (!resolved) {
+      const folder = parentFolder(filePath);
+      if (!folder) throw new Error(`Cannot find the parent folder for ${filePath}`);
+      const existing = await notebookRepository.list();
+      const comparable = (path: string) => path.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+      if (!existing.some((notebook) => comparable(notebook.path) === comparable(folder))) {
+        const name = folder.split(/[\\/]/).filter(Boolean).pop() || 'Markdown';
+        const created = await notebookRepository.create(name, folder) as Notebook;
+        createdNotebookId = created.id;
+      }
+      useMemoStore.getState().setNotebooks(await notebookRepository.list());
+      resolved = await memos.openMemoByTarget(filePath, { emitEvent: false });
+    }
+    if (!resolved) throw new Error(`Cannot open Markdown file: ${filePath}`);
+    await openNoteByTarget(resolved);
+    if (createdNotebookId) {
+      void notebookRepository.startImport(createdNotebookId).catch((error) => {
+        console.warn('[OS file open] background notebook import failed:', error);
+      });
+    }
+  }
+}
+
+function queueOsMarkdownOpen(filePaths: string[]): void {
+  osOpenQueue = osOpenQueue.catch(() => undefined).then(() => openOsMarkdownFiles(filePaths));
+  void osOpenQueue.catch((error) => toast.error(`Cannot open Markdown file: ${String(error)}`));
+}
+
 function filenameFromPath(filePath: string): string {
   return filePath.split(/[\\/]/).filter(Boolean).pop() ?? filePath;
 }
@@ -153,6 +221,10 @@ function ExternalMarkdownOpenDialog() {
   useEffect(() => {
     const onRequest = (next: ExternalMarkdownOpenRequest) => {
       if (!next?.filePaths?.length) return;
+      if (next.autoOpen) {
+        queueOsMarkdownOpen(next.filePaths);
+        return;
+      }
       setRequest(next);
       setNotebookId((current) => current || selectedNotebook?.id || notebooks[0]?.id || '');
     };
@@ -161,6 +233,12 @@ function ExternalMarkdownOpenDialog() {
       onRequest((event as CustomEvent<ExternalMarkdownOpenRequest>).detail);
     };
     window.addEventListener(FLOWIX_EXTERNAL_MARKDOWN_OPEN_EVENT, onWindowRequest);
+    if (!launchFilesConsumed) {
+      launchFilesConsumed = true;
+      void memos.getLaunchOpenFiles().then((paths) => {
+        if (paths.length) queueOsMarkdownOpen(paths);
+      }).catch((error) => console.warn('[OS file open] launch file lookup failed:', error));
+    }
     return () => {
       unlisten();
       window.removeEventListener(FLOWIX_EXTERNAL_MARKDOWN_OPEN_EVENT, onWindowRequest);

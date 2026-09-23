@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use crate::lock_utils::read_lock;
 use crate::watcher::path::normalize_for_compare;
-use flowix_core::memo_file::{notebook_relative_path, MemoFile, NotebookConfig};
+use flowix_core::memo_file::{notebook_relative_path, IsMd, MemoFile, NotebookConfig};
 
 use super::parser::OpenTarget;
 
@@ -96,12 +96,7 @@ fn register_in_notebook_markdown(
     abs_path: &str,
 ) -> Option<(NotebookConfig, flowix_core::memo_file::Memo)> {
     let target = Path::new(abs_path);
-    if !target.is_file()
-        || !target
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
-    {
+    if !target.is_file() || !target.is_md() {
         return None;
     }
 
@@ -339,5 +334,27 @@ mod tests {
             .find_memo_by_relative_path_for_notebook_id("nb_one", "subdir/SameName.md")
             .unwrap();
         assert_eq!(nested.id, resolved.memo_id);
+    }
+
+    #[test]
+    fn physical_markdown_extension_registers_and_opens() {
+        let (memo_file, nb_one, _nb_two) = fresh_memo_file();
+        let path = nb_one.join("Guide.markdown");
+        fs::write(&path, "# Guide\n").unwrap();
+
+        let resolved = resolve_open_target(
+            OpenTarget::PhysicalPath {
+                path: path.display().to_string(),
+                memo_id: None,
+            },
+            &memo_file,
+        )
+        .unwrap();
+
+        assert_eq!(resolved.notebook_id, "nb_one");
+        assert_eq!(
+            normalize_for_compare(Path::new(&resolved.absolute_path)),
+            normalize_for_compare(&path)
+        );
     }
 }
