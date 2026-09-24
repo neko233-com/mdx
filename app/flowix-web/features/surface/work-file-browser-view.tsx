@@ -3,7 +3,6 @@ import { DocumentContainer } from '@features/document/components/document-contai
 import { useWorkColumnStore } from '@features/workspace/store/work-column-store';
 import { openExternalTarget } from '@features/workspace/use-cases/workspace-navigation';
 import { openMediaTarget } from '@features/workspace/use-cases/workspace-navigation';
-import { openBrowserColumnTarget } from '@features/workspace/use-cases/browser-column-navigation';
 import { FileBrowserView } from './file-browser-view';
 import type { FileBrowserContext } from '@features/workspace/store/file-browser-target';
 import { toast } from '@/lib/toast';
@@ -56,9 +55,6 @@ export function WorkFileBrowserView({ props }: { props: ComponentProps<typeof Do
     ...context, kind: 'file-browser', activeFilePath: target.path,
     documentProps: { ...props, onFlushReady },
     onSelectFile: (path) => { void selectFile(path); },
-    onOpenFileInNewTab: (path) => {
-      void openBrowserColumnTarget({ ...context, kind: 'file-browser', activeFilePath: path, folderPath: null }, 'open-in-column');
-    },
     onContextChange: updateView,
     onTreeVisibleChange: (fileTreeVisible) => updateView({ fileTreeVisible }),
     onTreeWidthChange: (fileTreeWidth) => updateView({ fileTreeWidth }),

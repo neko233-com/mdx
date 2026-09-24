@@ -38,9 +38,6 @@ import { MemoListDataLoader } from '@features/memo/components/memo-list-data-loa
 import { memoRepository } from '@features/memo/services/memo-repository';
 import { initializeMainWindowStartup } from '@app/main-window-startup';
 import { clearWorkspaceDocument } from '@features/workspace/use-cases/workspace-navigation';
-import {
-  openBrowserColumnMemo,
-} from '@features/workspace/use-cases/browser-column-navigation';
 import { useI18n } from '@/lib/i18n';
 import {
   setMemoListViewPreference,
@@ -421,14 +418,6 @@ export function MemoList({
     void openMemoSession(memo, useMemoStore.getState().selectedNotebook);
   }, []);
 
-  const handleOpenMemoWindow = useCallback((memo: MemoItem) => {
-    void openBrowserColumnMemo(memo, useMemoStore.getState().selectedNotebook, 'open-in-column')
-      .catch((error) => {
-        logger.warn('open memo in browser column failed', { error, memoId: memo.id });
-        toast.error(error instanceof Error ? error.message : String(error));
-      });
-  }, [t]);
-
   const handleRequestDeleteMemo = useCallback((memo: MemoItem) => {
     window.dispatchEvent(new CustomEvent<MemoItem>('flowix:request-delete-memo', { detail: memo }));
   }, []);
@@ -470,7 +459,6 @@ export function MemoList({
             isSelected={selectedMemo?.id === memo.id}
             runningAgentType={getRunningAgentTypeForMemo(memo) ?? undefined}
             onSelect={handleSelectMemo}
-            onOpenInWindow={handleOpenMemoWindow}
             onFavoriteToggle={handleFavoriteToggle}
             onDelete={handleRequestDeleteMemo}
             onColorsChange={handleColorsChange}

@@ -33,7 +33,7 @@ export interface FileBrowserViewSurface extends FileBrowserTarget {
   documentProps: ComponentProps<typeof DocumentContainer>;
   onSelectFile: (path: string) => void;
   onSelectFolder?: (path: string) => void;
-  onOpenFileInNewTab: (path: string) => void;
+  onOpenFileInNewTab?: (path: string) => void;
   onContextChange: (patch: Partial<FileBrowserContext>) => void;
   onTreeVisibleChange: (visible: boolean) => void;
   onTreeWidthChange: (width: number) => void;
@@ -50,7 +50,7 @@ function BrowserBreadcrumbFolderTree({
   folderName: string;
   activeFilePath: string | null;
   onFileSelect: (filePath: string) => void;
-  onFileOpenInNewTab: (filePath: string) => void;
+  onFileOpenInNewTab?: (filePath: string) => void;
 }) {
   const tree = useFolderTree(folderPath);
 
@@ -82,7 +82,7 @@ function BrowserBreadcrumbFolderPopover({
   item: FileBrowserBreadcrumbItem;
   activeFilePath: string | null;
   onFileSelect: (filePath: string) => void;
-  onFileOpenInNewTab: (filePath: string) => void;
+  onFileOpenInNewTab?: (filePath: string) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -398,7 +398,7 @@ function BrowserFileBrowserTreePane({
   surface: FileBrowserViewSurface & { folderPath: string };
   onRequestClose: () => void;
   onFileSelect: (filePath: string) => void;
-  onFileOpenInNewTab: (filePath: string) => void;
+  onFileOpenInNewTab?: (filePath: string) => void;
 }) {
   const setTreeWidth = surface.onTreeWidthChange;
   const tree = useFolderTree(surface.folderPath);

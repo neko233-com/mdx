@@ -345,7 +345,9 @@ export const NotebookTreeRow = memo(function NotebookTreeRow({
           }}
           onClick={isFolder
             ? () => onToggle(item.fullPath)
-            : (event) => onOpen(item.fullPath, event)}
+            : (event) => {
+                if (event.detail <= 1) onOpen(item.fullPath, event);
+              }}
           onDoubleClick={!isFolder && onOpenInNewTab
             ? () => onOpenInNewTab(item.fullPath)
             : undefined}

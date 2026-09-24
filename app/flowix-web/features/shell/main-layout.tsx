@@ -1,6 +1,6 @@
 'use client';
 
-import { lazy, Suspense, useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   DocumentTitlebarWin,
   DocumentTitlebarMac,
@@ -50,7 +50,7 @@ import type { PluginDescriptor } from '@platform/tauri/client';
 import {
   useShellWorkspaceViewModel,
   useNotebookSwitching,
-  BROWSER_COLUMN_MIN_WIDTH,
+  clearLegacyBrowserColumn,
   type WorkColumnTarget,
 } from '@features/workspace/public/shell-api';
 import { MainStatusBarHost } from '@features/shell/components/main-status-bar-host';
@@ -58,13 +58,7 @@ import { CenteredLoadingSpinner } from '@shared/ui/centered-loading-spinner';
 import { MainPromptHost } from '@features/shell/components/main-prompt-host';
 import type { Editor } from '@tiptap/core';
 
-const DOCUMENT_PANEL_MIN_WIDTH = BROWSER_COLUMN_MIN_WIDTH;
-
-const BrowserColumn = lazy(() =>
-  import('@features/shell/components/browser-column').then((module) => ({
-    default: module.BrowserColumn,
-  })),
-);
+const DOCUMENT_PANEL_MIN_WIDTH = 360;
 
 function isWindowsPlatform(): boolean {
   return /Windows/i.test(navigator.userAgent) || /Win/i.test(navigator.platform);
@@ -145,6 +139,7 @@ export function MainLayout({
     selectNotebook: handleSelectNotebook,
   } = business;
   const { updater } = system;
+  useEffect(() => clearLegacyBrowserColumn(), []);
   // 切片订阅：每个 useStore 只取真正用到的字段，setter 走 useShallow 聚合。
   // 替代原来的 `useMemoStore()` / `useDocumentStore()` / `useSettingsStore()`
   // 全量订阅 —— 任何 set 都会让 MainLayout 整树重渲，跨菜单栏 / 状态栏 /
@@ -192,9 +187,6 @@ export function MainLayout({
   );
   const {
     navigation: navigationState,
-    browserColumnVisible,
-    browserColumnSplitRatio,
-    setBrowserColumnSplitRatio,
     focusWorkspaceHost,
     focusedHostId,
   } = useShellWorkspaceViewModel();
@@ -267,10 +259,7 @@ export function MainLayout({
   const currentDocumentContentRef = useRef('');
   const currentDocumentEditorRef = useRef<Editor | null>(null);
   const {
-    browserColumnLayout,
-    browserColumnLayoutKey,
     collapseMemoList,
-    handleBrowserColumnResize,
     handleListDividerMouseDown,
     handleToggleMemoList,
     handleToggleNoteNavigation,
@@ -281,11 +270,9 @@ export function MainLayout({
     memoColWidth,
     noteNavigationPhase,
   } = useMainPanelController({
-    browserColumnSplitRatio,
     documentPanelMinWidth: DOCUMENT_PANEL_MIN_WIDTH,
     memoListVisible,
     noteNavigationVisible,
-    setBrowserColumnSplitRatio,
     setMemoListVisible,
     setNoteNavigationVisible,
   });
@@ -517,7 +504,7 @@ export function MainLayout({
         : 'document'
     : workColumnPresentation.chrome;
   const documentTitlebarProps = {
-    reserveWindowsControls: !browserColumnVisible,
+    reserveWindowsControls: true,
     surfaceChrome: workColumnPresentation.chrome === 'media' ? 'media' as const : 'document' as const,
     document: {
       // An artifact is allowed to sit above an existing editable session.
@@ -625,18 +612,13 @@ export function MainLayout({
             </div>
           )}
           <div
-            data-document-columns-layout="split"
-            className="flex min-h-0 min-w-0 flex-1 flex-row overflow-x-auto overflow-y-hidden"
+            data-document-columns-layout="single"
+            className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
           >
           {/* Memo detail */}
             <div
               className="relative h-full min-w-0 flex flex-col bg-[var(--document-bg)]"
-              style={browserColumnVisible
-                ? {
-                    minWidth: DOCUMENT_PANEL_MIN_WIDTH,
-                    flex: `0 0 ${browserColumnLayout.mainColumnWidth}px`,
-                  }
-                : { minWidth: DOCUMENT_PANEL_MIN_WIDTH, flex: 1 }}
+              style={{ minWidth: DOCUMENT_PANEL_MIN_WIDTH, flex: 1 }}
               data-workspace-host="main-third"
               data-workspace-focused={focusedHostId === 'main-third' ? '' : undefined}
               onPointerDown={() => focusWorkspaceHost('main-third')}
@@ -664,7 +646,7 @@ export function MainLayout({
             {workColumnPresentation.header.kind === 'agent' ? (
               <AgentConversationTitlebar
                 instanceId={workColumnPresentation.header.instanceId}
-                reserveWindowsControls={!browserColumnVisible}
+                reserveWindowsControls
                 isMiddleColumnCollapsed={isMemoListHidden}
                 isSidebarVisible={noteNavigationPhase !== 'closed'}
                 onExpandSidebar={handleToggleMemoList}
@@ -693,17 +675,6 @@ export function MainLayout({
               )}
             </div>
           </div>
-          {browserColumnVisible && (
-            <Suspense fallback={null}>
-              <BrowserColumn
-                width={browserColumnLayout.browserColumnWidth}
-                layoutKey={browserColumnLayoutKey}
-                onResize={handleBrowserColumnResize}
-                toolbarCollapsed={toolbarCollapsed}
-                onToolbarCollapsedChange={setToolbarCollapsed}
-              />
-            </Suspense>
-          )}
           </div>
           </div>
           {/* Status bar */}

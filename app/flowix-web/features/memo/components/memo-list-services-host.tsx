@@ -37,12 +37,7 @@ import { LazyGlobalSearchCommand } from '@features/memo/components/lazy-global-s
 import { subscribe } from '@platform/tauri/event-bus';
 import { externalDocuments } from '@platform/tauri/client';
 import { openNoteByTarget, resolveMemoById } from '@features/memo/use-cases/open-by-target';
-import {
-  openBrowserColumnMarkdown,
-  openBrowserColumnMemoById,
-} from '@features/workspace/use-cases/browser-column-navigation';
 import { openExternalTarget } from '@features/workspace/use-cases/workspace-navigation';
-import { setCurrentWorkspaceNotebook } from '@features/memo/public/workspace-api';
 import {
   FLOWIX_EXTERNAL_MARKDOWN_OPEN_EVENT,
   type ExternalMarkdownOpenRequest,
@@ -272,12 +267,7 @@ function ExternalMarkdownOpenDialog() {
         imported.push({ id: memo.id, resolved });
       }
       setRequest(null);
-      if (request.destination === 'browser-column') {
-        await setCurrentWorkspaceNotebook(notebookId);
-        for (const memo of imported) await openBrowserColumnMemoById(memo.id);
-      } else {
-        await openNoteByTarget(imported[imported.length - 1].resolved);
-      }
+      await openNoteByTarget(imported[imported.length - 1].resolved);
     } catch (error) {
       toast.error(`${t('memo.externalOpen.failed')}: ${String(error)}`);
     } finally {
@@ -289,17 +279,11 @@ function ExternalMarkdownOpenDialog() {
     if (!request) return;
     setOpening(true);
     try {
-      if (request.destination === 'browser-column') {
-        for (const filePath of request.filePaths) {
-          await openBrowserColumnMarkdown(filePath);
-        }
-      } else {
-        for (const filePath of request.filePaths) {
-          await openExternalTarget(filePath, {
-            destination: 'main-third',
-            scopePath: selectedNotebook?.path ?? null,
-          });
-        }
+      for (const filePath of request.filePaths) {
+        await openExternalTarget(filePath, {
+          destination: 'main-third',
+          scopePath: selectedNotebook?.path ?? null,
+        });
       }
       setRequest(null);
     } catch (error) {

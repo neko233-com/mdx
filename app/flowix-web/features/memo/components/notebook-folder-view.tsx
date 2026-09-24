@@ -19,11 +19,6 @@ import {
 import { useFolderTree } from '@features/memo/components/use-folder-tree';
 import { resolveMemoByPath } from '@features/memo/use-cases/open-by-target';
 import { openMemoSession } from '@features/memo/use-cases/open-memo-session';
-import {
-  openBrowserColumnFileBrowser,
-  openBrowserColumnMedia,
-  openBrowserColumnMemoById,
-} from '@features/workspace/use-cases/browser-column-navigation';
 import { openExternalTarget, openMediaTarget } from '@features/workspace/use-cases/workspace-navigation';
 import {
   files,
@@ -255,31 +250,6 @@ export function NotebookFolderView({
     }
   }, [notebook.id, notebook.path, t]);
 
-  const openFileInNewTab = useCallback(async (filePath: string) => {
-    try {
-      if (resourceKindFromPath(filePath) !== 'note') {
-        const resourceKind = resourceKindFromPath(filePath);
-        if (resourceKind === 'image' || resourceKind === 'video') {
-          await openBrowserColumnMedia(filePath, notebook.id, notebook.path, resourceKind);
-        } else {
-          await openBrowserColumnFileBrowser(notebook.path, filePath);
-        }
-        return;
-      }
-      const memo = await resolveMemoByPath(filePath);
-      if (memo?.notebookId === notebook.id) {
-        // The file-tree action explicitly targets the right column. Do not
-        // reuse the same memo already active in the main column.
-        await openBrowserColumnMemoById(memo.memoId, 'open-in-column');
-        return;
-      }
-      await openBrowserColumnFileBrowser(notebook.path, filePath);
-    } catch (error) {
-      logger.warn('opening notebook tree file in new tab failed', { error, filePath });
-      toast.error(t('memo.fileTree.openFailed'));
-    }
-  }, [notebook.id, notebook.path, t]);
-
   const moveItem = useCallback(async (sources: NotebookMoveSource[], targetDirectoryPath: string): Promise<NotebookMoveResult> => {
     const sourcePaths = sources.map((source) => source.path);
     const root = canonicalDirectoryPath(notebook.path);
@@ -367,7 +337,6 @@ export function NotebookFolderView({
       createNoteRequest={createNoteRequest}
       onCreateFolder={onCreateFolder}
       onNoteSelect={(filePath) => { void openFile(filePath); }}
-      onNoteOpenInNewTab={(filePath) => { void openFileInNewTab(filePath); }}
       onCreateNote={(parentPath, title) => onCreateNote?.(parentPath, title)}
       onMoveNote={moveItem}
       onDeleteFolder={deleteFolder}
