@@ -49,6 +49,8 @@ npm run build
 cargo check --manifest-path app/Cargo.toml -p flowix-desktop
 ```
 
+Windows/macOS installers and updater manifests are built locally and uploaded manually. See [manual release steps](docs/MDX-MANUAL-RELEASE.md); pushing a tag does not package a release with GitHub Actions.
+
 The CLI executable is `mdx-cli`; the install scripts also create an `mdx` command. On macOS, open a new terminal after installation to pick up the PATH change. Agents can read and edit local Markdown notes through the CLI or the stdio MCP server (`mdx mcp`). The desktop app has no built-in chat interface. MDX stores user settings in `~/.mdx` and notebook metadata in each notebook's `.mdx` folder.
 
 Local images stay local and use document-relative Markdown paths by default. For an explicit image-host upload, configure [PicGo](https://github.com/PicGo/PicGo-Core) with your chosen provider, start its local server on `127.0.0.1:36677`, and choose **Upload image to host (PicGo)** from the editor's insert menu. MDX sends only the selected image to that local service and inserts the returned URL; it does not upload images when you paste or insert them normally.

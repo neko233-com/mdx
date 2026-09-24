@@ -1,7 +1,7 @@
 name: CI
 
-# PR / push 级别的前置检查 ── 合并前拦截类型错误、单测回归与 Rust 编译失败。
-# 发版流水线见 release.yml（tag 驱动，跨平台打包）。
+# 仅在显式手动触发时运行；日常提交和 tag 不占用 GitHub Actions 额度。
+# 桌面安装包由 Windows/macOS 本机构建并手动上传 GitHub Releases。
 #
 # 设计原则：先保证"绿灯可跑"，再逐步收紧。
 #   - clippy 暂不加 `-D warnings`（代码库历史较长，尚未确认是否 clippy-clean）；
@@ -9,10 +9,7 @@ name: CI
 #   - 可选后续：加 `cargo fmt --check`（需先统一格式）。
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
